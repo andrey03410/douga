@@ -5,7 +5,7 @@ import { removePath } from "@/lib/storage";
 import { fetchFreshPosterUrls } from "@/lib/shikimori";
 import {
   search, importPoster, findStudio, studioAnimes, animeCharacters,
-  findUser, userAnimeList, userFavourites, characterProfile, animeProfile,
+  findUser, userAnimeList, userFavourites, characterProfile, animeProfile, personProfile, userHistory,
 } from "@/server/shikimori";
 
 // Real DB + createArt pipeline; Shikimori is a LOCAL http server pointed at via
@@ -84,6 +84,7 @@ const FAVOURITES = {
       image: "/system/characters/x64/4604.jpg", url: null },
   ],
   people: [{ id: 9, name: "Someone", russian: null, image: "/system/people/x64/9.jpg", url: null }],
+  seyu: [{ id: 10, name: "Voice Actor", russian: "Сэйю" }],
 };
 
 async function cleanup() {
@@ -112,8 +113,19 @@ beforeAll(async () => {
       if (byNickname || url.pathname === `/api/users/${PROFILE.id}`) return json(PROFILE);
       if (url.pathname === `/api/users/${PROFILE.id}/anime_rates`) return json(RATES);
       if (url.pathname === `/api/users/${PROFILE.id}/favourites`) return json(FAVOURITES);
+      if (url.pathname === `/api/users/${PROFILE.id}/history`) {
+        return json(url.searchParams.get("page") === "1"
+          ? [{ id: 11, description: "Оценка изменена" }, { id: 12 }, { id: 13 }]
+          : [{ id: 13 }]);
+      }
       res.statusCode = 404;
       return res.end("no");
+    }
+    if (url.pathname === "/api/people/9") {
+      return json({ id: 9, name: "Someone", website: "https://example.com", works: [
+        { anime: { id: 5114, name: "FMA", russian: "Стальной алхимик" }, role: "Исполнение гл. муз. темы" },
+        { anime: null, manga: { id: 1 } },
+      ] });
     }
     if (url.pathname === "/api/studios") {
       res.setHeader("content-type", "application/json");
@@ -176,6 +188,7 @@ beforeAll(async () => {
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
         id: 17, name: "Rika Furude", russian: "Рика Фурудэ",
+        description: "Спокойный персонаж. [spoiler]Описание источника[/spoiler]",
         image: { original: "/system/characters/original/17.jpg", preview: "/system/characters/preview/17.jpg" },
         animes: [
           { id: 41006, name: "Higurashi Gou", russian: "Цикады: Карма", kind: "tv", aired_on: "2020-10-01" },
@@ -370,6 +383,7 @@ describe("shikimori discovery", () => {
     // oldest first, undatable entries dropped
     expect(p.animes.map((a) => a.year)).toEqual([2006, 2020]);
     expect(p.animes[0].label).toBe("Когда плачут цикады");
+    expect(p.description).toContain("[spoiler]Описание источника[/spoiler]");
     await expect(characterProfile(999)).rejects.toThrow();
   });
   it("role='all' includes supporting characters", async () => {
@@ -452,6 +466,24 @@ describe("shikimori user list & favourites", () => {
     });
     expect(fav.characters[1].label).toBe("Nagisa Furukawa"); // фолбэк на оригинал
     expect(fav.characters[0].thumbUrl).toContain("/system/characters/preview/251.jpg");
+    expect(fav.people).toEqual([{ id: 9, label: "Someone", url: expect.stringContaining("/people/9") }]);
+    expect(fav.seiyuu).toEqual([{ id: 10, label: "Сэйю", url: expect.stringContaining("/people/10") }]);
+  });
+
+  it("retains music credits independently of anime ratings", async () => {
+    const person = await personProfile(9);
+    expect(person.works).toEqual([{ animeId: 5114, label: "Стальной алхимик", role: "Исполнение гл. муз. темы" }]);
+    expect(person.website).toBe("https://example.com");
+    await expect(personProfile(404)).rejects.toThrow();
+  });
+
+  it("paginates public history without exposing the API lookahead item twice", async () => {
+    const first = await userHistory(PROFILE.nickname, 1, 2);
+    const second = await userHistory(PROFILE.nickname, first.nextPage!, 2);
+    expect(first.items.map(x => (x as { id: number }).id)).toEqual([11, 12]);
+    expect(second.items).toEqual([{ id: 13 }]);
+    expect(second.nextPage).toBeNull();
+    expect(seen).toContain(`/api/users/${PROFILE.id}/history?page=2&limit=2`);
   });
 
   it("retries a 429 (Shikimori rate limit) and gives up after the retries", async () => {

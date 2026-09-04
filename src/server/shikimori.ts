@@ -39,6 +39,8 @@ import {
   fetchUserFavouritesRaw,
   fetchCharacterRaw,
   fetchAnimeRaw,
+  fetchPersonRaw,
+  fetchUserHistoryRaw,
 } from "@/lib/shikimori";
 import { createArt } from "@/server/arts";
 
@@ -157,6 +159,8 @@ export interface CharacterProfileDto {
   id: number;
   type: "character";
   label: string;
+  /** Source description; may contain Shikimori BBCode and spoilers. */
+  description: string | null;
   posterPath: string | null;
   /** Year of the first appearance (null when nothing is datable). */
   debutYear: number | null;
@@ -175,6 +179,7 @@ export async function characterProfile(id: number): Promise<CharacterProfileDto>
     id: profile.id,
     type: "character",
     label: profile.label,
+    description: sourceDescription(raw),
     posterPath: profile.posterPath && isSafeImagePath(profile.posterPath) ? profile.posterPath : null,
     debutYear: profile.debutYear,
     animes: profile.animes,
@@ -285,6 +290,45 @@ export interface UserFavouritesResult {
   user: ShikimoriUser;
   animes: SearchDto[];
   characters: SearchDto[];
+  people: PersonFavourite[];
+  seiyuu: PersonFavourite[];
+}
+
+interface PersonFavourite { id: number; label: string; url: string }
+
+function peopleFavourites(value: unknown): PersonFavourite[] {
+  return (Array.isArray(value) ? value : []).flatMap(p => {
+    if (typeof p?.id !== "number" || typeof p?.name !== "string") return [];
+    return [{ id: p.id, label: p.russian || p.name, url: `${shikimoriBase()}/people/${p.id}` }];
+  });
+}
+
+function sourceDescription(raw: unknown): string | null {
+  const value = (raw as { description?: unknown } | null)?.description;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/** Credits help distinguish an artist preference from a show's overall score. */
+export async function personProfile(id: number) {
+  const raw = await fetchPersonRaw(id) as {
+    id?: number; name?: string; russian?: string; website?: string;
+    works?: { anime?: { id: number; name: string; russian?: string }; role?: string }[];
+  };
+  if (typeof raw?.id !== "number" || typeof raw?.name !== "string") throw new Error("PERSON_NOT_FOUND");
+  return {
+    id: raw.id, label: raw.russian || raw.name, url: `${shikimoriBase()}/people/${raw.id}`,
+    website: raw.website || null,
+    works: (Array.isArray(raw.works) ? raw.works : []).filter(w => w.anime).map(w => ({
+      animeId: w.anime!.id, label: w.anime!.russian || w.anime!.name, role: w.role ?? null,
+    })),
+  };
+}
+
+/** Public, paginated viewing/rating history. Descriptions are source text. */
+export async function userHistory(ref: string, page = 1, limit = 100) {
+  const user = await findUser(ref);
+  const rows = await fetchUserHistoryRaw(user.id, page, limit);
+  return { user, page, nextPage: rows.length >= limit ? page + 1 : null, items: rows.slice(0, limit) };
 }
 
 function favouriteToDto(base: string, type: ShikimoriType, f: FavouriteItem): SearchDto {
@@ -304,10 +348,13 @@ export async function userFavourites(ref: string): Promise<UserFavouritesResult>
   const base = shikimoriBase();
   const raw = await fetchUserFavouritesRaw(user.id);
   const { animes, characters } = extractFavourites(raw);
+  const extra = raw as { people?: unknown; seyu?: unknown } | null;
   return {
     user,
     animes: animes.map((f) => favouriteToDto(base, "anime", f)),
     characters: characters.map((f) => favouriteToDto(base, "character", f)),
+    people: peopleFavourites(extra?.people),
+    seiyuu: peopleFavourites(extra?.seyu),
   };
 }
 

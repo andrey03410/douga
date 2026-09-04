@@ -6,6 +6,7 @@ import { can, quotasFor } from "@/lib/domain/permissions";
 import {
   search, findStudio, studioAnimes, animeCharacters, importPoster,
   findUser, userAnimeList, userFavourites, characterProfile, animeProfile,
+  personProfile, userHistory,
 } from "@/server/shikimori";
 import { USER_RATE_STATUSES } from "@/lib/domain/shikimori";
 import {
@@ -20,6 +21,8 @@ import { addTileFromShikimori } from "@/mcp/compose";
 import { importYoutubeAudio } from "@/mcp/youtube";
 import { projectSummary } from "@/mcp/project-summary";
 import type { ShikimoriType } from "@/lib/domain/shikimori";
+import { setTopItems, topItemsSchema } from "@/server/manual-top";
+import { topSummary } from "@/mcp/top-summary";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -47,6 +50,29 @@ async function main() {
   const uid = actor.userId;
 
   const server = new McpServer({ name: "tournament-bracket-video", version: "0.1.0" });
+
+  server.registerTool(
+    "create_top_project",
+    { description: "Создать ручной топ без турнира. Затем set_top_items задаёт позиции. Рендер запускает пользователь в UI. → {projectId,url}",
+      inputSchema: { title: z.string().trim().min(1).max(200) } },
+    ({ title }) => guard(async () => {
+      if (!can(actor.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
+      const project = await createProject(uid, title, "top");
+      return { projectId: project.id, url: `/projects/${project.id}` };
+    }),
+  );
+  server.registerTool(
+    "set_top_items",
+    { description: "Заменить ВСЕ позиции ручного топа атомарно: items идут от лучшего (#1) к последнему. " +
+        "audioArtId — аудио/видео со звуком из своего пула; artId — фон (картинка/видео). " +
+        "clipSec:30 по умолчанию, берётся самый активный фрагмент по RMS. order:desc показывает N→1. " +
+        "Пустые introText/outroText выключают титры. До 200 уникальных треков. После вызова get_project рассчитывает фрагменты и проверяет файлы.",
+      inputSchema: topItemsSchema.shape },
+    (args) => guard(async () => {
+      if (!can(actor.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
+      return setTopItems(uid, args);
+    }),
+  );
 
   // ---- Discovery (Shikimori, read-only) ----
   server.registerTool(
@@ -96,9 +122,21 @@ async function main() {
   );
   server.registerTool(
     "shikimori_user_favourites",
-    { description: "Избранное пользователя: аниме и персонажи (posterPath готов для import_shikimori_poster). → {user, animes:[...], characters:[...]}",
+    { description: "Избранное пользователя: аниме, персонажи, исполнители/другие люди (people) и сэйю (seiyuu). У аниме и персонажей posterPath готов для импорта. → {user,animes,characters,people,seiyuu}",
       inputSchema: { user: z.string() } },
     ({ user }) => guard(() => userFavourites(user)),
+  );
+  server.registerTool(
+    "shikimori_person",
+    { description: "Исполнитель или сэйю: имя, сайт и работы в аниме. → {id,label,url,website,works}",
+      inputSchema: { id: z.number().int().positive() } },
+    ({ id }) => guard(() => personProfile(id)),
+  );
+  server.registerTool(
+    "shikimori_user_history",
+    { description: "Публичная история просмотра и изменений оценок. Постранично, nextPage:null означает конец. Описания — исходный текст Shikimori. → {user,page,nextPage,items}",
+      inputSchema: { user: z.string(), page: z.number().int().positive().default(1), limit: z.number().int().min(1).max(100).default(100) } },
+    ({ user, page, limit }) => guard(() => userHistory(user, page, limit)),
   );
   server.registerTool(
     "shikimori_anime",
@@ -114,7 +152,8 @@ async function main() {
     { description:
         "Персонаж и все аниме, где он появляется (старые сначала). debutYear — год первого " +
         "появления, то есть «эпоха» самого персонажа: у героини 2006 года она остаётся 2006 " +
-        "даже в ремейке 2020-го. → {id, type:'character', label, posterPath, debutYear, animes:[{id, label, kind, year}]}",
+        "даже в ремейке 2020-го. description — описание источника, может содержать BBCode и спойлеры. " +
+        "→ {id, type:'character', label, description, posterPath, debutYear, animes:[{id, label, kind, year}]}",
       inputSchema: { id: z.number() } },
     ({ id }) => guard(() => characterProfile(id)),
   );
@@ -347,11 +386,15 @@ async function main() {
   );
   server.registerTool(
     "get_project",
-    { description: "Прочитать структуру проекта (раунды/плитки/ответы/плейлист) для самопроверки. → summary",
+    { description: "Прочитать проект для самопроверки. Пикер: раунды/плитки/плейлист. Ручной топ: позиции/фон/активные фрагменты/таймлайн/readyToRender/warnings. Первый расчёт фрагментов может занять несколько минут. → summary",
       inputSchema: { projectId: z.string() } },
     ({ projectId }) => guard(async () => {
       const p = await getProject(uid, projectId);
       if (!p) throw new Error("Проект не найден");
+      if (p.kind === "top") return {
+        id: p.id, title: p.title, kind: p.kind, url: `/projects/${p.id}`,
+        ...await topSummary(uid, projectId), renderAllowed: can(actor.role, "render:run"),
+      };
       // Planned runtime helps size a playlist to the video (pickers only).
       const durationSec =
         p.kind === "picker" ? buildPickerPreviewPlan(p).durationSec : undefined;

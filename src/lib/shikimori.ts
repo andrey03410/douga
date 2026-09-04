@@ -74,10 +74,12 @@ function throttle(kind: "api" | "asset"): Promise<void> {
 }
 
 async function getOnce(pathAndQuery: string): Promise<Response> {
+  // Waiting for the minute quota is not network time. Starting the timeout
+  // before the gate aborts otherwise healthy requests in large discovery runs.
+  await throttle("api");
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    await throttle("api");
     return await fetch(`${shikimoriBase()}${pathAndQuery}`, {
       headers: { "User-Agent": userAgent(), Accept: "application/json" },
       redirect: "follow",
@@ -122,6 +124,15 @@ export async function fetchAnimeRaw(id: number): Promise<unknown> {
 /** Character details (includes the anime list with airing dates). */
 export async function fetchCharacterRaw(id: number): Promise<unknown> {
   return getJson(`/api/characters/${id}`);
+}
+
+export async function fetchPersonRaw(id: number): Promise<unknown> {
+  return getJson(`/api/people/${id}`);
+}
+
+export async function fetchUserHistoryRaw(userId: number, page = 1, limit = 100): Promise<unknown[]> {
+  const data = await getJson(`/api/users/${userId}/history?page=${page}&limit=${limit}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function fetchStudiosRaw(): Promise<unknown[]> {
