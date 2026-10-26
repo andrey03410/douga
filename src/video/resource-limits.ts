@@ -48,7 +48,13 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
       participants?: unknown[];
       rounds?: { cards?: unknown[]; groups?: { cardIds?: unknown[] }[] }[];
     };
-    scenes?: { repeat?: string; nodes?: unknown[]; block?: string }[];
+    scenes?: {
+      id?: string;
+      repeat?: string;
+      nodes?: unknown[];
+      block?: string;
+    }[];
+    audio?: { cues?: { anchor?: { sceneId?: string; event?: string } }[] };
   };
   if (!doc || !Array.isArray(doc.scenes)) return [];
   let scenes = 0,
@@ -70,6 +76,7 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
             : 0),
       ),
   );
+  const sceneCopies = new Map<string, number>();
   for (const scene of doc.scenes) {
     if (!scene || typeof scene !== "object") continue;
     const count =
@@ -98,7 +105,9 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
           })),
         );
     }
-    scenes += count * (scene.block === "picker" ? 2 : 1);
+    const copies = count * (scene.block === "picker" ? 2 : 1);
+    if (typeof scene.id === "string") sceneCopies.set(scene.id, copies);
+    scenes += copies;
     nodes +=
       count * (authored + (scene.block === "picker" ? 10 + maxCards * 8 : 10));
     if (
@@ -106,6 +115,22 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
       nodes > videoResourceLimits.maxExpandedNodes
     )
       return failure();
+  }
+  // Active-snippet resolution clones every rule anchored to a repeated scene,
+  // before compilation. Bound that product before media probing/PCM analysis.
+  // Ignore narrower anchor filters conservatively: the resolver copies them too.
+  let soundRules = 0;
+  for (const cue of Array.isArray(doc.audio?.cues) ? doc.audio.cues : []) {
+    if (!cue || typeof cue !== "object") continue;
+    const anchor = cue.anchor;
+    const copies = anchor
+      ? typeof anchor.sceneId === "string"
+        ? (sceneCopies.get(anchor.sceneId) ?? 1)
+        : scenes
+      : 1;
+    soundRules +=
+      copies * (anchor?.event === "card.reveal" ? Math.max(1, maxCards) : 1);
+    if (soundRules > videoResourceLimits.maxAudioCues) return failure();
   }
   return [];
 }

@@ -35,6 +35,7 @@ afterAll(async () => {
     for (const p of await studio.listStudioProjects(userId))
       await studio.deleteStudioProject(userId, p.id);
     await prisma.user.delete({ where: { id: userId } });
+    await removePath(`arts/${userId}`);
     await removePath(`studio/${userId}`);
     await removePath(`studio-jobs/${userId}`);
   }
@@ -409,3 +410,227 @@ it("rejects a corrupted frozen payload without publishing output", async () => {
   expect(result?.result).toBeNull();
   await studio.deleteStudioJob(owner, job.id);
 });
+
+it("rejects active-snippet anchor multiplication before analysis or retaining resolved copies", async () => {
+  const { createArt } = await import("@/server/arts");
+  const { evaluate, fileHash, safeFile } =
+    await import("@/server/studio/assets");
+  const { randomBytes } = await import("node:crypto");
+  const samples = randomBytes(16000),
+    wav = Buffer.alloc(44 + samples.length);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(samples.length, 40);
+  samples.copy(wav, 44);
+  const art = await createArt(owner, {
+    fileName: "anchor-budget.wav",
+    data: wav,
+  });
+  const key = `${await fileHash(await safeFile(art.filePath))}:0.5`;
+  expect(await prisma.studioAnalysis.findUnique({ where: { key } })).toBeNull();
+  const d = createVideoDocument({
+    kind: "top",
+    participants: Array.from({ length: 500 }, (_, i) => ({
+      id: `p${i}`,
+      label: `P${i}`,
+      media: { audio: "sound" },
+    })),
+  });
+  d.settings.top = { snippet: { mode: "active", durationSec: 0.5 } };
+  d.bindings.sound = { kind: "pool", assetId: art.id };
+  d.audio = {
+    cues: Array.from({ length: 500 }, (_, i) => ({
+      id: `cue${i}`,
+      role: "sfx",
+      asset: "sound",
+      at: { sec: 0 },
+      anchor: { event: "scene.start", sceneId: d.scenes[0].id },
+    })),
+  };
+  const result = await evaluate(owner, d);
+  const analysis = await prisma.studioAnalysis.findUnique({ where: { key } });
+  await prisma.studioAnalysis.deleteMany({ where: { key } });
+  expect(
+    result.validation.diagnostics.some(
+      (d) => d.code === "RESOURCE_BUDGET_EXCEEDED",
+    ),
+  ).toBe(true);
+  expect(result.resolvedDocument === null).toBe(true);
+  expect(result.plan).toBeNull();
+  expect(analysis).toBeNull();
+});
+
+it("recovers the same frozen job after an OS hard kill stops its active render child", async () => {
+  const { spawn, execFileSync, execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { writeFile } = await import("node:fs/promises");
+  const { absPath } = await import("@/lib/storage");
+  const { heartbeatStudioJob } = await import("@/server/studio/worker");
+  const d = document();
+  d.settings.top = { durationSec: 15 };
+  const project = await studio.createStudioProject(owner, { document: d });
+  const job = await studio.startStudioJob(owner, project.id, {
+    kind: "clip",
+    fromFrame: 0,
+    durationFrames: 450,
+  });
+  const args = [
+    "--import",
+    "tsx",
+    "scripts/studio-worker.ts",
+    "--once",
+    "--job",
+    job.id,
+  ];
+  const env = { ...process.env, TSX_TSCONFIG_PATH: "tsconfig.mcp.json" };
+  const parent = spawn(process.execPath, args, { env, stdio: "ignore" });
+  const parentExit = new Promise<[number | null, NodeJS.Signals | null]>(
+    (resolve) => parent.once("exit", (code, signal) => resolve([code, signal])),
+  );
+  const processes = () =>
+    execFileSync("ps", ["-axo", "pid=,ppid=,stat=,comm="], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line)!;
+        return {
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          state: match[3],
+          name: match[4],
+        };
+      });
+  const waitUntil = async (
+    condition: () => Promise<boolean> | boolean,
+    timeout = 15_000,
+  ) => {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) {
+      if (await condition()) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error("Timed out waiting for the owned worker process state");
+  };
+  let childPid: number | undefined,
+    firstToken: string | null = null;
+  try {
+    // Observe Chromium descended from this exact CLI process: work has actually started.
+    await waitUntil(() => {
+      const rows = processes();
+      const child = rows.find(
+        (row) => row.ppid === parent.pid && /node/i.test(row.name),
+      );
+      if (!child) return false;
+      const descendants = new Set([child.pid]);
+      for (let i = 0; i < 6; i++)
+        for (const row of rows)
+          if (descendants.has(row.ppid)) descendants.add(row.pid);
+      if (
+        !rows.some(
+          (row) =>
+            descendants.has(row.pid) && /chrome|chromium/i.test(row.name),
+        )
+      )
+        return false;
+      childPid = child.pid;
+      return true;
+    });
+    const first = await prisma.studioJob.findUniqueOrThrow({
+      where: { id: job.id },
+    });
+    firstToken = first.leaseToken;
+    expect(first.status).toBe("running");
+    expect(first.attempts).toBe(1);
+    expect(first.resultJson).toBeNull();
+    parent.kill("SIGKILL");
+    const [exitCode, signal] = await parentExit;
+    expect(exitCode).toBeNull();
+    expect(signal).toBe("SIGKILL");
+    await waitUntil(
+      () =>
+        !processes().some(
+          (row) => row.pid === childPid && !row.state.startsWith("Z"),
+        ),
+    );
+    const interrupted = await studio.getStudioJob(owner, job.id);
+    expect(interrupted.status).toBe("running");
+    expect(interrupted.result).toBeNull();
+    // Shorten only this killed attempt's durable lease; never alter other users' slot/token.
+    await prisma.$transaction(async (db) => {
+      await db.studioJob.updateMany({
+        where: { id: job.id, userId: owner, leaseToken: firstToken },
+        data: { leaseUntil: new Date(0) },
+      });
+      await db.studioWorkerLease.updateMany({
+        where: { token: firstToken },
+        data: { until: new Date(0) },
+      });
+    });
+    await promisify(execFile)(process.execPath, args, { env, timeout: 90_000 });
+    const recovered = await studio.getStudioJob(owner, job.id);
+    expect(recovered.status, recovered.error ?? undefined).toBe("done");
+    expect(recovered.attempts).toBe(2);
+    expect(recovered.snapshotId).toBe(job.snapshotId);
+    expect(recovered.snapshotHash).toBe(job.snapshotHash);
+    expect(recovered.engineId).toBe(job.engineId);
+    expect(recovered.revisionId).toBe(job.revisionId);
+    expect(await heartbeatStudioJob(job.id, firstToken!)).toBe(false);
+    const finalRow = await prisma.studioJob.findUniqueOrThrow({
+      where: { id: job.id },
+    });
+    expect(finalRow.leaseToken).not.toBe(firstToken);
+    expect(
+      (await studio.getStudioJobArtifact(owner, job.id)).bytes,
+    ).toBeGreaterThan(100);
+    await writeFile(
+      absPath("studio-worker-proof/hard-kill.json"),
+      JSON.stringify(
+        {
+          parentPid: parent.pid,
+          childPid,
+          signal,
+          oldAttempt: firstToken,
+          newAttempt: finalRow.leaseToken,
+          interrupted,
+          recovered,
+        },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    if (parent.exitCode === null && parent.signalCode === null) {
+      parent.kill("SIGKILL");
+      await parentExit;
+    }
+    // Failure cleanup is strictly scoped to this test's job and its owned child group.
+    if (childPid) {
+      try {
+        process.kill(-childPid, "SIGKILL");
+      } catch {}
+    }
+    const row = await prisma.studioJob.findUnique({ where: { id: job.id } });
+    if (row) {
+      await studio.cancelStudioJob(owner, job.id);
+      await prisma.studioJob.updateMany({
+        where: { id: job.id, userId: owner },
+        data: { leaseUntil: new Date(0) },
+      });
+      if (row.leaseToken)
+        await prisma.studioWorkerLease.updateMany({
+          where: { token: row.leaseToken },
+          data: { until: new Date(0) },
+        });
+      await studio.deleteStudioJob(owner, job.id);
+    }
+  }
+}, 120_000);

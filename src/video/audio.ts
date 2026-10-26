@@ -179,6 +179,7 @@ export function compileGlobalAudio(
       });
     }
   }
+  const playlistCues = new Set<CompiledAudio>();
   const playlist = ctx.document.audio?.playlist;
   if (playlist?.tracks.length) {
     const tracks = playlist.tracks.flatMap((key, i) => {
@@ -235,7 +236,7 @@ export function compileGlobalAudio(
         fadeOutSec: fade / ctx.fps,
       });
       if (cue) {
-        cue.muteWindows = muteWindows;
+        playlistCues.add(cue);
         cue.duckVolume = playlist.duckVolume ?? 0.2;
       }
       cursor += Math.max(1, length - fade);
@@ -246,7 +247,8 @@ export function compileGlobalAudio(
     .filter((a) => a.role === "primary" || a.role === "voice")
     .map((a) => ({ from: a.from, to: a.from + a.durationInFrames }));
   if (
-    duck.length * ctx.audio.filter((a) => a.role === "music").length >
+    playlistCues.size * muteWindows.length +
+      duck.length * ctx.audio.filter((a) => a.role === "music").length >
     videoResourceLimits.maxAudioPolicyWindows
   ) {
     diagnostic(
@@ -257,6 +259,8 @@ export function compileGlobalAudio(
     );
     return;
   }
+  // Attach policies only after counting both kinds; JSON serialization duplicates shared arrays.
+  for (const cue of playlistCues) cue.muteWindows = muteWindows;
   for (const audio of ctx.audio)
     if (audio.role === "music")
       audio.duckWindows = duck.filter(

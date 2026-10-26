@@ -158,7 +158,12 @@ These are resource budgets, not old top/card/round product restrictions:
 The heap/cache bounds are not an OS-wide RSS cap for Chromium/FFmpeg. The output
 limit is checked before publication, so temporary encoding space can exceed it.
 Time/numeric bounds and iterative preflight run before recursive schema parsing,
-active-snippet expansion and compilation. Excessive repetition returns
+active-snippet expansion and compilation. Sound-rule anchors are conservatively
+multiplied by their repeated scene counts before media probing or active-snippet
+analysis; that estimate shares the 20,000-cue budget. The audio policy estimate
+adds playlist mute-window copies and music duck-window copies together and
+checks the 200,000 total before either list is attached or JSON-cloned.
+Excessive repetition returns
 `RESOURCE_BUDGET_EXCEEDED` diagnostics instead of allocating a giant plan.
 The node estimate conservatively includes generated card/group/layout nodes;
 it may reject a document before the exact emitted-node count reaches 20,000.
@@ -188,6 +193,10 @@ The first command is a long-lived queue consumer. The second is a scoped single
 attempt (possibly null if not eligible); tests and manual acceptance must use
 it or `runStudioWorkerOnce({jobId})`, never an unscoped worker against shared
 user data. Stop the loop with SIGINT/SIGTERM; current work finishes gracefully.
+The macOS integration test also kills an actual CLI parent with SIGKILL after
+its renderer has launched Chromium, observes the renderer stop without publishing,
+then restarts a scoped CLI and completes the same frozen snapshot on attempt 2.
+It shortens only that owned attempt's persisted lease to avoid a 30-second wait.
 After a hard kill, leases recover from SQLite. There is no in-process render
 promise required for durability.
 
