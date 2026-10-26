@@ -432,6 +432,14 @@ export const videoDocumentSchema: z.ZodType<VideoDocument> =
         path: ["source", "tournamentId"],
       });
     d.scenes.forEach((s, i) => {
+      if (s.repeat && (s.participantId || s.roundId)) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "Scene repetition and explicit participant/round references are mutually exclusive",
+          path: ["scenes", i, "repeat"],
+        });
+      }
       if (
         s.duration &&
         ("frame" in s.duration ? s.duration.frame : s.duration.sec) <= 0

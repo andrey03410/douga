@@ -14,7 +14,7 @@ import {
   resolveAsset,
   type CompileContext,
 } from "./context";
-import { frames } from "./settings";
+import { frames, mergeSettings } from "./settings";
 import { layoutCards, resolveRect } from "./layout";
 import { compileMedia } from "./media";
 import { addAudio } from "./audio";
@@ -138,6 +138,14 @@ export function compileTop(
     s,
   );
   scene.participantId = p.id;
+  if (s.layout?.type === "free" && s.layout.positions?.length !== 1) {
+    diagnostic(
+      ctx,
+      "LAYOUT_POSITIONS_MISMATCH",
+      "A top scene free layout needs exactly one card position.",
+      `source.participants.${p.id}.settings.layout.positions`,
+    );
+  }
   const rect = layoutCards(
     1,
     { x: 0, y: 0, width: ctx.width, height: ctx.height },
@@ -153,11 +161,28 @@ export function compileTop(
     labelWindows: labelWindows(s, 0, duration, 0, undefined, duration, ctx.fps),
     activeWindow: { from: 0, to: duration },
   });
+  // The defaults contain offsetSec:0; inspect only authored layers to distinguish
+  // a deliberate footage offset (including zero) from the implicit default.
+  const authoredVisualOffset = mergeSettings(
+    ctx.settings,
+    template.settings,
+    p.settings,
+  ).card?.offsetSec;
+  const visualStyle = { ...s.card };
+  if (
+    visual?.kind === "video" &&
+    audio?.kind === "video" &&
+    visual.id === audio.id &&
+    authoredVisualOffset === undefined
+  ) {
+    visualStyle.offsetSec = offset;
+  }
+  card.style = visualStyle;
   if (visual)
     card.media = compileMedia(
       ctx,
       visual,
-      s.card ?? {},
+      visualStyle,
       `source.participants.${p.id}.settings.card.offsetSec`,
     );
   scene.nodes.push(card);
@@ -466,10 +491,22 @@ export function compilePicker(
         y: panels[gi].y + panels[gi].height * 0.16,
         height: panels[gi].height * 0.84,
       };
+      const groupLayout = g.settings?.layout ?? s.layout;
+      if (
+        groupLayout?.type === "free" &&
+        groupLayout.positions?.length !== g.cardIds.length
+      ) {
+        diagnostic(
+          ctx,
+          "LAYOUT_POSITIONS_MISMATCH",
+          "A group free layout needs one position per card.",
+          `source.rounds.${r.id}.groups.${g.id}.settings.layout.positions`,
+        );
+      }
       const rects = layoutCards(
         g.cardIds.length,
         groupArea,
-        g.settings?.layout ?? s.layout,
+        groupLayout,
         g.settings?.card?.orientation ?? s.card?.orientation,
       );
       let soundTaken = false;

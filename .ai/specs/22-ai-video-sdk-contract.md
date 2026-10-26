@@ -7,7 +7,8 @@ website. Runtime types are in `src/video/types.ts`, strict schemas in
 `src/video/schema.ts`. `getVideoDocumentJsonSchema()` derives recursive JSON
 Schema from the same Zod objects using the explicit `zod-to-json-schema`
 dependency. Runtime semantic checks remain authoritative for crop bounds,
-stable-ID uniqueness, positive scene durations and preset content stripping.
+stable-ID uniqueness, positive scene durations, mutually exclusive repetition/explicit
+scene references, and preset content stripping.
 
 ## Public functions and types
 
@@ -80,7 +81,10 @@ replaces it with a round-local looping music asset. Scene and round backgrounds
 are media keys; `settings.background` is a CSS color only.
 
 Dynamic scenes use `repeat:"participants"` or `repeat:"rounds"`; no fixed source
-array indices are stored in composition. Stable participant IDs retain their
+array indices are stored in composition. A repeated scene cannot also declare
+participantId or roundId; choose either dynamic repetition or one explicit
+identity. Contradictory combinations fail validation, including deleted IDs.
+Stable participant IDs retain their
 local media/settings when the service reconciles source ranking updates.
 The source adapter must merge source-owned rank/label fields into retained
 participants by ID; never zip arrays by position. New participants inherit the
@@ -130,7 +134,10 @@ inside [0,1] media bounds. Colors reject CSS URLs. `labels.mode` is `always`,
 `finale`, `never`, `active` or `answer`, with optional showRank, delaySec, holdSec.
 Top snippets are manual (durationSec/startSec), full (entire source), or active
 (activeStartSec/activeEndSec); footage offset and primary audio offset are
-separate. Full/active timing determines the position's scene duration; manual
+separate when explicitly configured. When visual and primary audio resolve to
+the same video and no document/format/scene/participant layer explicitly provides
+a footage offset, the picture follows the selected snippet offset. An explicit
+footage offset (including zero) retains independent positioning. Full/active timing determines the position's scene duration; manual
 uses snippet.durationSec, falling back to top.durationSec. With no audio, a
 manual top scene still renders normally.
 

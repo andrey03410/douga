@@ -447,3 +447,193 @@ it("retains per-card label exceptions in a separate answer scene", () => {
     answer.nodes.filter((n) => n.type === "card").map((n) => n.labelWindows),
   ).toEqual([[], [], [{ from: 0, to: 75 }], [{ from: 0, to: 75 }]]);
 });
+
+describe("review SDK-1: same-source snippet synchronization", () => {
+  const videoManifest: AssetManifest = {
+    footage: {
+      id: "shared-video",
+      kind: "video",
+      src: "/ten-seconds.mp4",
+      durationSec: 10,
+      hasAudio: true,
+    },
+    soundtrack: {
+      id: "shared-video",
+      kind: "video",
+      src: "/ten-seconds.mp4",
+      durationSec: 10,
+      hasAudio: true,
+    },
+    separate: {
+      id: "other-audio",
+      kind: "audio",
+      src: "/other.mp3",
+      durationSec: 10,
+    },
+  };
+  it.each(["manual", "active"] as const)(
+    "synchronizes %s snippets when visual and primary audio resolve to the same video",
+    (mode) => {
+      const d = top();
+      d.source.participants = d.source.participants.slice(0, 1);
+      d.source.participants[0].media = {
+        visual: "footage",
+        audio: "soundtrack",
+      };
+      d.settings.top = {
+        snippet:
+          mode === "manual"
+            ? { mode, startSec: 3, durationSec: 2 }
+            : { mode, activeStartSec: 3, activeEndSec: 5 },
+      };
+      const compiled = compileVideo(d, videoManifest);
+      expect(compiled.ready).toBe(true);
+      expect(compiled.plan.scenes[0].durationInFrames).toBe(60);
+      expect(compiled.plan.scenes[0].nodes[0].media?.offsetFrames).toBe(90);
+      expect(compiled.plan.audio[0].offsetFrames).toBe(90);
+    },
+  );
+  it.each(["document", "format", "scene", "participant"] as const)(
+    "keeps an explicit independent zero footage offset at the %s layer",
+    (layer) => {
+      const d = top();
+      d.source.participants = d.source.participants.slice(0, 1);
+      d.source.participants[0].media = {
+        visual: "footage",
+        audio: "soundtrack",
+      };
+      d.settings.top = {
+        snippet: { mode: "manual", startSec: 3, durationSec: 2 },
+      };
+      if (layer === "document") d.settings.card = { offsetSec: 0 };
+      if (layer === "format")
+        d.formatSettings = { wide: { card: { offsetSec: 0 } } };
+      if (layer === "scene") d.scenes[0].settings = { card: { offsetSec: 0 } };
+      if (layer === "participant")
+        d.source.participants[0].settings = { card: { offsetSec: 0 } };
+      const compiled = compileVideo(d, videoManifest);
+      expect(compiled.ready).toBe(true);
+      expect(compiled.plan.scenes[0].nodes[0].media?.offsetFrames).toBe(0);
+      expect(compiled.plan.audio[0].offsetFrames).toBe(90);
+    },
+  );
+  it("keeps unrelated footage independent of the selected audio snippet", () => {
+    const d = top();
+    d.source.participants = d.source.participants.slice(0, 1);
+    d.source.participants[0].media = { visual: "footage", audio: "separate" };
+    d.settings.top = {
+      snippet: { mode: "manual", startSec: 3, durationSec: 2 },
+    };
+    const compiled = compileVideo(d, videoManifest);
+    expect(compiled.plan.scenes[0].nodes[0].media?.offsetFrames).toBe(0);
+    expect(compiled.plan.audio[0].offsetFrames).toBe(90);
+  });
+});
+
+describe("review SDK-2: explicit references versus repetition", () => {
+  it.each(["existing", "deleted"] as const)(
+    "rejects participant repetition with an %s explicit identity",
+    (identity) => {
+      const d = top();
+      d.scenes[0].participantId = identity === "existing" ? "b" : "deleted";
+      expect(() => parseVideoDocument(d)).toThrow();
+      const compiled = compileVideo(d);
+      expect(compiled.ready).toBe(false);
+      expect(compiled.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "SCHEMA_INVALID",
+          path: "scenes.0.repeat",
+        }),
+      );
+      expect(compiled.plan.scenes).toEqual([]);
+    },
+  );
+  it.each(["existing", "deleted"] as const)(
+    "rejects round repetition with an %s explicit identity",
+    (identity) => {
+      const d = createVideoDocument({ kind: "picker", roundCount: 1 });
+      d.scenes[0].roundId = identity === "existing" ? "round-1" : "deleted";
+      expect(() => parseVideoDocument(d)).toThrow();
+      const compiled = compileVideo(d);
+      expect(compiled.ready).toBe(false);
+      expect(compiled.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "SCHEMA_INVALID",
+          path: "scenes.0.repeat",
+        }),
+      );
+      expect(compiled.plan.scenes).toEqual([]);
+    },
+  );
+});
+
+describe("review SDK-3: free-layout cardinality in every block", () => {
+  const rect = { x: 0.1, y: 0.1, width: 0.2, height: 0.2 };
+  it.each(["missing", "empty", "extra"] as const)(
+    "makes top plans non-ready for %s free positions while retaining inspection geometry",
+    (variant) => {
+      const d = top();
+      d.source.participants = d.source.participants.slice(0, 1);
+      d.settings.layout = {
+        type: "free",
+        ...(variant === "missing"
+          ? {}
+          : { positions: variant === "empty" ? [] : [rect, rect] }),
+      };
+      const compiled = compileVideo(d);
+      expect(compiled.ready).toBe(false);
+      expect(compiled.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "LAYOUT_POSITIONS_MISMATCH" }),
+      );
+      expect(compiled.plan.scenes[0].nodes[0].rect.width).toBeGreaterThan(0);
+    },
+  );
+  it.each(["missing", "empty", "extra"] as const)(
+    "makes grouped picker plans non-ready for %s group free positions",
+    (variant) => {
+      const d = createVideoDocument({
+        kind: "picker",
+        presetId: "picker.two-groups.wide",
+        roundCount: 1,
+      });
+      d.source.rounds[0].groups![0].settings = {
+        layout: {
+          type: "free",
+          ...(variant === "missing"
+            ? {}
+            : { positions: variant === "empty" ? [] : [rect, rect, rect] }),
+        },
+      };
+      const compiled = compileVideo(d);
+      expect(compiled.ready).toBe(false);
+      expect(compiled.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "LAYOUT_POSITIONS_MISMATCH" }),
+      );
+      expect(
+        compiled.plan.scenes[0].nodes.filter((n) => n.type === "card"),
+      ).toHaveLength(4);
+    },
+  );
+  it("continues accepting valid top and group placements", () => {
+    const d = top();
+    d.source.participants = d.source.participants.slice(0, 1);
+    d.settings.layout = { type: "free", positions: [rect] };
+    const topResult = compileVideo(d);
+    expect(topResult.ready).toBe(true);
+    expect(topResult.plan.scenes[0].nodes[0].rect).toEqual({
+      x: 192,
+      y: 108,
+      width: 384,
+      height: 216,
+    });
+    const grouped = createVideoDocument({
+      kind: "picker",
+      presetId: "picker.two-groups.wide",
+      roundCount: 1,
+    });
+    grouped.source.rounds[0].groups![0].settings = {
+      layout: { type: "free", positions: [rect, { ...rect, x: 0.5 }] },
+    };
+    expect(compileVideo(grouped).ready).toBe(true);
+  });
+});
