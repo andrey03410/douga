@@ -17,8 +17,8 @@ describe("formatSelector", () => {
     expect(f).toContain("best[height<=720]");
   });
 
-  it("audio prefers m4a", () => {
-    expect(formatSelector("audio", 1080)).toBe("bestaudio[ext=m4a]/bestaudio");
+  it("audio prefers m4a and can extract a direct multiplexed file", () => {
+    expect(formatSelector("audio", 1080)).toBe("bestaudio[ext=m4a]/bestaudio/best");
   });
 
   it("isQuality accepts only the offered rungs", () => {

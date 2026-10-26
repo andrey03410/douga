@@ -11,6 +11,9 @@ export default defineConfig({
     },
   },
   test: {
+    // Integration files share SQLite and the single Studio heavy-work slot.
+    // Explicit Promise-based concurrency tests still exercise races within a file.
+    fileParallelism: false,
     environment: "node",
     include: ["src/**/*.test.ts"],
     env: {

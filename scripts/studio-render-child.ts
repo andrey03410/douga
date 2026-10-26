@@ -2,6 +2,7 @@ import { prisma } from "../src/lib/db";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { bundle } from "@remotion/bundler";
+import { importStudioAttempt } from "../src/server/studio/import-attempt";
 import { renderStudioAttempt } from "../src/server/studio/render";
 const terminate = () => {
   if (process.platform !== "win32") process.kill(-process.pid, "SIGKILL");
@@ -9,7 +10,7 @@ const terminate = () => {
 };
 process.once("disconnect", terminate);
 process.once("message", async (request: any) => {
-  if (request.operation === "render")
+  if (request.operation === "render" || request.operation === "import")
     setInterval(async () => {
       try {
         const row = await prisma.studioJob.findFirst({
@@ -54,7 +55,10 @@ process.once("message", async (request: any) => {
         }))
       )
         throw new Error("LEASE_LOST");
-      result = await renderStudioAttempt(request);
+      result =
+        request.operation === "import"
+          ? await importStudioAttempt(request)
+          : await renderStudioAttempt(request);
     }
     process.send?.({ result });
   } catch (error) {
@@ -62,7 +66,9 @@ process.once("message", async (request: any) => {
       error:
         error instanceof Error && /^[A-Z_]+$/.test(error.message)
           ? error.message
-          : "RENDER_FAILED",
+          : request.operation === "import"
+            ? "IMPORT_FAILED"
+            : "RENDER_FAILED",
     });
   }
 });

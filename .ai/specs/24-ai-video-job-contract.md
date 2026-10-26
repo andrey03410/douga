@@ -1,4 +1,4 @@
-# Durable Studio composition jobs (Task 4)
+# Durable Studio jobs (Tasks 4–5)
 
 Implemented server entry point: `src/server/studio/index.ts`. This extends
 [23-ai-video-service-contract.md](23-ai-video-service-contract.md). No API, UI or
@@ -48,12 +48,12 @@ Types live in `job-types.ts`, re-exported by the service barrel:
 ```ts
 interface StudioJobView {
  id:string; projectId:string|null; snapshotId:string|null;
- kind:'still'|'clip'|'audio'|'render';
+ kind:'still'|'clip'|'audio'|'render'|'import';
  status:'queued'|'running'|'done'|'failed'|'canceled';
  progress:number; attempts:number; error:string|null;
  revision:number|null; revisionId:string|null; snapshotHash:string|null;
  engineId:string;
- result:StudioJobResult|null;
+ result:StudioJobOutput|null; // composition result or StudioImportResult below
  createdAt:string; updatedAt:string; // ISO timestamps
 }
 interface StudioJobResult {
@@ -204,4 +204,101 @@ promise required for durability.
 composition service requires both. Task 5 can add an `import` input/result and
 worker dispatch branch in this same queue, with no project requirement. It
 must preserve lease fencing, account authorization, scoped claims, quotas and
-private result boundaries. This task does not implement imports.
+private result boundaries. Task 5 implements this extension below.
+
+## Task 5: standalone durable URL imports
+
+`startStudioImport(userId, input): Promise<StudioJobView>` is exported from the
+same server barrel. `startStudioImportSchema` is strict (unknown fields fail):
+
+```ts
+type StartStudioImportInput = {
+  url: string; // trimmed, absolute HTTP(S), at most 4096 chars, no URL credentials
+  mode: 'audio' | 'video';
+  quality?: 480 | 720 | 1080; // default 1080; video height ceiling, ignored for audio
+  idempotencyKey?: string; // 1–200 chars, existing account-wide receipt semantics
+};
+```
+
+The trusted actor supplies `userId`; clients cannot supply quota, destination,
+project, snapshot, Art ID, process arguments, or a job kind here. Enqueue only
+writes SQLite: no network/probe/download/bundle process runs in the web/MCP
+request. Imports share the four-active-jobs limit and global heavy worker slot
+with composition jobs. No project is required or created; project/snapshot and
+revision/hash fields are null. `kind` is `import`; `engineId` is
+`yt-dlp-pool-v1`, the import protocol identifier (not a frozen renderer bundle
+or a promise that a remote URL's bytes cannot change before execution).
+
+`StudioJobView.result` is now `StudioJobOutput | null`, a discriminated union of
+the existing `StudioJobResult` (composition outputs) and:
+
+```ts
+interface StudioImportResult {
+  kind: 'import';
+  asset: {
+    id: string; // owned pool Art ID
+    kind: 'audio' | 'video';
+    label: string | null; // source title, capped at 500 chars
+    bytes: number; hash: string; mimeType: 'audio/mp4' | 'video/mp4';
+    durationSec: number; hasAudio: boolean; hasVideo: boolean;
+    poster: boolean;
+  };
+}
+```
+
+Discriminate on `result.kind` before reading composition `result.resource`.
+The import metadata describes actual normalized output bytes. Video is MP4
+H.264 with optional AAC audio; silent video remains silent. Audio is M4A/AAC.
+Video height is capped even for generic direct URLs. Posters use the existing
+pool extractor and are best effort. Result does not contain a filesystem path
+or inline preview. Existing authenticated pool routes/resources can resolve
+`asset.id`; `getStudioJobArtifact` also accepts an owned completed import job
+and rechecks its current pool ownership and file hash before returning its
+server-only path. Job reads retain historical metadata; if the owner later
+explicitly deletes the unused Art, artifact lookup returns `ASSET_NOT_FOUND`
+instead of serving a stale path. Changed bytes return `RESULT_HASH_MISMATCH`.
+
+Imports run through the same separate Node child, process-group termination,
+lease heartbeat, three-attempt recovery, cancellation and scoped worker CLI.
+The child reuses yt-dlp probe/download and pool probe/poster utilities. It never
+inserts Art rows. Complete normalized bytes are moved from attempt staging to
+an attempt-specific pool directory; only an unexpired current running attempt
+can atomically insert the complete Art and mark its job done. Fresh
+`media:upload` authorization and the role's pool quota are checked at enqueue,
+execution and inside this publication transaction. A canceled/losing attempt
+cannot expose an empty-path Art or duplicate logical result. Recovering/deleting
+an import cleans abandoned permanent staging directories only when no owned
+Art points into them. Attempt cleanup never removes another attempt's output.
+Crashes between the move and the transaction therefore leave recoverable
+private orphan bytes, not visible pool records.
+
+Ordinary imports use the existing 100 MiB account pool quota; admins have no
+account pool-byte ceiling. The technical budgets apply to both: 512 MiB final
+media, a 20-minute attempt timeout, at most 2 hours of media, the existing
+2048 MiB child heap, and a 2 GiB temporary-attempt disk budget checked every
+second, including downloaded, normalized and staged copies. yt-dlp also gets
+the execution-time remaining pool/output ceiling via `--max-filesize`, and
+actual downloaded/final sizes are checked. Sampling permits transient disk
+overshoot; it is not an OS quota. Encoded normalization beyond the duration
+limit is stopped and rejected, never silently published as a truncated import.
+Transient download failures use `IMPORT_FAILED`, retry after 1/2 seconds and
+fail after attempt 3; no automatic yt-dlp self-update mutates a shared binary.
+`POOL_QUOTA`, `IMPORT_DURATION_EXCEEDED`, `IMPORT_MEDIA_INVALID` and technical
+budget/permission failures are terminal. Child error text does not expose
+URLs, credentials, local paths or upstream stderr to callers.
+
+Completed imported media belongs to the pool independently of job history.
+`deleteStudioJob` retains its normal active/lease guard and, for imports,
+returns `{deleted:true,id,preservedAssetId:string|null}`. It always preserves
+an existing imported Art, used or unused, and removes attempt scratch/orphans.
+Use explicit pool deletion to remove that Art; existing project/draft/history
+reference guards still report `STUDIO_ASSET_IN_USE`. A deleted Art produces
+`preservedAssetId:null`. Import media counts once in ordinary pool usage
+(`Art.sizeBytes`, with the same poster accounting as existing pool uploads),
+not again in `studio.resultBytes`; import job `outputBytes` is zero. Account
+job guards and account pool-directory cleanup remain unchanged. There is no
+relation to legacy `DownloadJob` records, whose services/UI remain available.
+
+Test fixtures explicitly clear `YTDLP_PROXY` only in their own test/child
+environment, serve generated media on loopback, use unique accounts and scoped
+job IDs, and never change production `.env` or start an unscoped worker.

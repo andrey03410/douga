@@ -352,3 +352,57 @@ export async function deleteArts(userId: string, ids: string[]): Promise<BulkDel
   }
   return { deleted, failed };
 }
+
+/** Prepared pool bytes, with no visible database row. Caller owns the directory
+ * and must publish with its authorization/quota/attempt transaction or clean it. */
+export interface PreparedPoolArt {
+  id: string;
+  filePath: string;
+  label: string | null;
+  kind: PoolKind;
+  sizeBytes: number;
+  durationSec: number | null;
+  hasAudio: boolean;
+  posterPath: string | null;
+}
+export async function preparePoolArtFromFile(input: {
+  id: string;
+  sourcePath: string;
+  directory: string;
+  kind: "audio" | "video";
+  label: string | null;
+}): Promise<PreparedPoolArt> {
+  const { mkdir, copyFile, stat } = await import("node:fs/promises");
+  const ext = path.extname(input.sourcePath).toLowerCase();
+  if (!(input.kind === "audio" ? AUDIO_EXT : VIDEO_EXT).includes(ext))
+    throw new Error("BAD_EXT");
+  const filePath = `${input.directory}/media${ext}`;
+  await mkdir(absPath(input.directory), { recursive: true });
+  await copyFile(input.sourcePath, absPath(filePath));
+  const info = await probeMediaInfo(absPath(filePath));
+  if (
+    !info.durationSec ||
+    (input.kind === "video" ? !info.hasVideo : !info.hasAudio)
+  )
+    throw new Error("IMPORT_MEDIA_INVALID");
+  let posterPath: string | null = null;
+  if (input.kind === "video") {
+    const poster = `${input.directory}/poster.jpg`;
+    try {
+      await extractPoster(absPath(filePath), absPath(poster));
+      posterPath = poster;
+    } catch {
+      await removePath(poster);
+    }
+  }
+  return {
+    id: input.id,
+    filePath,
+    label: input.label,
+    kind: input.kind,
+    sizeBytes: (await stat(absPath(filePath))).size,
+    durationSec: info.durationSec,
+    hasAudio: info.hasAudio,
+    posterPath,
+  };
+}

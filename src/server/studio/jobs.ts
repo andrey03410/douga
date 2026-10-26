@@ -15,6 +15,7 @@ import {
 import { freezeStudioProject } from "./revisions";
 import { StudioError } from "./errors";
 import { cleanupDirectory, fileHash, safeFile } from "./assets";
+import { cleanupImportPool } from "./imports";
 import { prepareStudioEngine } from "./engine";
 import type { StudioFrozenRevision } from "./types";
 import {
@@ -22,7 +23,7 @@ import {
   studioJobLimits,
   type StartStudioJobInput,
   type StudioJobView,
-  type StudioJobResult,
+  type StudioJobOutput,
 } from "./job-types";
 export const activeJobStatuses = ["queued", "running"];
 export const jobDirectory = (userId: string, id: string) =>
@@ -232,14 +233,44 @@ export async function deleteStudioJob(userId: string, id: string) {
     return row;
   });
   await cleanupDirectory(jobDirectory(row.userId, row.id));
-  return { deleted: true as const, id };
+  if (row.kind === "import") await cleanupImportPool(row);
+  const result = row.resultJson
+    ? (JSON.parse(row.resultJson) as StudioJobOutput)
+    : null;
+  const preservedAssetId =
+    result?.kind === "import" &&
+    (await prisma.art.findFirst({ where: { id: result.asset.id, userId } }))
+      ? result.asset.id
+      : null;
+  return {
+    deleted: true as const,
+    id,
+    ...(row.kind === "import" ? { preservedAssetId } : {}),
+  };
 }
 /** Trusted adapters only: never accept a client path, and authenticate on every read. */
 export async function getStudioJobArtifact(userId: string, id: string) {
   const row = await ownedJob(userId, id);
   if (row.status !== "done" || !row.resultJson || !row.leaseToken)
     throw new StudioError("RESULT_NOT_READY");
-  const result = JSON.parse(row.resultJson) as StudioJobResult;
+  const result = JSON.parse(row.resultJson) as StudioJobOutput;
+  if (result.kind === "import") {
+    const art = await prisma.art.findFirst({
+      where: { id: result.asset.id, userId },
+    });
+    if (!art) throw new StudioError("ASSET_NOT_FOUND");
+    const file = await safeFile(art.filePath);
+    if ((await fileHash(file)) !== result.asset.hash)
+      throw new StudioError("RESULT_HASH_MISMATCH");
+    return {
+      path: file,
+      jobId: id,
+      name: path.basename(file),
+      mimeType: result.asset.mimeType,
+      bytes: result.asset.bytes,
+      hash: result.asset.hash,
+    };
+  }
   const file = await safeFile(
     `${jobDirectory(userId, id)}/attempts/${row.leaseToken}/${path.basename(result.resource.name)}`,
   );

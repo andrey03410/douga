@@ -16,7 +16,7 @@ export function isQuality(q: number): boolean {
  * the browser preview and renders without transcoding; audio prefers m4a.
  */
 export function formatSelector(mode: DownloadMode, quality: number): string {
-  if (mode === "audio") return "bestaudio[ext=m4a]/bestaudio";
+  if (mode === "audio") return "bestaudio[ext=m4a]/bestaudio/best";
   // The trailing unconditional /best covers sources that don't report height
   // (direct files via the generic extractor); site extractors match earlier
   // alternatives, so the quality cap still applies where it can.

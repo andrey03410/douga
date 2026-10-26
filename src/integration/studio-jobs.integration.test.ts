@@ -193,6 +193,7 @@ it("renders an authorized immutable still and H264/AAC clip in separate worker p
     expect(result.status, result.error ?? undefined).toBe("done");
     expect(result.revision).toBe(1);
     expect(result.snapshotHash).toBe(job.snapshotHash);
+    if (result.result?.kind === "import") throw new Error("Unexpected import result");
     expect(result.result?.resource.bytes).toBeGreaterThan(100);
     expect(JSON.stringify(result)).not.toContain("/Users/");
     await expect(studio.getStudioJobArtifact(other, job.id)).rejects.toThrow(

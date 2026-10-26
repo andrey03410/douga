@@ -26,6 +26,49 @@ export const startStudioJobSchema = z.discriminatedUnion("kind", [
   z.object({ ...common, kind: z.literal("render") }).strict(),
 ]);
 export type StartStudioJobInput = z.infer<typeof startStudioJobSchema>;
+export const startStudioImportSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .max(4096)
+      .url()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (
+            ["http:", "https:"].includes(url.protocol) &&
+            !url.username &&
+            !url.password
+          );
+        } catch {
+          return false;
+        }
+      }, "HTTP(S) URL without credentials required"),
+    mode: z.enum(["audio", "video"]),
+    quality: z
+      .union([z.literal(480), z.literal(720), z.literal(1080)])
+      .optional(),
+    idempotencyKey: common.idempotencyKey,
+  })
+  .strict();
+export type StartStudioImportInput = z.infer<typeof startStudioImportSchema>;
+export interface StudioImportResult {
+  kind: "import";
+  asset: {
+    id: string;
+    kind: "audio" | "video";
+    label: string | null;
+    bytes: number;
+    hash: string;
+    mimeType: "audio/mp4" | "video/mp4";
+    durationSec: number;
+    hasAudio: boolean;
+    hasVideo: boolean;
+    poster: boolean;
+  };
+}
+export type StudioJobOutput = StudioJobResult | StudioImportResult;
 export type StudioJobStatus =
   | "queued"
   | "running"
@@ -53,7 +96,7 @@ export interface StudioJobView {
   id: string;
   projectId: string | null;
   snapshotId: string | null;
-  kind: StartStudioJobInput["kind"];
+  kind: StartStudioJobInput["kind"] | "import";
   status: StudioJobStatus;
   progress: number;
   attempts: number;
@@ -62,7 +105,7 @@ export interface StudioJobView {
   revisionId: string | null;
   snapshotHash: string | null;
   engineId: string;
-  result: StudioJobResult | null;
+  result: StudioJobOutput | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +119,9 @@ export const studioJobLimits = Object.freeze({
   leaseMs: 30_000,
   heartbeatMs: 5_000,
   previewTimeoutMs: 20 * 60_000,
+  importTimeoutMs: 20 * 60_000,
+  importMaxDurationSec: 2 * 60 * 60,
+  importMaxTemporaryBytes: 2 * 1024 * 1024 * 1024,
   renderTimeoutMs: 4 * 60 * 60_000,
   childHeapMiB: 2048,
   mediaCacheBytes: 256 * 1024 * 1024,

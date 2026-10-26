@@ -5,6 +5,13 @@ import { cleanupDirectory } from "./assets";
 import { runStudioChild } from "./engine";
 import { jobActor, jobDirectory, jobView, assertStudioJobQuota } from "./jobs";
 import { canonical, hash } from "./shared";
+import {
+  cleanupImportPool,
+  importBudget,
+  publishImport,
+  stageImportPublication,
+  type PreparedStudioImport,
+} from "./imports";
 import { StudioError } from "./errors";
 import {
   studioJobLimits,
@@ -115,6 +122,9 @@ const terminalErrors = new Set([
   "OUTPUT_BUDGET_EXCEEDED",
   "JOB_QUOTA_EXCEEDED",
   "JOB_TIMEOUT",
+  "POOL_QUOTA",
+  "IMPORT_DURATION_EXCEEDED",
+  "IMPORT_MEDIA_INVALID",
 ]);
 export async function runStudioWorkerOnce(
   options: { jobId?: string; workerId?: string } = {},
@@ -140,50 +150,78 @@ export async function runStudioWorkerOnce(
   }, studioJobLimits.heartbeatMs);
   try {
     await jobActor(job.userId, job.kind);
-    if (!job.snapshotId) throw new StudioError("SNAPSHOT_MISSING");
-    const snapshot = await prisma.studioSnapshot.findUniqueOrThrow({
-      where: { id: job.snapshotId },
-    });
-    const frozen = JSON.parse(snapshot.payloadJson) as StudioFrozenRevision;
-    const { snapshotId: _, hash: expected, ...content } = frozen;
-    if (hash(canonical(content)) !== expected)
-      throw new StudioError("SNAPSHOT_HASH_MISMATCH");
-    if (!(await heartbeatStudioJob(job.id, token)))
-      throw new StudioError("LEASE_LOST");
-    const result = await runStudioChild<StudioJobResult>(
-      {
-        operation: "render",
-        jobId: job.id,
-        leaseToken: token,
-        directory,
-        engineId: job.engineId,
-        frozen,
-        input: JSON.parse(job.inputJson) as StartStudioJobInput,
-      },
-      {
-        timeoutMs:
-          job.kind === "render"
-            ? studioJobLimits.renderTimeoutMs
-            : studioJobLimits.previewTimeoutMs,
-        signal: abort.signal,
-        onProgress: (n) => {
-          progress = n;
+    let imported: PreparedStudioImport | undefined;
+    let result: import("./job-types").StudioJobOutput;
+    if (job.kind === "import") {
+      await cleanupImportPool(job);
+      const maxBytes = await importBudget(job.userId);
+      imported = await runStudioChild<PreparedStudioImport>(
+        {
+          operation: "import",
+          jobId: job.id,
+          leaseToken: token,
+          directory,
+          input: JSON.parse(job.inputJson),
+          maxBytes,
         },
-      },
-    );
+        {
+          timeoutMs: studioJobLimits.importTimeoutMs,
+          signal: abort.signal,
+          onProgress: (n) => {
+            progress = n;
+          },
+        },
+      );
+      imported = await stageImportPublication(job, imported);
+      result = imported.result;
+    } else {
+      if (!job.snapshotId) throw new StudioError("SNAPSHOT_MISSING");
+      const snapshot = await prisma.studioSnapshot.findUniqueOrThrow({
+        where: { id: job.snapshotId },
+      });
+      const frozen = JSON.parse(snapshot.payloadJson) as StudioFrozenRevision;
+      const { snapshotId: _, hash: expected, ...content } = frozen;
+      if (hash(canonical(content)) !== expected)
+        throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      if (!(await heartbeatStudioJob(job.id, token)))
+        throw new StudioError("LEASE_LOST");
+      result = await runStudioChild<StudioJobResult>(
+        {
+          operation: "render",
+          jobId: job.id,
+          leaseToken: token,
+          directory,
+          engineId: job.engineId,
+          frozen,
+          input: JSON.parse(job.inputJson) as StartStudioJobInput,
+        },
+        {
+          timeoutMs:
+            job.kind === "render"
+              ? studioJobLimits.renderTimeoutMs
+              : studioJobLimits.previewTimeoutMs,
+          signal: abort.signal,
+          onProgress: (n) => {
+            progress = n;
+          },
+        },
+      );
+    }
     await prisma.$transaction(async (db) => {
       const user = await jobActor(job.userId, job.kind, db);
-      await assertStudioJobQuota(
-        job.userId,
-        user.role,
-        db,
-        result.resource.bytes,
-      );
+      if (result.kind !== "import")
+        await assertStudioJobQuota(
+          job.userId,
+          user.role,
+          db,
+          result.resource.bytes,
+        );
       const now = new Date();
       const slotRow = await db.studioWorkerLease.findFirst({
         where: { id: slot, token, until: { gt: now } },
       });
       if (!slotRow) throw new StudioError("LEASE_LOST");
+      if (imported) await publishImport(db, job, imported);
       const changed = await db.studioJob.updateMany({
         where: {
           id: job.id,
@@ -195,7 +233,7 @@ export async function runStudioWorkerOnce(
           status: "done",
           progress: 1,
           resultJson: JSON.stringify(result),
-          outputBytes: result.resource.bytes,
+          outputBytes: result.kind === "import" ? 0 : result.resource.bytes,
           leaseUntil: null,
           error: null,
         },
@@ -204,7 +242,12 @@ export async function runStudioWorkerOnce(
     });
     published = true;
   } catch (error) {
-    const code = error instanceof StudioError ? error.code : "RENDER_FAILED";
+    const code =
+      error instanceof StudioError
+        ? error.code
+        : job.kind === "import"
+          ? "IMPORT_FAILED"
+          : "RENDER_FAILED";
     await prisma.studioJob.updateMany({
       where: {
         id: job.id,
@@ -226,7 +269,10 @@ export async function runStudioWorkerOnce(
   } finally {
     clearInterval(timer);
     abort.abort();
-    if (published) await cleanupDirectory(`${directory}/serve`);
+    if (job.kind === "import") {
+      await cleanupDirectory(directory);
+      await cleanupImportPool(job, token);
+    } else if (published) await cleanupDirectory(`${directory}/serve`);
     else await cleanupDirectory(directory);
     await prisma.$transaction(async (db) => {
       await db.studioJob.updateMany({
