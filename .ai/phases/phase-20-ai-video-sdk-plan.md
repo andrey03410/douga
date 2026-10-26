@@ -53,43 +53,56 @@
 - `ResolvedAsset` includes `id,kind,src,durationSec?,hasAudio?,posterSrc?,width?,height?,hash?`; manifest resolves document's media keys. Bindings support pool art, owned tournament track and standard built-in sounds.
 - Lock exact additional shape names in schema and contract documentation before reporting; later tasks consume those actual types instead of inventing another model.
 
-- [ ] Write failing tests covering all approved feature families, compile the full module (not mocks): source-order vs display-order, inherited/local values, grid/arc/free layout, groups/answer-scene, card/video/crop/fit/offset/loop, all label phases, music/sfx/voice layers, geometry in all formats and >9 cards, unknown fields/types and nonfinite values, protected stable IDs, media-free extraction and preset application preserving content.
-- [ ] Run `npx vitest run src/video`; expected missing SDK failure before implementation.
-- [ ] Implement a practical recursively composable node/scene schema; ready-made top/picker blocks plus custom nodes with keyframes, timing and layers. Support dynamic source repetition so ranked participants are never hardcoded into fixed scene indexes. Include top and picker feature parity listed in Global Constraints.
-- [ ] Generate built-in preset families for top classic/minimal/cinematic and picker classic/portrait/memory/arc/two-groups/three-groups/separate-answer in all three formats. Default picker skeleton is 30 rounds ×4 where appropriate; allow test/agent overrides for shorter content. Presets carry structure and generic placeholder slots, no media or thematic answers. Include schema-discoverable builders and examples usable by external agents.
-- [ ] Run focused tests and `npx tsc --noEmit`; report exact failing pre-existing checks if any. Commit domain deliverable only.
+- [x] Write failing tests covering all approved feature families, compile the full module (not mocks): source-order vs display-order, inherited/local values, grid/arc/free layout, groups/answer-scene, card/video/crop/fit/offset/loop, all label phases, music/sfx/voice layers, geometry in all formats and >9 cards, unknown fields/types and nonfinite values, protected stable IDs, media-free extraction and preset application preserving content.
+- [x] Run `npx vitest run src/video`; expected missing SDK failure before implementation.
+- [x] Implement a practical recursively composable node/scene schema; ready-made top/picker blocks plus custom nodes with keyframes, timing and layers. Support dynamic source repetition so ranked participants are never hardcoded into fixed scene indexes. Include top and picker feature parity listed in Global Constraints.
+- [x] Generate built-in preset families for top classic/minimal/cinematic and picker classic/portrait/memory/arc/two-groups/three-groups/separate-answer in all three formats. Default picker skeleton is 30 rounds ×4 where appropriate; allow test/agent overrides for shorter content. Presets carry structure and generic placeholder slots, no media or thematic answers. Include schema-discoverable builders and examples usable by external agents.
+- [x] Run focused tests and `npx tsc --noEmit`; report exact failing pre-existing checks if any. Commit domain deliverable only.
 
 ### Task 2: Shared Remotion renderer
 
-**Files:** Create `src/remotion/StudioVideo.tsx` and focused helpers if needed, modify `src/remotion/Root.tsx`; add rendering-boundary tests in `src/video/` or `src/integration/studio-render.test.ts`.
+**Files:** Create `src/remotion/StudioVideo.tsx` and focused helpers if needed, modify `src/remotion/Root.tsx`; add rendering-boundary tests in `src/video/` or `src/integration/studio-render.test.ts`. A bounded parity correction in `src/video/blocks.ts` / layout and its regression tests is included for equal automatic card sizes in asymmetric groups.
 
 **Interfaces:** Consume actual Task 1 `CompiledVideo` and nodes/audio. Produce `StudioVideo({plan}: {plan:CompiledVideo})` and composition ID `Studio`. Asset refs in the passed plan are usable URLs (Player) or worker-prepared URLs (render); renderer does not read the database or mutate inputs.
 
-- [ ] Write failing tests for frame evaluation of custom keyframes, appearance/answer phases, video synchronization and audio envelopes; run and observe failures.
-- [ ] Implement visual primitives, cards/groups, text wrapping, timer, transforms/style/layers, custom nodes, transitions, backgrounds and all compiled audio cues. Respect crop/fit/start/loop and distinguish primary/voice/music/sfx with consistent volume envelopes.
-- [ ] Register dynamic format/fps/duration metadata; use frame-driven animation and deterministic seed, not wall time.
-- [ ] Run tests and TypeScript. Render a small real frame/MP4 via a temporary fixture after building the bundle; inspect output before claiming renderer completion.
-- [ ] Commit renderer and evidence in task report.
+- [x] Write failing tests for frame evaluation of custom keyframes, appearance/answer phases, video synchronization and audio envelopes; run and observe failures.
+- [x] Add regression coverage for one automatic card size across asymmetric grouped rounds, in all formats/orientations; preserve intentional explicit free-layout/group exceptions and fix the compiler geometry if needed.
+- [x] Implement visual primitives, cards/groups, text wrapping, timer, transforms/style/layers, custom nodes, transitions, backgrounds and all compiled audio cues. Respect crop/fit/start/loop and distinguish primary/voice/music/sfx with consistent volume envelopes.
+- [x] Register dynamic format/fps/duration metadata; use frame-driven animation and deterministic seed, not wall time.
+- [x] Run tests and TypeScript. Render a small real frame/MP4 via a temporary fixture after building the bundle; inspect output before claiming renderer completion.
+- [x] Commit renderer and evidence in task report.
 
-### Task 3: Persistent studio services, source sync, assets, revisions and worker
+### Task 3: Persistent projects, source sync, assets, drafts and history
 
-**Files:** Modify `prisma/schema.prisma`, `src/server/{arts,users,tournaments}.ts` only as required for references/source events; create `src/server/studio/` modules, `scripts/studio-worker.ts`, integration tests and package worker script. Additive schema only; back up local DB before `prisma db push`.
+**Files:** Additive `prisma/schema.prisma` models; `src/server/studio/{types,projects,revisions,assets,sources,presets,errors,index}.ts` (split focused modules as needed); relevant arts/users/tournaments/domain-usage updates; `src/integration/studio-projects.integration.test.ts` and domain caption regressions. Back up local DB before schema push. Read `task-3-handoff.md` for concrete existing-code hazards.
 
-**Interfaces:** Consume Task 1 SDK and Task 2 renderer. Export from `src/server/studio/index.ts`: `createStudioProject(userId,input)`, `listStudioProjects(userId)`, `getStudioProject(userId,id)`, `saveStudioDraft(userId,id,input)`, `commitStudioDraft(userId,id,input)`, `restoreStudioRevision(userId,id,input)`, `listStudioRevisions(userId,id)`, `listStudioPresets(userId)`, `saveStudioPreset(userId,input)`, `getStudioManifest(userId,document,mode)`, `startStudioJob(userId,projectId,input)`, `getStudioJob(userId,jobId)`, `cancelStudioJob(userId,jobId)`, `runStudioWorkerOnce(options?)`.
-- Project view returns at least `{id,title,kind,revision,document,draft,validation,plan,sourceVersion}`; draft/commit inputs use `expectedRevision` and optional idempotency key. Jobs fix document+source revision+resolved plan+asset manifest, have type still/clip/audio/render, status/progress/result and cancellation.
-- Choose and document exact service input/output types in `src/server/studio/types.ts` and SDK contract, then MCP/UI consume them. Use project/draft/revision/job asset reference records with Restrict semantics.
+**Interfaces:** Consume Task1 document/compiler and Task2 renderer contract. Export from `src/server/studio/index.ts`: `createStudioProject(userId,input)`, `listStudioProjects(userId)`, `getStudioProject(userId,id)`, `saveStudioDraft(userId,id,input)`, `commitStudioDraft(userId,id,input)`, `restoreStudioRevision(userId,id,input)`, `listStudioRevisions(userId,id)`, `listStudioPresets(userId)`, `saveStudioPreset(userId,input)`, `getStudioManifest(userId,document,mode)`, `freezeStudioProject(userId,id,input?)` and owner-checked deletion of projects/presets/old revisions.
+- Project view includes `{id,title,kind,revision,document,draft,validation,plan,sourceVersion}`; exact DTOs/input schemas are documented in service types and SDK contract before downstream implementation.
+- CAS covers draft saves, commits and source updates; mutations accept idempotency keys. `freezeStudioProject` returns an immutable, owned, validated revision snapshot with resolved plan and copied/hashed media manifest for Task4; requested invalid/current drafts do not silently render a different version.
 
-- [ ] Write failing DB tests for create/read ownership, arbitrary-object tops, draft validation/commit/rollback, CAS conflicts and idempotency, preset media stripping, asset deletion protection (including historical/draft bindings), automatic tournament reorder/add/remove retaining correct media/styles, missing source/media and frozen job snapshots. Observe RED.
-- [ ] Add new studio tables; keep old project source models and data intact. Implement transactions, stable source binding, persistent source-change events or revision comparison that guarantees automatic current reads plus worker reconciliation. Account for simultaneous source and document edits.
-- [ ] Resolve owned pool/track/builtin media with hashes and immutable imports, include usable metadata, generated standard sounds, resource URLs and durable references. Preserve old media import quota rules. Reject foreign/missing media and unsafe media paths atomically.
-- [ ] Implement durable SQLite jobs with lease/heartbeat/retry/cancel and separate worker; build/cache versioned Remotion bundle, prepare per-job static assets, render still/clip/audio/full MP4, persist source/input hashes and exact revision. A queued job must not reread mutable head content.
-- [ ] Verify tests, run additive schema setup and real worker rendering; record backup path without exposing credentials. Commit service deliverable and worker documentation.
+- [ ] Write failing real-DB tests for create/read/ownership, arbitrary-object tops, invalid draft retention/last-good preview, draft and commit CAS, idempotency replay/conflicts, rollback, media-free personal presets, asset deletion protection and source reorder/add/remove with per-ID media/captions/settings retained. Observe RED.
+- [ ] Add optional participant `caption` separate from source `label`, use it in standard cards/top below closer card-label overrides, and retain it across source updates; cover domain and service regressions RED→GREEN. Complete approved event-relative audio cue anchors and media-free preset sound-rule preservation (see handoff); existing absolute cues remain valid.
+- [ ] Implement additive tables, typed services, transactions, stable source binding and automatic synchronization using actual ranking/topSize hashes (reorder does not update tournament timestamp). Preserve old projects/data. Persist source snapshots/history and mark stale verification/last-good previews accurately.
+- [ ] Resolve owned pool/track/builtin media and fonts/runtime metadata; preserve immutable file bytes with content hashes; implement actual absent-active-window RMS resolution using existing utilities. Protect draft/revision references before filesystem deletion; integrate usage counts/account information and safe lifecycle release. Include owner-checked cleanup/old-version deletion without deleting current/last-good state.
+- [ ] Run focused tests, TypeScript and full suite once. Generate client/apply only additive schema after backup; document exact exports and snapshot/static-asset conventions. Commit service deliverable and detailed report.
 
-### Task 4: MCP discovery, editing, inspection and rendering
+### Task 4: Durable preview and render worker
+
+**Files:** Additive studio-job models in `prisma/schema.prisma`; `src/server/studio/{jobs,worker,render,types,index}.ts` or adjacent focused modules; `scripts/studio-worker.ts`; package worker script; `src/integration/studio-jobs.integration.test.ts`.
+
+**Interfaces:** Consume Task3 frozen revision/manifests and Task2 `StudioVideo`/Studio composition. Export `startStudioJob(userId,projectId,input)`, `getStudioJob(userId,jobId)`, `cancelStudioJob(userId,jobId)`, `deleteStudioJob(userId,jobId)`, `runStudioWorkerOnce(options?:{jobId?:string;workerId?:string})` from the service barrel. Jobs support still/clip/audio/render and original-asset inspection/import as needed by parity; exact discriminated inputs/results are documented before Task5. Freeze at enqueue; no mutable-head reread at worker start.
+
+- [ ] Write failing DB tests for frozen inputs across source/document changes, one claim per job, leases/recovery/retry, idempotent enqueue, cancellation, permission/ownership/quota, preview budgets vs final admin render, protected artifacts and safe cleanup. Test workers scope themselves to their own generated job ID. Observe RED.
+- [ ] Implement separate Node worker with durable SQLite queue, lease/heartbeat, bounded retry/resource budgets, status/progress and cancellation. Default one heavy render at a time. Source reconciliation can run in the worker and on current-project reads.
+- [ ] Prepare immutable per-job static assets, build/cache versioned Remotion bundle with existing @ alias, render still/short clip/audio/full MP4 via the common plan. Static mode rewrites all visual/audio/poster sources to copied publicDir-relative paths. Return authenticated resource metadata and exact revision/hash. Preview jobs are available to authors under limited duration/resolution; final render checks fresh admin role.
+- [ ] Integrate job-aware revision/project/asset deletion guards and user usage/results. Preserve actual bytes for historical rerendering; canceled output must never later become done. Inspect real frame and MP4 through actual worker execution.
+- [ ] Run focused job tests, TypeScript and full suite once; commit worker, script and docs with detailed evidence/report.
+
+### Task 5: MCP discovery, editing, inspection and rendering
 
 **Files:** Create `src/mcp/studio-tools.ts`, modify `src/mcp/server.ts`, add `src/integration/studio-mcp.integration.test.ts` and exact protocol examples to SDK contract.
 
-**Interfaces:** `registerStudioTools(server: McpServer, actor: Actor): void` uses Task 3 services. Namespace new tools `video_*`; preserve useful existing media/discovery tools, no old contract compatibility requirement. Server schemas are derived from SDK/service schemas, not independently maintained.
+**Interfaces:** `registerStudioTools(server: McpServer, actor: Actor): void` uses Task 3 project services and Task 4 jobs. Namespace new tools `video_*`; preserve useful existing media/discovery tools, no old contract compatibility requirement. Server schemas are derived from SDK/service schemas, not independently maintained.
 
 - [ ] Write a real stdio MCP client test that discovers schemas/presets/examples, creates a project, binds media, edits/validates/commits, gets explicit image/audio preview, starts/polls/cancels a job and checks permission denial/isolation/CAS/idempotent retry. Observe RED.
 - [ ] Expose capabilities, document/schema/examples, preset catalog/save/apply, project list/create/read, draft replace/semantic patch/validate/commit/restore/history, asset inspection/import access, still/clip/audio preview, final render/job status/cancel.
@@ -97,11 +110,11 @@
 - [ ] Recheck role fresh for mutations/render. Do not use stale cached role to bypass permissions or leak another user's absolute media paths.
 - [ ] Run MCP tests and TypeScript; commit adapter and docs.
 
-### Task 5: Authenticated SDK website and preview parity
+### Task 6: Authenticated SDK website and preview parity
 
 **Files:** Create `src/app/studio/[id]/page.tsx`, editor components, `src/app/api/studio/` routes using Task 3 services; modify project listing/navigation and tournament results/render entry links as needed; personal preset browsing. New creation flows point users to external MCP/code; preserve access to existing old projects.
 
-**Interfaces:** All routes call the same services as MCP. JSON editor supports draft/save/validate/commit with revision conflict handling; preview consumes Task 1 plan and Task 2 StudioVideo. Media/result URLs enforce owner access and support Range. UI does not maintain a competing visual settings model.
+**Interfaces:** All routes call the same Task3/Task4 services as MCP. JSON editor supports draft/save/validate/commit with revision conflict handling; preview consumes Task 1 plan and Task 2 StudioVideo. Media/result URLs enforce owner access and support Range. UI does not maintain a competing visual settings model.
 
 - [ ] Write focused route/service tests for auth, CAS, malformed JSON, last-good-preview behavior and media Range. Observe RED.
 - [ ] Build readable Russian SDK workspace: code editing, diagnostics linked to node/field, explicit preview reveal, asset browsing/inspection, versions/diff/restore, preset save/catalog and job status/cancel/download. Keep surprise preview hidden until requested.
@@ -109,7 +122,7 @@
 - [ ] Run tests, TypeScript and production build. Check the running site through CUA: project listing, edit/invalid draft/conflict, preview, presets, revisions and job result. Fix usability issues found against this workflow.
 - [ ] Commit UI deliverable with actual browser evidence in task report.
 
-### Task 6: End-to-end acceptance, regression repairs and handoff
+### Task 7: End-to-end acceptance, regression repairs and handoff
 
 **Files:** Add `scripts/verify-studio.mjs` and integration acceptance fixtures/tests as needed; update README/CLAUDE.md and `.ai/phases/phase-20-verification.md` with real evidence.
 
