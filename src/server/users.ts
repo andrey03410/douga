@@ -27,8 +27,8 @@ async function backfillSizes(userId: string): Promise<void> {
     select: { id: true, filePath: true },
   });
   for (const t of tracks) {
-    await prisma.track.update({
-      where: { id: t.id },
+    await prisma.track.updateMany({
+      where: { id: t.id, sizeBytes: null },
       data: { sizeBytes: await fileSize(t.filePath) },
     });
   }
@@ -37,8 +37,8 @@ async function backfillSizes(userId: string): Promise<void> {
     select: { id: true, filePath: true },
   });
   for (const a of arts) {
-    await prisma.art.update({
-      where: { id: a.id },
+    await prisma.art.updateMany({
+      where: { id: a.id, sizeBytes: null },
       data: { sizeBytes: await fileSize(a.filePath) },
     });
   }
@@ -51,8 +51,8 @@ async function backfillSizes(userId: string): Promise<void> {
     select: { id: true, outputPath: true },
   });
   for (const j of jobs) {
-    await prisma.renderJob.update({
-      where: { id: j.id },
+    await prisma.renderJob.updateMany({
+      where: { id: j.id, outputBytes: null },
       data: { outputBytes: await fileSize(j.outputPath as string) },
     });
   }

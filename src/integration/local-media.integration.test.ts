@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile, mkdir, symlink, readdir } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, symlink, readdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -53,7 +53,7 @@ beforeAll(async () => {
   const user = await prisma.user.create({ data: { email: EMAIL, passwordHash: "x" } });
   userId = user.id;
 
-  const base = await mkdtemp(path.join(tmpdir(), "local-media-"));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), "local-media-")));
   root = path.join(base, "ost");
   outside = path.join(base, "secrets");
   await mkdir(root, { recursive: true });
