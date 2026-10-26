@@ -224,14 +224,38 @@ describe("Studio frame evaluation", () => {
       "answer-card": 29,
     });
   });
+  it("rejects incomplete crop metadata explicitly when a caller bypasses compilation", () => {
+    const media = {
+      asset: { id: "incomplete", src: "image.png", kind: "image" as const },
+      offsetFrames: 0,
+      loopFrames: null,
+      fit: "contain" as const,
+      crop: { x: 0.25, y: 0, width: 0.5, height: 1 },
+    };
+    expect(() =>
+      mediaLayout(media, { x: 0, y: 0, width: 300, height: 200 }),
+    ).toThrow(/MEDIA_DIMENSIONS_REQUIRED.*incomplete/);
+    expect(
+      mediaLayout(
+        { ...media, fit: "fill" },
+        { x: 0, y: 0, width: 300, height: 200 },
+      ).source,
+    ).toMatchObject({ width: "200%", height: "100%", left: "-50%" });
+    expect(
+      mediaLayout(
+        { ...media, crop: undefined },
+        { x: 0, y: 0, width: 300, height: 200 },
+      ).source,
+    ).toMatchObject({ width: "100%", height: "100%", objectFit: "contain" });
+  });
   it("fits the selected source crop without stretching contain media", () => {
     const media = {
       asset: {
         id: "i",
         src: "i.png",
         kind: "image" as const,
-        width: 800,
-        height: 400,
+        width: 200,
+        height: 100,
       },
       offsetFrames: 0,
       loopFrames: null,

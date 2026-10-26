@@ -26,6 +26,17 @@ export function compileMedia(
       "Video duration metadata is required for safe looping and end-frame hold.",
       path,
     );
+  if (
+    style.crop &&
+    (style.fit ?? "cover") !== "fill" &&
+    (!asset.width || !asset.height)
+  )
+    diagnostic(
+      ctx,
+      "MEDIA_DIMENSIONS_REQUIRED",
+      `Asset ${asset.id} requires intrinsic width and height for cropped ${style.fit ?? "cover"} media. Provide probed source dimensions.`,
+      path.replace(/\.offsetSec$/, ".crop"),
+    );
   return {
     asset,
     offsetFrames,

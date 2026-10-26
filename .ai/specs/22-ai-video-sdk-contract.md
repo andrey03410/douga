@@ -114,7 +114,14 @@ The domain compiler checks media kind, pool asset-ID and optional pinned-hash
 agreement. `src` is a resolved URL for Player or prepared URL for worker; the
 compiler does not fetch it. Video duration metadata is required to safely
 loop/hold the final source frame. Audio playlists and looping audio also require
-duration metadata. Unspecified `hasAudio` does not activate embedded sound.
+duration metadata. Intrinsic `width` and `height` remain optional for ordinary
+uncropped media and crop with `fit:"fill"`. A crop with `fit:"contain"` or
+`fit:"cover"` (including the default cover fit) requires both dimensions;
+otherwise compilation returns `MEDIA_DIMENSIONS_REQUIRED` and `ready:false`.
+Preview and worker asset preparation must probe the actual source dimensions.
+The renderer also rejects this incomplete cropped-media IR explicitly if a caller
+bypasses compilation, rather than silently stretching the selected crop.
+Unspecified `hasAudio` does not activate embedded sound.
 
 ## Settings and layout
 
@@ -267,8 +274,8 @@ Diagnostics contain severity, code, message, path and optional nodeId. Important
 codes: SCHEMA_INVALID, MANIFEST_INVALID, EMPTY_TIMELINE, PARTICIPANT_NOT_FOUND,
 ROUND_NOT_FOUND, CARD_NOT_FOUND, ANSWER_NOT_FOUND, GROUP_MEMBERSHIP_INVALID,
 GROUP_EMPTY, ROUND_EMPTY, ASSET_NOT_FOUND, ASSET_KIND_MISMATCH, ASSET_ID_MISMATCH,
-ASSET_HASH_MISMATCH, MEDIA_DURATION_REQUIRED, MEDIA_OFFSET_OUT_OF_RANGE,
-AUDIO_OFFSET_OUT_OF_RANGE, SNIPPET_DURATION_REQUIRED, SNIPPET_RANGE_INVALID,
+ASSET_HASH_MISMATCH, MEDIA_DURATION_REQUIRED, MEDIA_DIMENSIONS_REQUIRED,
+MEDIA_OFFSET_OUT_OF_RANGE, AUDIO_OFFSET_OUT_OF_RANGE, SNIPPET_DURATION_REQUIRED, SNIPPET_RANGE_INVALID,
 NODE_OUTSIDE_SCENE, ANIMATION_KEYFRAMES_INVALID, LAYOUT_POSITIONS_MISMATCH.
 Warnings include NODE_OUT_OF_BOUNDS, TEXT_MAY_BE_SMALL and
 TEXT_BINDING_UNRESOLVED. Visual readability, actual file content and ownership

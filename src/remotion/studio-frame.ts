@@ -139,6 +139,11 @@ export function mediaLayout(
   const intrinsicWidth = media.asset.width,
     intrinsicHeight = media.asset.height;
   if (!intrinsicWidth || !intrinsicHeight) {
+    if (media.crop && media.fit !== "fill") {
+      throw new Error(
+        `MEDIA_DIMENSIONS_REQUIRED: Asset ${media.asset.id} requires intrinsic width and height for cropped ${media.fit} media. Compile with probed source dimensions before rendering.`,
+      );
+    }
     return {
       viewport: { position: "absolute", inset: 0, overflow: "hidden" },
       source: media.crop

@@ -44,6 +44,15 @@ it("renders late-scene video source offsets and continuous audio policy across s
       "aevalsrc=0.125*sin(2*PI*if(lt(t\\,0.5)\\,220\\,880)*t):s=48000:d=1",
       join(publicDir, "tone.wav"),
     ]);
+    run([
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:s=200x100:r=30:d=0.1",
+      "-frames:v",
+      "1",
+      join(publicDir, "crop.png"),
+    ]);
     const plan: CompiledVideo = {
       schemaVersion: 1,
       compilerVersion: "1.0.0",
@@ -208,6 +217,79 @@ it("renders late-scene video source offsets and continuous audio policy across s
       composition.fps,
       composition.durationInFrames,
     ]).toEqual([320, 180, 30, 60]);
+    // A 200x100 source cropped to its middle square must remain a centered
+    // 200x200 square in a 300x200 destination, rather than stretch to 300x200.
+    const cropPlan: CompiledVideo = {
+      ...plan,
+      width: 320,
+      height: 220,
+      durationInFrames: 1,
+      audio: [],
+      scenes: [
+        {
+          ...plan.scenes[0],
+          from: 0,
+          durationInFrames: 1,
+          nodes: [
+            {
+              ...plan.scenes[0].nodes[0],
+              id: "crop",
+              type: "image",
+              rect: { x: 10, y: 10, width: 300, height: 200 },
+              durationInFrames: 1,
+              visible: [{ from: 0, to: 1 }],
+              media: {
+                asset: {
+                  id: "crop",
+                  kind: "image",
+                  src: "crop.png",
+                  width: 200,
+                  height: 100,
+                },
+                offsetFrames: 0,
+                loopFrames: null,
+                fit: "contain",
+                crop: { x: 0.25, y: 0, width: 0.5, height: 1 },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const cropProps = { plan: cropPlan, assetMode: "static" };
+    const cropComposition = await selectComposition({
+      serveUrl,
+      id: "Studio",
+      inputProps: cropProps,
+      browserExecutable,
+    });
+    const cropStill = join(directory, "crop.png");
+    await renderStill({
+      serveUrl,
+      composition: cropComposition,
+      inputProps: cropProps,
+      browserExecutable,
+      frame: 0,
+      output: cropStill,
+    });
+    const cropPixels = run([
+      "-i",
+      cropStill,
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "rgb24",
+      "pipe:1",
+    ]);
+    const redAt = (x: number, y: number) => cropPixels[(y * 320 + x) * 3];
+    expect(redAt(59, 110)).toBeLessThan(10);
+    expect(redAt(60, 110)).toBeGreaterThan(230);
+    expect(redAt(259, 110)).toBeGreaterThan(230);
+    expect(redAt(260, 110)).toBeLessThan(10);
+    expect(redAt(160, 9)).toBeLessThan(10);
+    expect(redAt(160, 10)).toBeGreaterThan(230);
+    expect(redAt(160, 209)).toBeGreaterThan(230);
+    expect(redAt(160, 210)).toBeLessThan(10);
     const still = join(directory, "late.png");
     await renderStill({
       serveUrl,
