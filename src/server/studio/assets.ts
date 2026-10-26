@@ -335,7 +335,7 @@ async function activeDocument(
   files: Record<string, StudioFile>,
 ) {
   const result = structuredClone(document);
-  const expanded = new Map<string, string[]>();
+  const expanded = new Map<string, VideoScene[]>();
   const output: VideoScene[] = [];
   for (const scene of result.scenes) {
     if (scene.block !== "top") {
@@ -406,11 +406,11 @@ async function activeDocument(
       output.push(scene);
       continue;
     }
-    const ids: string[] = [];
+    const copies: VideoScene[] = [];
     participants.forEach((p, i) => {
       const copy = structuredClone(scene);
       copy.id = `resolved:${encodeURIComponent(scene.id)}:${encodeURIComponent(p.id)}`;
-      ids.push(copy.id);
+      copies.push(copy);
       delete copy.repeat;
       copy.participantId = p.id;
       if (windows[i])
@@ -426,19 +426,27 @@ async function activeDocument(
       rename(copy.nodes);
       output.push(copy);
     });
-    expanded.set(scene.id, ids);
+    expanded.set(scene.id, copies);
   }
   result.scenes = output;
   if (result.audio?.cues)
     result.audio.cues = result.audio.cues.flatMap((cue) => {
-      const ids = cue.anchor?.sceneId
+      const copies = cue.anchor?.sceneId
         ? expanded.get(cue.anchor.sceneId)
         : undefined;
-      return ids
-        ? ids.map((id, i) => ({
+      const matches = copies?.filter(
+        (scene) =>
+          !cue.anchor?.participantId ||
+          scene.participantId === cue.anchor.participantId,
+      );
+      // Retain an unmatched rule so the compiler still diagnoses a genuinely
+      // missing event. A selected participant must not create failing rules for
+      // every other instance of the repeated scene.
+      return matches?.length
+        ? matches.map((scene, i) => ({
             ...cue,
             id: `${cue.id}:resolved:${i}`,
-            anchor: { ...cue.anchor!, sceneId: id },
+            anchor: { ...cue.anchor!, sceneId: scene.id },
           }))
         : [cue];
     });

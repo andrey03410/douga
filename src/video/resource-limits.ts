@@ -116,9 +116,8 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
     )
       return failure();
   }
-  // Active-snippet resolution clones every rule anchored to a repeated scene,
-  // before compilation. Bound that product before media probing/PCM analysis.
-  // Ignore narrower anchor filters conservatively: the resolver copies them too.
+  // Bound repeated-scene rule expansion before media probing/PCM analysis.
+  // Count conservatively even when selectors narrow the resolver's routing.
   let soundRules = 0;
   for (const cue of Array.isArray(doc.audio?.cues) ? doc.audio.cues : []) {
     if (!cue || typeof cue !== "object") continue;

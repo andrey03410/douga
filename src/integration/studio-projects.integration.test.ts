@@ -1192,3 +1192,198 @@ it("saves author-declared generic preset text and geometry with server metadata 
     extracted.scenes[0].nodes.find((n) => n.type === "shape"),
   ).toMatchObject({ path: geometry });
 });
+
+// Real PCM with a quiet lead-in and a loud central region exercises analysis,
+// rather than supplying the active interval the service is supposed to derive.
+async function activeAnchorDocument() {
+  const rate = 8000;
+  const data = Buffer.alloc(44 + rate * 2 * 2);
+  data.write("RIFF");
+  data.writeUInt32LE(data.length - 8, 4);
+  data.write("WAVEfmt ", 8);
+  data.writeUInt32LE(16, 16);
+  data.writeUInt16LE(1, 20);
+  data.writeUInt16LE(1, 22);
+  data.writeUInt32LE(rate, 24);
+  data.writeUInt32LE(rate * 2, 28);
+  data.writeUInt16LE(2, 32);
+  data.writeUInt16LE(16, 34);
+  data.write("data", 36);
+  data.writeUInt32LE(data.length - 44, 40);
+  for (let i = 0; i < rate * 2; i++)
+    data.writeInt16LE(
+      Math.round(
+        Math.sin((i * 2 * Math.PI * 440) / rate) *
+          (i >= rate / 2 && i < rate * 1.5 ? 24000 : 100),
+      ),
+      44 + i * 2,
+    );
+  const art = await createArt(owner, { fileName: "anchor.wav", data });
+  const document = createVideoDocument({
+    kind: "top",
+    participants: [
+      {
+        id: "first-stable",
+        label: "First",
+        rank: 1,
+        media: { audio: "sound" },
+      },
+      {
+        id: "second-stable",
+        label: "Second",
+        rank: 3,
+        media: { audio: "sound" },
+      },
+      {
+        id: "third-stable",
+        label: "Third",
+        rank: 2,
+        media: { audio: "sound" },
+      },
+    ],
+  });
+  document.settings.top = {
+    order: "descending",
+    snippet: { mode: "active", durationSec: 0.6 },
+  };
+  document.bindings.sound = { kind: "pool", assetId: art.id };
+  document.audio = {
+    cues: [
+      {
+        id: "selected-sound",
+        role: "sfx",
+        asset: "sound",
+        at: { sec: 0 },
+        duration: { sec: 0.1 },
+        anchor: {
+          event: "scene.start",
+          sceneId: "main",
+          participantId: "first-stable",
+        },
+      },
+    ],
+  };
+  return document;
+}
+
+describe("ACTIVE-ANCHOR-1: sound routing through active top expansion", () => {
+  it("creates and freezes one participant-selected sound after real analysis and rank ordering", async () => {
+    const document = await activeAnchorDocument();
+    const original = JSON.stringify(document);
+    const project = await studio.createStudioProject(owner, { document });
+    expect(project.validation).toEqual({ ready: true, diagnostics: [] });
+    expect(project.plan?.scenes.map((scene) => scene.participantId)).toEqual([
+      "second-stable",
+      "third-stable",
+      "first-stable",
+    ]);
+    const frozen = await studio.freezeStudioProject(owner, project.id);
+    expect(
+      frozen.plan.audio
+        .filter((cue) => cue.role === "sfx")
+        .map((cue) => cue.from),
+    ).toEqual([36]);
+    expect(frozen.plan.scenes.map((scene) => scene.durationInFrames)).toEqual([
+      18, 18, 18,
+    ]);
+    expect(
+      frozen.plan.audio.filter((cue) => cue.role === "primary")[0].offsetFrames,
+    ).toBeGreaterThan(0);
+    expect(
+      await prisma.studioAnalysis.findUnique({
+        where: { key: `${frozen.manifest.sound.hash}:0.6` },
+      }),
+    ).not.toBeNull();
+    expect(frozen.resolvedDocument.audio?.cues).toHaveLength(1);
+    expect(frozen.resolvedDocument.audio?.cues?.[0].anchor?.participantId).toBe(
+      "first-stable",
+    );
+    expect(project.document).toEqual(document);
+    expect(JSON.stringify(document)).toBe(original);
+  });
+  it("keeps a generic scene sound for all repeated participants", async () => {
+    const document = await activeAnchorDocument();
+    delete document.audio!.cues![0].anchor!.participantId;
+    const project = await studio.createStudioProject(owner, { document });
+    expect(project.validation).toEqual({ ready: true, diagnostics: [] });
+    const frozen = await studio.freezeStudioProject(owner, project.id);
+    expect(
+      frozen.plan.audio
+        .filter((cue) => cue.role === "sfx")
+        .map((cue) => cue.from),
+    ).toEqual([0, 18, 36]);
+  });
+  it.each(["participant", "event"] as const)(
+    "diagnoses a genuinely missing %s after active expansion",
+    async (missing) => {
+      const document = await activeAnchorDocument();
+      if (missing === "participant")
+        document.audio!.cues![0].anchor!.participantId = "nonexistent";
+      else document.audio!.cues![0].anchor!.event = "timer.start";
+      const result = await studioAssets.evaluate(owner, document);
+      expect(result.validation.ready).toBe(false);
+      expect(result.validation.diagnostics.map((d) => d.code)).toContain(
+        "AUDIO_ANCHOR_NOT_FOUND",
+      );
+      expect(
+        result.plan?.audio.filter((cue) => cue.role === "sfx"),
+      ).toHaveLength(0);
+      expect(
+        result.resolvedDocument?.audio?.cues?.[0].anchor?.participantId,
+      ).toBe(missing === "participant" ? "nonexistent" : "first-stable");
+    },
+  );
+  it.each(["manual", "authored-active"] as const)(
+    "retains selectors without analysis in the %s path",
+    async (mode) => {
+      const document = await activeAnchorDocument();
+      document.settings.top!.snippet =
+        mode === "manual"
+          ? { mode: "manual", startSec: 0.2, durationSec: 0.6 }
+          : { mode: "active", activeStartSec: 0.2, activeEndSec: 0.8 };
+      const result = await studioAssets.evaluate(owner, document);
+      expect(result.validation).toEqual({ ready: true, diagnostics: [] });
+      expect(result.resolvedDocument?.scenes).toEqual(document.scenes);
+      expect(result.resolvedDocument?.audio).toEqual(document.audio);
+      expect(
+        result.plan?.audio
+          .filter((cue) => cue.role === "sfx")
+          .map((cue) => cue.from),
+      ).toEqual([36]);
+    },
+  );
+  it("rejects repeated sound-rule multiplication before allocating or analyzing", async () => {
+    const document = createVideoDocument({
+      kind: "top",
+      participants: Array.from({ length: 500 }, (_, i) => ({
+        id: `guard-${i}`,
+        label: `P${i}`,
+        media: { audio: "sound" },
+      })),
+    });
+    document.settings.top = { snippet: { mode: "active", durationSec: 0.6 } };
+    document.bindings.sound = { kind: "builtin", name: "tick" };
+    document.audio = {
+      cues: Array.from({ length: 500 }, (_, i) => ({
+        id: `guard-cue-${i}`,
+        role: "sfx",
+        asset: "sound",
+        at: { sec: 0 },
+        anchor: {
+          event: "scene.start",
+          sceneId: "main",
+          participantId: "guard-0",
+        },
+      })),
+    };
+    const result = await studioAssets.evaluate(owner, document);
+    expect(result.validation.ready).toBe(false);
+    expect(result.validation.diagnostics.map((d) => d.code)).toEqual([
+      "RESOURCE_BUDGET_EXCEEDED",
+    ]);
+    expect(result.plan).toBeNull();
+    expect(result.resolvedDocument).toBeNull();
+    expect(result.manifest).toEqual({});
+    expect(result.files).toEqual({});
+  });
+});
