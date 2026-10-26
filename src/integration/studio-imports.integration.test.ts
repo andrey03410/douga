@@ -1,4 +1,12 @@
-import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
+import {
+  beforeAll,
+  afterAll,
+  describe,
+  it,
+  expect,
+  vi,
+  onTestFinished,
+} from "vitest";
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
@@ -371,11 +379,17 @@ describe("durable standalone imports", () => {
     async (change) => {
       const j = await start();
       let filler: string | undefined;
+      let cleaning = false;
+      let working: ReturnType<typeof studio.runStudioWorkerOnce> | undefined;
+      let cleanupPromise: Promise<void> | undefined;
       const original = importsInternal.stageImportPublication;
       const hook = vi
         .spyOn(importsInternal, "stageImportPublication")
         .mockImplementationOnce(async (job, prepared) => {
           const staged = await original(job, prepared);
+          // A timed-out test can finish while the real child is still working.
+          // Its cleanup must not be followed by late fixture mutations.
+          if (cleaning) return staged;
           if (change === "role")
             await prisma.user.update({
               where: { id: owner },
@@ -399,8 +413,46 @@ describe("durable standalone imports", () => {
             });
           return staged;
         });
+      const cleanup = () =>
+        (cleanupPromise ??= (async () => {
+          cleaning = true;
+          hook.mockRestore();
+          await prisma.user.update({
+            where: { id: owner },
+            data: { role: "user" },
+          });
+          try {
+            await studio.cancelStudioJob(owner, j.id);
+          } catch (error) {
+            // An already-running role hook may have completed after the first reset.
+            if (
+              !(error instanceof studio.StudioError) ||
+              error.code !== "FORBIDDEN"
+            )
+              throw error;
+            await prisma.user.update({
+              where: { id: owner },
+              data: { role: "user" },
+            });
+            await studio.cancelStudioJob(owner, j.id);
+          }
+          // Await the independent worker promise, never the test promise whose
+          // finally/onTestFinished is awaiting this idempotent cleanup.
+          await working?.catch(() => undefined);
+          await prisma.user.update({
+            where: { id: owner },
+            data: { role: "user" },
+          });
+          if (filler)
+            await prisma.art.deleteMany({
+              where: { id: filler, userId: owner },
+            });
+          await studio.deleteStudioJob(owner, j.id);
+        })());
+      onTestFinished(cleanup);
       try {
-        const result = await studio.runStudioWorkerOnce({ jobId: j.id });
+        working = studio.runStudioWorkerOnce({ jobId: j.id });
+        const result = await working;
         expect(result?.result).toBeNull();
         expect(result?.status).not.toBe("done");
         expect(
@@ -412,14 +464,7 @@ describe("durable standalone imports", () => {
           }),
         ).toBe(0);
       } finally {
-        hook.mockRestore();
-        await prisma.user.update({
-          where: { id: owner },
-          data: { role: "user" },
-        });
-        if (filler) await prisma.art.delete({ where: { id: filler } });
-        await studio.cancelStudioJob(owner, j.id);
-        await studio.deleteStudioJob(owner, j.id);
+        await cleanup();
       }
     },
     60_000,
