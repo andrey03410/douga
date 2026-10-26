@@ -31,7 +31,8 @@
     "react-dom": "18.3.1",
     "react-easy-crop": "^6.2.2",
     "remotion": "^4.0.230",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.5",
