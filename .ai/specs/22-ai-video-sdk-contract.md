@@ -557,3 +557,49 @@ Compiled output: 1080×1080, 30 FPS, 240 frames, 3 scenes.
 ```
 
 Compiled output: 1080×1920, 30 FPS, 225 frames, 3 scenes.
+
+## Task 3 parity additions and service boundary (2026-10-26)
+
+Participant now has optional `caption:string`. `label` remains source-owned and
+is synchronized from tournament metadata. Standard top/card captions resolve
+card/node label override → participant.caption → participant.label. Custom text
+binding `participant.label` still explicitly reads the source label. Stable-ID
+source synchronization retains caption, local media and settings. Full service
+DTOs, schemas, CAS/version semantics and immutable-media conventions are in
+[23-ai-video-service-contract.md](23-ai-video-service-contract.md).
+
+AudioCue retains required `at:Time` and now accepts optional:
+
+```ts
+anchor?: {
+  event: 'scene.start'|'card.reveal'|'timer.start'|'answer.start'|'transition.start';
+  sceneId?: string;      // authored scene template ID, applies to repeated instances
+  participantId?: string; // top scene participant, or card.reveal participant
+  roundId?: string;
+  cardId?: string;       // for card.reveal
+}
+```
+
+Without anchor, `at` is absolute as before. With anchor, `at` is an offset from
+each matching actual compiled event. Repetition yields distinct cue IDs.
+Card events use the card active-window start; timer/answer use compiled phases,
+including separate answer scenes. Transition start is the scene entrance when
+it has a nonzero transition. Missing matching events emit
+`AUDIO_ANCHOR_NOT_FOUND`. Timing/reordering changes move cues with their events.
+The schema validates field shapes; event applicability is diagnosed by compile.
+
+Preset audio can contain `cues:AudioCue[]` in addition to playlist policy.
+Extraction replaces media with `slot:sound:<n>` and countdown assignments with
+`slot:tick:<n>`, normalizes cue IDs, maps scene selectors to extracted scene IDs,
+and removes participant/round/card selectors. Roles, anchor event, offset,
+duration, source offset, gain, loop and fades survive. Preset validation forbids
+concrete media keys and participant targets. Distinct countdown assignments
+remain distinct slots. Applying a preset preserves destination bindings and
+fills still-unassigned sound slots from the destination's corresponding sound
+rule/countdown setting; presets never carry those concrete bindings. A fresh
+project must bind its slots, otherwise ordinary missing-media diagnostics apply.
+
+The service computes absent active-snippet ranges from actual PCM/RMS per
+scene/participant/window length; it does not ask the caller to approximate them.
+Text/image-only and silent-video objects can use an active template without
+mandatory audio analysis. Explicit intervals still compile as authored.

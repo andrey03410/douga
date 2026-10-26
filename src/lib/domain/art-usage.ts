@@ -5,6 +5,7 @@
 // user confirms a deletion.
 
 export interface ArtRelationCounts {
+  studioReferences?: number;
   renderItems: number;
   audioRenderItems: number;
   pickerTiles: number;
@@ -16,6 +17,7 @@ export interface ArtRelationCounts {
 }
 
 export interface UsageBreakdown {
+  studio?: number;
   /** Positions of a top (the media itself or its sound). */
   positions: number;
   /** Cards inside picker rounds. */
@@ -33,7 +35,8 @@ export function usageBreakdown(counts: ArtRelationCounts): UsageBreakdown {
   const playlist = counts.playlistItems;
   const backgrounds =
     counts.projectBgs + counts.projectMusics + counts.roundBgs + counts.roundMusics;
-  return { positions, cards, playlist, backgrounds, total: positions + cards + playlist + backgrounds };
+  const studio = counts.studioReferences ?? 0;
+  return { positions, cards, playlist, backgrounds, ...(studio ? {studio} : {}), total: positions + cards + playlist + backgrounds + studio };
 }
 
 /** Sum the breakdowns of a selection (bulk delete warns about the whole batch). */
@@ -44,6 +47,7 @@ export function sumUsage(list: UsageBreakdown[]): UsageBreakdown {
       cards: acc.cards + u.cards,
       playlist: acc.playlist + u.playlist,
       backgrounds: acc.backgrounds + u.backgrounds,
+      ...((acc.studio || u.studio) ? {studio:(acc.studio??0)+(u.studio??0)} : {}),
       total: acc.total + u.total,
     }),
     { positions: 0, cards: 0, playlist: 0, backgrounds: 0, total: 0 },
@@ -66,6 +70,7 @@ const isOne = (n: number) => n % 10 === 1 && n % 100 !== 11;
 export function describeUsage(u: UsageBreakdown): string {
   if (!u.total) return "не используется";
   const parts: string[] = [];
+  if(u.studio) parts.push(`${u.studio} ссылок в проектах Studio`);
   if (u.cards)
     parts.push(
       `${u.cards} ${pluralRu(u.cards, ["карточка", "карточки", "карточек"])} ${
@@ -89,6 +94,7 @@ export function describeUsage(u: UsageBreakdown): string {
 
 /** What deletion will actually do — cards go away, positions only lose their media. */
 export function describeDeletion(u: UsageBreakdown): string {
+  if(u.studio) return "Удаление недоступно: медиа используется в черновиках или версиях Studio";
   if (!u.total) return "";
   const parts: string[] = [];
   if (u.cards)

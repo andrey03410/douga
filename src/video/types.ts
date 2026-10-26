@@ -75,6 +75,7 @@ export interface Settings {
 export interface Participant {
   id: string;
   label: string;
+  caption?: string;
   rank?: number;
   media?: { visual?: string; audio?: string };
   settings?: Settings;
@@ -185,11 +186,24 @@ export interface VideoScene {
   transition?: { type: "none" | "fade" | "slide"; duration: Time };
   background?: string;
 }
+export interface AudioAnchor {
+  event:
+    | "scene.start"
+    | "card.reveal"
+    | "timer.start"
+    | "answer.start"
+    | "transition.start";
+  sceneId?: string;
+  participantId?: string;
+  roundId?: string;
+  cardId?: string;
+}
 export interface AudioCue {
   id: string;
   role: "primary" | "music" | "sfx" | "voice";
   asset: string;
   at: Time;
+  anchor?: AudioAnchor;
   duration?: Time;
   offsetSec?: number;
   volume?: number;
@@ -231,6 +245,7 @@ export interface VideoPreset {
   scenes: VideoScene[];
   skeleton: { roundCount: number; cardsPerRound: number; groupCount: number };
   audio?: {
+    cues?: AudioCue[];
     crossfadeSec?: number;
     loop?: boolean;
     volume?: number;

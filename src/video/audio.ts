@@ -1,4 +1,10 @@
-import type { AudioCue, CompiledAudio, ResolvedAsset, Window } from "./types";
+import type {
+  AudioCue,
+  CompiledAudio,
+  ResolvedAsset,
+  Window,
+  CompiledScene,
+} from "./types";
 import { diagnostic, resolveAsset, type CompileContext } from "./context";
 import { frames } from "./settings";
 export function addAudio(
@@ -75,6 +81,7 @@ export function compileGlobalAudio(
   ctx: CompileContext,
   total: number,
   muteWindows: Window[],
+  scenes: CompiledScene[],
 ): void {
   for (const cue of ctx.document.audio?.cues ?? []) {
     const asset = resolveAsset(
@@ -84,25 +91,73 @@ export function compileGlobalAudio(
       "audio",
     );
     if (!asset) continue;
-    const from = frames(cue.at, ctx.fps);
-    if (from >= total) {
+    const anchors = cue.anchor
+      ? scenes.flatMap((scene) => {
+          const a = cue.anchor!;
+          if (
+            a.sceneId &&
+            scene.id.split("/")[0] !== encodeURIComponent(a.sceneId)
+          )
+            return [];
+          if (
+            a.participantId &&
+            scene.participantId !== a.participantId &&
+            a.event !== "card.reveal"
+          )
+            return [];
+          if (a.roundId && scene.roundId !== a.roundId) return [];
+          if (a.event === "card.reveal")
+            return scene.nodes
+              .filter(
+                (n) =>
+                  n.type === "card" &&
+                  n.activeWindow &&
+                  (!a.cardId || n.cardId === a.cardId) &&
+                  (!a.participantId || n.participantId === a.participantId),
+              )
+              .map((n) => scene.from + n.activeWindow!.from);
+          const local =
+            a.event === "scene.start"
+              ? 0
+              : a.event === "timer.start"
+                ? scene.phases.timerStartFrame
+                : a.event === "answer.start"
+                  ? scene.phases.answerStartFrame
+                  : scene.transition.durationInFrames > 0
+                    ? 0
+                    : undefined;
+          return local === undefined ? [] : [scene.from + local];
+        })
+      : [0];
+    if (!anchors.length)
       diagnostic(
         ctx,
-        "AUDIO_OUTSIDE_TIMELINE",
-        "Audio cue starts after the composition ends.",
-        `audio.cues.${cue.id}`,
+        "AUDIO_ANCHOR_NOT_FOUND",
+        "No matching event for sound rule.",
+        `audio.cues.${cue.id}.anchor`,
       );
-      continue;
+    for (const [index, anchor] of anchors.entries()) {
+      const from = anchor + frames(cue.at, ctx.fps);
+      if (from >= total) {
+        diagnostic(
+          ctx,
+          "AUDIO_OUTSIDE_TIMELINE",
+          "Audio cue starts after the composition ends.",
+          `audio.cues.${cue.id}`,
+        );
+        continue;
+      }
+      addAudio(ctx, {
+        ...cue,
+        id: cue.anchor ? `${cue.id}/${index}` : cue.id,
+        asset,
+        from,
+        durationInFrames: Math.min(
+          total - from,
+          frames(cue.duration, ctx.fps, total - from),
+        ),
+      });
     }
-    addAudio(ctx, {
-      ...cue,
-      asset,
-      from,
-      durationInFrames: Math.min(
-        total - from,
-        frames(cue.duration, ctx.fps, total - from),
-      ),
-    });
   }
   const playlist = ctx.document.audio?.playlist;
   if (playlist?.tracks.length) {

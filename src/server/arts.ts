@@ -42,6 +42,7 @@ export interface ArtRow {
 const ART_INCLUDE = {
   _count: {
     select: {
+      studioReferences: true,
       renderItems: true,
       audioRenderItems: true,
       pickerTiles: true,
@@ -300,8 +301,9 @@ export async function renameArt(userId: string, artId: string, label: string | n
  */
 export async function deleteArt(userId: string, artId: string) {
   const art = await ownedArt(userId, artId);
-  await prisma.$transaction([
-    prisma.renderItem.updateMany({
+  await prisma.$transaction(async tx => {
+    if (await tx.studioAssetReference.count({where:{artId:art.id}})) throw new Error("STUDIO_ASSET_IN_USE");
+    await tx.renderItem.updateMany({
       where: { artId: art.id },
       data: {
         artCropX: null,
@@ -313,9 +315,9 @@ export async function deleteArt(userId: string, artId: string) {
         // positions that were listening to this media need a fresh RMS pass
         resolvedStartSec: null,
       },
-    }),
-    prisma.art.delete({ where: { id: art.id } }),
-  ]);
+    });
+    await tx.art.delete({ where: { id: art.id } });
+  });
   await removePath(art.filePath);
   if (art.posterPath) await removePath(art.posterPath);
 }

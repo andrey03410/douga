@@ -117,6 +117,7 @@ export const participantSchema = z
   .object({
     id,
     label: str,
+    caption: opt(str),
     rank: opt(positive.int()),
     media: opt(z.object({ visual: opt(id), audio: opt(id) }).strict()),
     settings: opt(settingsSchema),
@@ -316,6 +317,23 @@ export const audioCueSchema = z
     role: z.enum(["primary", "music", "sfx", "voice"]),
     asset: id,
     at: timeSchema,
+    anchor: opt(
+      z
+        .object({
+          event: z.enum([
+            "scene.start",
+            "card.reveal",
+            "timer.start",
+            "answer.start",
+            "transition.start",
+          ]),
+          sceneId: opt(id),
+          participantId: opt(id),
+          roundId: opt(id),
+          cardId: opt(id),
+        })
+        .strict(),
+    ),
     duration: opt(timeSchema),
     offsetSec: opt(nonnegative),
     volume: opt(nonnegative.max(4)),
@@ -478,7 +496,11 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
         groupCount: nonnegative.int(),
       })
       .strict(),
-    audio: opt(z.object(playlistOptions).strict()),
+    audio: opt(
+      z
+        .object({ ...playlistOptions, cues: opt(z.array(audioCueSchema)) })
+        .strict(),
+    ),
   })
   .strict()
   .superRefine((p, ctx) => {
@@ -490,7 +512,12 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
         path,
       });
     const settings = (s: unknown, path: (string | number)[]) => {
-      if ((s as { picker?: { tick?: string } })?.picker?.tick)
+      if (
+        (s as { picker?: { tick?: string } } | undefined)?.picker?.tick &&
+        !/^slot:[a-z]+:[0-9]+$/.test(
+          (s as { picker?: { tick?: string } }).picker!.tick!,
+        )
+      )
         issue([...path, "picker", "tick"]);
     };
     const walk = (nodes: VideoNode[], path: (string | number)[]) =>
@@ -505,6 +532,15 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
         if (n.type === "card" && n.participantId !== "$participant")
           issue([...at, "participantId"]);
       });
+    p.audio?.cues?.forEach((cue, i) => {
+      if (
+        !/^slot:[a-z]+:[0-9]+$/.test(cue.asset) ||
+        cue.anchor?.participantId ||
+        cue.anchor?.roundId ||
+        cue.anchor?.cardId
+      )
+        issue(["audio", "cues", i]);
+    });
     settings(p.settings, ["settings"]);
     Object.entries(p.formatSettings ?? {}).forEach(([k, v]) =>
       settings(v, ["formatSettings", k]),

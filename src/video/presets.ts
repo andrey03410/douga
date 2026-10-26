@@ -81,10 +81,17 @@ export function getBuiltinPresets(): VideoPreset[] {
 export function getBuiltinPreset(id: string): VideoPreset | undefined {
   return getBuiltinPresets().find((p) => p.id === id);
 }
-function safeSettings(s: Settings | undefined): Settings | undefined {
+function safeSettings(
+  s: Settings | undefined,
+  slots: Map<string, string>,
+): Settings | undefined {
   if (!s) return;
   const out = structuredClone(s);
-  if (out.picker) delete out.picker.tick;
+  if (out.picker?.tick) {
+    const key = out.picker.tick;
+    if (!slots.has(key)) slots.set(key, `slot:tick:${slots.size}`);
+    out.picker.tick = slots.get(key)!;
+  }
   return out;
 }
 /** Explicit extraction: never serialize source, bindings, literal content or project identifiers. */
@@ -94,6 +101,7 @@ export function extractVideoPreset(
 ): VideoPreset {
   const doc = parseVideoDocument(document);
   let nodeIndex = 0;
+  const soundSlots = new Map<string, string>();
   const node = (n: VideoNode): VideoNode => {
     const { id: _id, ...rest } = n;
     const base = {
@@ -125,7 +133,7 @@ export function extractVideoPreset(
           : {}),
     ...(s.duration ? { duration: s.duration } : {}),
     ...(s.transition ? { transition: s.transition } : {}),
-    ...(s.settings ? { settings: safeSettings(s.settings) } : {}),
+    ...(s.settings ? { settings: safeSettings(s.settings, soundSlots) } : {}),
     nodes: s.nodes.map(node),
   }));
   const first = doc.source.rounds[0];
@@ -134,7 +142,7 @@ export function extractVideoPreset(
     ? Object.fromEntries(
         Object.entries(doc.formatSettings).map(([k, v]) => [
           k,
-          safeSettings(v),
+          safeSettings(v, soundSlots),
         ]),
       )
     : undefined;
@@ -144,7 +152,7 @@ export function extractVideoPreset(
     version: metadata.version ?? 1,
     kind: doc.kind,
     output: doc.output,
-    settings: safeSettings(doc.settings),
+    settings: safeSettings(doc.settings, soundSlots),
     ...(formatSettings ? { formatSettings } : {}),
     scenes,
     skeleton: {
@@ -152,13 +160,28 @@ export function extractVideoPreset(
       cardsPerRound: Math.max(1, first?.cards.length ?? 4),
       groupCount: first?.groups?.length ?? 0,
     },
-    ...(playlist
+    ...(playlist || doc.audio?.cues?.length
       ? {
           audio: {
-            crossfadeSec: playlist.crossfadeSec,
-            loop: playlist.loop,
-            volume: playlist.volume,
-            duckVolume: playlist.duckVolume,
+            crossfadeSec: playlist?.crossfadeSec,
+            loop: playlist?.loop,
+            volume: playlist?.volume,
+            duckVolume: playlist?.duckVolume,
+            cues: doc.audio?.cues?.map((cue, i) => ({
+              ...cue,
+              id: `cue-${i + 1}`,
+              asset: `slot:sound:${i + 1}`,
+              anchor: cue.anchor
+                ? {
+                    event: cue.anchor.event,
+                    ...(cue.anchor.sceneId
+                      ? {
+                          sceneId: `scene-${doc.scenes.findIndex((s) => s.id === cue.anchor!.sceneId) + 1}`,
+                        }
+                      : {}),
+                  }
+                : undefined,
+            })),
           },
         }
       : {}),
@@ -172,18 +195,47 @@ export function applyVideoPreset(
   const p = videoPresetSchema.parse(preset);
   if (doc.kind !== p.kind)
     throw new Error("Preset kind must match document kind");
+  // Slot assignments belong to the destination project, never to the preset.
+  const bindings = structuredClone(doc.bindings);
+  const bind = (slot: string | undefined, current: string | undefined) => {
+    if (slot && current && !bindings[slot] && doc.bindings[current])
+      bindings[slot] = structuredClone(doc.bindings[current]);
+  };
+  bind(p.settings.picker?.tick, doc.settings.picker?.tick);
+  for (const format of ["wide", "vertical", "square"] as const)
+    bind(
+      p.formatSettings?.[format]?.picker?.tick,
+      doc.formatSettings?.[format]?.picker?.tick,
+    );
+  p.scenes.forEach((scene, i) =>
+    bind(scene.settings?.picker?.tick, doc.scenes[i]?.settings?.picker?.tick),
+  );
+  p.audio?.cues?.forEach((cue, i) =>
+    bind(cue.asset, doc.audio?.cues?.[i]?.asset),
+  );
   return parseVideoDocument({
     ...doc,
+    bindings,
     output: p.output,
     settings: p.settings,
     formatSettings: p.formatSettings,
     scenes: p.scenes,
     preset: { id: p.id, version: p.version },
-    ...(p.audio && doc.audio?.playlist
+    ...(p.audio
       ? {
           audio: {
             ...doc.audio,
-            playlist: { ...doc.audio.playlist, ...p.audio },
+            ...(p.audio.cues ? { cues: p.audio.cues } : {}),
+            ...(doc.audio?.playlist
+              ? {
+                  playlist: {
+                    ...doc.audio.playlist,
+                    ...Object.fromEntries(
+                      Object.entries(p.audio).filter(([key]) => key !== "cues"),
+                    ),
+                  },
+                }
+              : {}),
           },
         }
       : {}),

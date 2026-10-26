@@ -24,6 +24,9 @@ model User {
   tournaments  Tournament[]
   arts         Art[]
   projects     VideoProject[]
+  studioProjects StudioProject[]
+  studioPresets StudioPreset[]
+  studioMutations StudioMutation[]
 }
 
 // ---- Phase 1: tournament ----
@@ -49,6 +52,7 @@ model Tournament {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  studioReferences StudioAssetReference[]
   tracks       Track[]
   comparisons  Comparison[]
   batches      ComparisonBatch[]
@@ -71,6 +75,7 @@ model Track {
   // Nullable: rows created before phase 5 are backfilled lazily via stat().
   sizeBytes    Float?
 
+  studioReferences StudioAssetReference[]
   renderItems RenderItem[]
 }
 
@@ -248,6 +253,7 @@ model Art {
   // Set when the art is assigned to a render item; drives the "recent" picker block.
   lastUsedAt DateTime?
 
+  studioReferences StudioAssetReference[]
   renderItems      RenderItem[]
   audioRenderItems RenderItem[]   @relation("RenderItemAudio")
   pickerTiles      PickerTile[]
@@ -348,4 +354,92 @@ model RenderJob {
   error          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+// Studio v1: additive, independent of legacy VideoProject.
+model StudioProject {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  title String
+  kind String
+  version Int @default(1)
+  revision Int @default(1)
+  documentJson String
+  draftText String?
+  draftValidationJson String?
+  sourceVersion String?
+  lastGoodRevision Int?
+  previewJson String?
+  previewVersion Int?
+  previewRevision Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions StudioRevision[]
+  references StudioAssetReference[]
+  snapshots StudioSnapshot[]
+}
+model StudioRevision {
+  id String @id @default(cuid())
+  projectId String
+  project StudioProject @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  revision Int
+  reason String
+  documentJson String
+  sourceVersion String?
+  validationJson String
+  planJson String?
+  assetsJson String?
+  createdAt DateTime @default(now())
+  snapshots StudioSnapshot[]
+  @@unique([projectId,revision])
+}
+model StudioAssetReference {
+  id String @id @default(cuid())
+  projectId String
+  project StudioProject @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  // head, draft, revision:<number>; frozen data keeps its revision referenced.
+  scope String
+  artId String?
+  art Art? @relation(fields:[artId],references:[id],onDelete:Restrict)
+  trackId String?
+  track Track? @relation(fields:[trackId],references:[id],onDelete:Restrict)
+  tournamentId String?
+  tournament Tournament? @relation(fields:[tournamentId],references:[id],onDelete:Restrict)
+  @@index([projectId,scope])
+  @@index([artId])
+  @@index([tournamentId])
+}
+model StudioSnapshot {
+  id String @id @default(cuid())
+  projectId String
+  project StudioProject @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  revisionId String
+  revision StudioRevision @relation(fields:[revisionId],references:[id],onDelete:Restrict)
+  payloadJson String
+  bytes Float
+  createdAt DateTime @default(now())
+}
+model StudioPreset {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  name String
+  presetJson String
+  createdAt DateTime @default(now())
+}
+model StudioMutation {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  key String
+  requestHash String
+  resultJson String
+  createdAt DateTime @default(now())
+  @@unique([userId,key])
+}
+model StudioAnalysis {
+  key String @id
+  startSec Float
+  endSec Float
 }

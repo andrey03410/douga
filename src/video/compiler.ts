@@ -224,7 +224,7 @@ export function compileVideo(
       "scenes",
     );
   plan.durationInFrames = Math.max(1, cursor);
-  compileGlobalAudio(ctx, plan.durationInFrames, muteWindows);
+  compileGlobalAudio(ctx, plan.durationInFrames, muteWindows, plan.scenes);
   return {
     plan: JSON.parse(JSON.stringify(plan)) as CompiledVideo,
     diagnostics: ctx.diagnostics,

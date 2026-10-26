@@ -116,7 +116,13 @@ export function compileTop(
         `source.participants.${p.id}`,
       );
   }
-  if (snippet?.mode === "active") {
+  if (
+    snippet?.mode === "active" &&
+    source &&
+    (source.kind === "audio" ||
+      source.hasAudio ||
+      snippet.activeEndSec !== undefined)
+  ) {
     offset = snippet.activeStartSec ?? 0;
     const end = snippet.activeEndSec;
     if (end === undefined || end <= offset)
@@ -157,7 +163,7 @@ export function compileTop(
     participantId: p.id,
     rank: p.rank,
     showRank: s.labels?.showRank ?? true,
-    label: p.label,
+    label: p.caption ?? p.label,
     labelWindows: labelWindows(s, 0, duration, 0, undefined, duration, ctx.fps),
     activeWindow: { from: 0, to: duration },
   });
@@ -391,7 +397,7 @@ export function compilePicker(
     Object.assign(card, {
       participantId: participant.id,
       cardId: c.id,
-      label: c.label ?? participant.label,
+      label: c.label ?? participant.caption ?? participant.label,
       rank: participant.rank,
       showRank: local.labels?.showRank ?? true,
       groupId,

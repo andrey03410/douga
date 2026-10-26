@@ -3,7 +3,7 @@ import path from "node:path";
 import { stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { isAssignableRole, quotasFor } from "@/lib/domain/permissions";
+import { can, isAssignableRole, quotasFor } from "@/lib/domain/permissions";
 
 // Personal-cabinet usage overview + admin user management. Framework-free
 // (thin routes on top), covered by integration tests against the real schema.
@@ -64,6 +64,7 @@ interface KindTotals {
 }
 
 export interface UsageSummary {
+  studio: {projects:number;revisions:number;snapshots:number;bytes:number};
   role: string;
   quotas: ReturnType<typeof quotasFor>;
   /** Pool totals with a per-kind split (images/videos/audio). */
@@ -137,7 +138,19 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
     bytes: renderAgg._sum.outputBytes ?? 0,
   };
 
+  const studioProjects = await prisma.studioProject.findMany({where:{userId},include:{revisions:{select:{assetsJson:true}},_count:{select:{snapshots:true}}}});
+  const studioFiles = new Map<string,number>();
+  for(const project of studioProjects) for(const revision of project.revisions) {
+    if(!revision.assetsJson) continue;
+    const assets = JSON.parse(revision.assetsJson) as {files:Record<string,{path:string;bytes:number;posterPath?:string;posterBytes?:number}>};
+    for(const file of Object.values(assets.files)) {
+      studioFiles.set(file.path,file.bytes);
+      if(file.posterPath) studioFiles.set(file.posterPath,file.posterBytes??0);
+    }
+  }
+  const studio = {projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)};
   return {
+    studio,
     role: user.role,
     quotas: quotasFor(user.role),
     pool,
@@ -293,6 +306,8 @@ export async function setUserRole(actorId: string, targetId: string, role: strin
  */
 export async function deleteUser(actorId: string, targetId: string) {
   if (actorId === targetId) throw new Error("SELF_CHANGE");
+  const actor = await prisma.user.findUnique({where:{id:actorId}});
+  if(!can(actor?.role,"admin:users")) throw new Error("FORBIDDEN");
   const target = await prisma.user.findUnique({
     where: { id: targetId },
     include: {
@@ -306,6 +321,13 @@ export async function deleteUser(actorId: string, targetId: string) {
     ...target.tournaments.flatMap((t) => t.renderJobs),
     ...target.projects.flatMap((p) => p.renderJobs),
   ];
+  // Delete references and rows atomically before releasing any user bytes.
+  await prisma.$transaction(async tx => {
+    await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
+    await tx.studioProject.deleteMany({where:{userId:targetId}});
+    await tx.user.delete({where:{id:targetId}});
+  });
+  await removePath(path.join("studio",targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
   }
@@ -314,5 +336,5 @@ export async function deleteUser(actorId: string, targetId: string) {
     await removePath(path.join("renders", "tmp", job.id));
   }
   await removePath(path.join("arts", targetId));
-  await prisma.user.delete({ where: { id: targetId } });
+
 }

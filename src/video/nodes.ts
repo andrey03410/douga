@@ -279,7 +279,7 @@ export function compileCustomNodes(
         compiled.showRank = local.labels?.showRank ?? true;
         compiled.label = node.label
           ? boundText(ctx, node.label, p, round)
-          : p.label;
+          : (p.caption ?? p.label);
         compiled.labelWindows = labelWindows(
           local,
           from,

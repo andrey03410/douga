@@ -440,12 +440,15 @@ export async function deleteTournament(userId: string, tournamentId: string) {
   });
   if (!t) throw new Error("NOT_FOUND");
 
-  // Remove stored media (best-effort) before the DB cascade.
+  // Claim deletion in SQLite before unlink: studio references must protect bytes.
+  await prisma.$transaction(async tx => {
+    if(await tx.studioAssetReference.count({where:{tournamentId}})) throw new Error("STUDIO_SOURCE_IN_USE");
+    await tx.tournament.delete({where:{id:tournamentId}});
+  });
   await removePath(path.join("tournaments", tournamentId));
   for (const job of t.renderJobs) {
     await removePath(path.join("renders", `${job.id}.mp4`));
     await removePath(path.join("renders", "tmp", job.id));
   }
 
-  await prisma.tournament.delete({ where: { id: tournamentId } });
 }
