@@ -5,6 +5,7 @@ import {
   extractVideoPreset,
   parseVideoDocument,
   getBuiltinPresets,
+  videoPresetSchema,
 } from "@/video";
 import { actor, replay, receipt, requestHash, jsonText } from "./shared";
 import { StudioError } from "./errors";
@@ -33,7 +34,7 @@ export async function saveStudioPreset(
   raw: SaveStudioPresetInput,
 ): Promise<StudioPresetView> {
   const input = saveStudioPresetSchema.parse(raw);
-  jsonText(input.document);
+  jsonText(input.preset !== undefined ? input.preset : input.document);
   await actor(userId);
   const request = requestHash("preset", input);
   const old = await replay<StudioPresetView>(
@@ -44,10 +45,20 @@ export async function saveStudioPreset(
   );
   if (old) return old;
   const id = randomUUID();
-  const preset = extractVideoPreset(parseVideoDocument(input.document), {
-    id,
-    name: input.name,
-  });
+  // Explicit templates declare their generic copy/design. Project extraction stays
+  // conservative because it cannot infer which literal content is reusable.
+  const preset =
+    input.preset !== undefined
+      ? {
+          ...videoPresetSchema.parse(input.preset),
+          id,
+          name: input.name,
+          version: 1,
+        }
+      : extractVideoPreset(parseVideoDocument(input.document), {
+          id,
+          name: input.name,
+        });
   return prisma.$transaction(async (db) => {
     await actor(userId, db);
     const old = await replay<StudioPresetView>(

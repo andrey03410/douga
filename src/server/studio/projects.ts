@@ -118,6 +118,18 @@ async function assertSourceUnchanged(
   if (current.source.version !== document.source.version)
     throw new StudioError("VERSION_CONFLICT");
 }
+/** Recheck all sources represented by the edit token, including a switched draft. */
+export async function assertProjectSourcesUnchanged(
+  userId: string,
+  project: Pick<StudioProjectView, "document" | "draft">,
+  db: Db,
+) {
+  await assertSourceUnchanged(userId, project.document, db);
+  if (project.draft) {
+    const parsed = videoDocumentSchema.safeParse(project.draft.document);
+    if (parsed.success) await assertSourceUnchanged(userId, parsed.data, db);
+  }
+}
 async function cas(
   db: Db,
   id: string,
@@ -145,24 +157,28 @@ async function readProject(
   const row = await owned(userId, id);
   const old = JSON.parse(row.documentJson) as VideoDocument;
   const document = await reconcileSource(userId, old);
-  if (document.source.version === old.source.version) return view(row);
-  const directory = directoryFor(userId, id);
+  const headChanged = document.source.version !== old.source.version;
+  const parsedDraft = videoDocumentSchema.safeParse(
+    row.draftText === null ? null : parseDraft(row.draftText),
+  );
+  const draftDocument = parsedDraft.success
+    ? await reconcileSource(userId, parsedDraft.data)
+    : undefined;
+  const draftChanged =
+    parsedDraft.success &&
+    draftDocument!.source.version !== parsedDraft.data.source.version;
+  if (!headChanged && !draftChanged) return view(row);
+  const directory = headChanged ? directoryFor(userId, id) : undefined;
   try {
-    const result = await evaluate(userId, document, directory);
+    const result = headChanged
+      ? await evaluate(userId, document, directory)
+      : undefined;
     let draftText = row.draftText;
     let draftResult: Awaited<ReturnType<typeof evaluate>> | undefined;
     if (draftText !== null) {
-      const draft = parseDraft(draftText);
-      const parsed = videoDocumentSchema.safeParse(draft);
-      if (
-        parsed.success &&
-        parsed.data.source.kind === "tournament" &&
-        parsed.data.source.tournamentId === document.source.tournamentId
-      ) {
-        draftText = jsonText(await reconcileSource(userId, parsed.data));
-      }
+      if (draftDocument) draftText = jsonText(draftDocument);
       draftResult = await evaluate(userId, parseDraft(draftText));
-      if (!parsed.success)
+      if (!parsedDraft.success)
         draftResult.validation.diagnostics.push({
           severity: "warning",
           code: "DRAFT_SOURCE_STALE",
@@ -173,19 +189,24 @@ async function readProject(
     return await prisma.$transaction(async (db) => {
       await owned(userId, id, db);
       await assertSourceUnchanged(userId, document, db);
-      const revision = row.revision + 1,
+      if (draftDocument) await assertSourceUnchanged(userId, draftDocument, db);
+      const revision = row.revision + (headChanged ? 1 : 0),
         version = row.version + 1;
-      const preview = draftResult ?? result;
+      const preview = (draftResult ?? result)!;
       await cas(db, id, row.version, {
-        documentJson: jsonText(document),
-        sourceVersion: document.source.version,
-        revision,
+        ...(headChanged
+          ? {
+              documentJson: jsonText(document),
+              sourceVersion: document.source.version ?? null,
+              revision,
+            }
+          : {}),
         version,
         draftText,
         draftValidationJson: draftResult
           ? JSON.stringify(draftResult.validation)
           : null,
-        ...(result.validation.ready ? { lastGoodRevision: revision } : {}),
+        ...(result?.validation.ready ? { lastGoodRevision: revision } : {}),
         ...(preview.validation.ready
           ? {
               previewJson: JSON.stringify(preview.plan),
@@ -194,8 +215,10 @@ async function readProject(
             }
           : {}),
       });
-      await addRevision(db, userId, id, revision, document, result, "source");
-      await setReferences(db, userId, id, "head", document);
+      if (result) {
+        await addRevision(db, userId, id, revision, document, result, "source");
+        await setReferences(db, userId, id, "head", document);
+      }
       if (draftText !== null)
         await setReferences(
           db,
@@ -211,7 +234,7 @@ async function readProject(
       );
     });
   } catch (e) {
-    await cleanupDirectory(directory);
+    if (directory) await cleanupDirectory(directory);
     if (
       e instanceof StudioError &&
       e.code === "VERSION_CONFLICT" &&
@@ -335,7 +358,9 @@ export async function saveStudioDraft(
       request,
     );
     if (old) return old;
-    await assertSourceUnchanged(userId, current.document, db);
+    await assertProjectSourcesUnchanged(userId, current, db);
+    if (parsed.success)
+      await assertSourceUnchanged(userId, value as VideoDocument, db);
     await references(userId, value, db);
     const version = input.expectedVersion + 1;
     await cas(db, id, input.expectedVersion, {
@@ -414,7 +439,7 @@ async function commit(
         request,
       );
       if (old) return old;
-      await assertSourceUnchanged(userId, current.document, db);
+      await assertProjectSourcesUnchanged(userId, current, db);
       await assertSourceUnchanged(userId, document, db);
       const revision = current.revision + 1,
         version = current.version + 1;

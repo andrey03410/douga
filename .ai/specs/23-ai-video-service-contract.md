@@ -26,7 +26,7 @@ are not charged again to the original media-pool quota.
 | `restoreStudioRevision(userId,id,input)` | same plus `revision:number` | new revision copied from history, reconciled to current source |
 | `listStudioRevisions(userId,id)` | none | `StudioRevisionView[]`, newest first |
 | `listStudioPresets(userId)` | none | builtins and owned `StudioPresetView[]` |
-| `saveStudioPreset(userId,input)` | `{document:unknown,name,idempotencyKey?}` | extracted media-free personal preset |
+| `saveStudioPreset(userId,input)` | `{name,idempotencyKey?,document?:unknown,preset?:unknown}`; exactly one content field | validated media-free personal preset |
 | `getStudioManifest(userId,document,mode?)` | `mode:'url'|'file'`, default URL | `AssetManifest`; throws if resolution fails |
 | `freezeStudioProject(userId,id,input?)` | `{expectedVersion?,revision?,idempotencyKey?}` | `StudioFrozenRevision` |
 | `deleteStudioProject(userId,id,input?)` | `{expectedVersion?,idempotencyKey?}` | `{deleted:true,id}` |
@@ -38,7 +38,26 @@ Schema exports are `mutationSchema`, `createStudioProjectSchema`,
 `saveStudioDraftSchema`, `commitStudioDraftSchema`,
 `restoreStudioRevisionSchema`, `freezeStudioProjectSchema`,
 `saveStudioPresetSchema`, `deleteStudioResourceSchema`, and
-`studioManifestModeSchema`. Mutating request keys are optional strings of
+`studioManifestModeSchema`.
+
+`saveStudioPreset` has two explicit modes. `document` parses a `VideoDocument`
+and conservatively extracts a preset: thematic literal text becomes `Text`,
+media becomes abstract slots and participant identities are removed. `preset`
+parses a complete canonical `VideoPreset` using `videoPresetSchema`: generic
+author-declared text such as «Выбери персонажа», SVG path geometry and valid
+slots remain exactly authored. The service does not guess whether text is
+reusable. Concrete media keys, participant/group targets and unknown document fields
+are rejected; supplying both/neither content field is rejected. The server
+assigns a new ID, the request's `name` and version1, overriding the validated
+input preset's metadata. Idempotent replay returns the original saved template.
+SVG shape geometry is design and also survives ordinary document extraction.
+
+`StudioPresetView.personal` is catalog metadata, not a `VideoPreset` field.
+Remove it before passing a catalog result to `applyVideoPreset`,
+`videoPresetSchema`, or the explicit `preset` input, e.g.
+`const {personal, ...preset} = view`. The canonical preset schema stays strict.
+
+Mutating request keys are optional strings of
 1–200 characters. Adapters should generate a key once and reuse it on retry.
 
 Idempotency keys are scoped to an account across all operations. Receipts store
@@ -85,8 +104,13 @@ commit, restore or automatic source reconciliation increments it. `revision`
 identifies saved history; merely saving a draft does not create a revision.
 All draft saves/commits/restores require the exact current `expectedVersion`.
 Source changes are reconciled before a write, so a token issued before a
-ranking change produces `VERSION_CONFLICT`. The database transaction rechecks
-source fingerprint and token before accepting the write. A conflict does not
+ranking change produces `VERSION_CONFLICT`. Reads reconcile both the committed
+source and a valid draft's own source, including manual→tournament and source
+A→source B switches. A draft-only source update advances `version` without
+creating a redundant committed revision. `sourceVersion` identifies the head;
+the draft's fingerprint is `draft.document.source.version`. The database
+transaction rechecks the head, the prior valid draft and the candidate's source
+fingerprints before accepting a save/commit/freeze, as well as the edit token. A conflict does not
 clear editor content or overwrite the winner. Automatic read reconciliation
 retries a competing reconciliation up to twice.
 
@@ -113,7 +137,7 @@ authored media assignments. Missing/unavailable video bytes cannot prove silence
 and remain actionable manifest diagnostics.
 Explicit scene/card references to removed participants remain diagnostic;
 there is no index rebinding. Existing declared bindings remain explicit
-references even when unused. Every source change saves a new source revision;
+references even when unused. Every committed-source change saves a new source revision;
 older source documents, resolved plans and media copies remain untouched.
 
 ## Media resolution and immutability
@@ -131,7 +155,11 @@ trusted server inspection, not an immutable render input.
 Every saved revision materializes its available media under
 `storage/studio/<userId>/<projectId>/versions/<operation-uuid>/<sha256>.<ext>`.
 Source bytes are copied and their hash rechecked before persistence; posters
-are copied too. The revision stores the original document, a resolved document,
+are copied too. Before an evaluation returns, its exclusively owned staging
+directory is swept against the successful file ledger: failed/unrecorded copies
+are removed, including all-copy-failed directories. Shared-hash copies already
+recorded for a successful binding remain intact. Invalid revisions therefore
+cannot hide staged bytes from account usage or historical cleanup. The revision stores the original document, a resolved document,
 manifest/files/runtime metadata and its resolved plan. Source-file replacement
 after a save cannot change the saved revision. A freeze verifies copied hashes
 and stores an immutable snapshot envelope pointing to that saved revision.
@@ -191,8 +219,8 @@ hash type) does not disable protection of identifiable pool/track IDs. Invalid
 replacement drafts retain previous references to keep the last-good preview
 usable; a valid replacement releases obsolete draft references. Foreign-owned
 identities are rejected atomically even in invalid drafts. Frozen snapshots
-restrict revision deletion. Current and last-good saved revisions cannot be
-deleted. Release snapshots, then unused old revisions, to free old media;
+restrict revision deletion. Current, last-good and the saved revision actually backing the retained
+preview (`previewRevision`) cannot be deleted. Release snapshots, then unused old revisions, to free old media;
 deleting a preset never changes applied project copies.
 
 Pool/tournament deletion checks and deletes database rows in a transaction

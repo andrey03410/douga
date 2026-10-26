@@ -47,11 +47,16 @@ export type DeleteStudioResourceInput = z.infer<
 >;
 export const saveStudioPresetSchema = z
   .object({
-    document: z.unknown(),
+    document: z.unknown().optional(),
+    preset: z.unknown().optional(),
     name: z.string().trim().min(1).max(200),
     idempotencyKey: key.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) => (input.document !== undefined) !== (input.preset !== undefined),
+    "Supply exactly one of document or preset",
+  );
 export type CreateStudioProjectInput = z.infer<
   typeof createStudioProjectSchema
 >;

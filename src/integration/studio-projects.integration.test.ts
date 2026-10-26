@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -6,11 +6,17 @@ import ffmpegPath from "ffmpeg-static";
 import { readFile, writeFile, stat, readdir, mkdir } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import {
+  createVideoDocument,
+  extractVideoPreset,
+  applyVideoPreset,
+  compileVideo,
+} from "@/video";
 import { createArt, deleteArt, listArts } from "@/server/arts";
 import { deleteTournament } from "@/server/tournaments";
 import { deleteUser, usageSummary } from "@/server/users";
 import * as studio from "@/server/studio";
+import * as studioAssets from "@/server/studio/assets";
 
 let owner: string, other: string;
 const mutation = (version: number) => ({
@@ -828,4 +834,361 @@ it("initializes real silent source videos without audio while preserving voiced 
     if (projectId) await studio.deleteStudioProject(owner, projectId);
     await deleteTournament(owner, tournament.id);
   }
+});
+
+async function imageRankingSource(title: string) {
+  const tournament = await prisma.tournament.create({
+    data: { userId: owner, title, scheme: "merge", topSize: 2 },
+  });
+  const art = await createArt(owner, { fileName: "source.png", data: png });
+  const document = doc();
+  document.bindings.image = { kind: "pool", assetId: art.id };
+  const tracks = [];
+  for (let index = 0; index < 2; index++) {
+    const track = await prisma.track.create({
+      data: {
+        tournamentId: tournament.id,
+        title: `${title}-${index}`,
+        filePath: "unused-source.wav",
+        sizeBytes: 0,
+        order: index,
+      },
+    });
+    await prisma.ranking.create({
+      data: {
+        tournamentId: tournament.id,
+        trackId: track.id,
+        rank: index + 1,
+        score: 2 - index,
+      },
+    });
+    tracks.push(track);
+  }
+  document.source = {
+    kind: "tournament",
+    tournamentId: tournament.id,
+    participants: tracks.map((t) => ({
+      id: t.id,
+      label: t.title,
+      media: { visual: "image" },
+    })),
+    rounds: [],
+  };
+  return { tournament, tracks, document };
+}
+async function reverseRanking(
+  source: Awaited<ReturnType<typeof imageRankingSource>>,
+) {
+  await prisma.$transaction(
+    source.tracks.map((track, index) =>
+      prisma.ranking.update({
+        where: {
+          tournamentId_trackId: {
+            tournamentId: source.tournament.id,
+            trackId: track.id,
+          },
+        },
+        data: { rank: 2 - index },
+      }),
+    ),
+  );
+}
+async function storedFiles(relative: string): Promise<string[]> {
+  const entries = await readdir(absPath(relative), {
+    withFileTypes: true,
+  }).catch((error) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const child = `${relative}/${entry.name}`;
+    if (entry.isDirectory()) files.push(...(await storedFiles(child)));
+    else if (entry.isFile()) files.push(child);
+  }
+  return files;
+}
+it("protects a saved revision backing an invalid-draft preview after a newer valid source revision", async () => {
+  const source = await imageRankingSource("Preview retention");
+  const project = await studio.createStudioProject(owner, {
+    document: source.document,
+  });
+  const first = await prisma.studioRevision.findUniqueOrThrow({
+    where: { projectId_revision: { projectId: project.id, revision: 1 } },
+  });
+  const file = JSON.parse(first.assetsJson!).files.image.path as string;
+  await studio.saveStudioDraft(owner, project.id, {
+    ...mutation(project.version),
+    text: "{",
+  });
+  await reverseRanking(source);
+  const changed = await studio.getStudioProject(owner, project.id);
+  expect(changed.revision).toBe(2);
+  expect(changed.previewRevision).toBe(1);
+  expect(changed.previewStale).toBe(true);
+  await expect(
+    studio.deleteStudioRevision(owner, project.id, 1),
+  ).rejects.toThrow("REVISION_IN_USE");
+  expect(await readFile(absPath(file))).toEqual(png);
+  const repaired = await studio.saveStudioDraft(owner, project.id, {
+    ...mutation(changed.version),
+    document: changed.document,
+  });
+  expect(repaired.previewRevision).toBeNull();
+  await studio.deleteStudioRevision(owner, project.id, 1);
+  await expect(stat(absPath(file))).rejects.toThrow();
+});
+it.each(["manual", "other-tournament"] as const)(
+  "reconciles a draft source switch from %s and rejects its previous edit token",
+  async (kind) => {
+    const head =
+      kind === "manual"
+        ? doc()
+        : (await imageRankingSource("Head source")).document;
+    const source = await imageRankingSource("Draft source");
+    const project = await studio.createStudioProject(owner, { document: head });
+    const saved = await studio.saveStudioDraft(owner, project.id, {
+      ...mutation(project.version),
+      document: source.document,
+    });
+    const prior = saved.draft!.document as typeof source.document;
+    await reverseRanking(source);
+    await expect(
+      studio.commitStudioDraft(owner, project.id, mutation(saved.version)),
+    ).rejects.toThrow("VERSION_CONFLICT");
+    const changed = await studio.getStudioProject(owner, project.id);
+    const current = changed.draft!.document as typeof source.document;
+    expect(changed.version).toBe(saved.version + 1);
+    expect(changed.revision).toBe(project.revision);
+    expect(current.source.version).not.toBe(prior.source.version);
+    expect(current.source.participants.map((p) => p.id)).toEqual(
+      source.tracks.map((t) => t.id).reverse(),
+    );
+    await expect(
+      studio.saveStudioDraft(owner, project.id, {
+        ...mutation(saved.version),
+        document: source.document,
+      }),
+    ).rejects.toThrow("VERSION_CONFLICT");
+  },
+);
+it("rechecks a candidate draft source changed after real evaluation but before the save transaction", async () => {
+  const source = await imageRankingSource("Candidate source");
+  const project = await studio.createStudioProject(owner, { document: doc() });
+  let reached!: () => void, release!: () => void;
+  const evaluated = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = studioAssets.evaluate;
+  // Keep real SQLite/files/compiler evaluation; pause only the race boundary deterministically.
+  const pause = vi
+    .spyOn(studioAssets, "evaluate")
+    .mockImplementation(async (...args) => {
+      const result = await original(...args);
+      reached();
+      await gate;
+      return result;
+    });
+  try {
+    const pending = studio.saveStudioDraft(owner, project.id, {
+      ...mutation(project.version),
+      document: source.document,
+    });
+    await evaluated;
+    await reverseRanking(source);
+    release();
+    await expect(pending).rejects.toThrow("VERSION_CONFLICT");
+    const unchanged = await prisma.studioProject.findUniqueOrThrow({
+      where: { id: project.id },
+    });
+    expect(unchanged.version).toBe(project.version);
+    expect(unchanged.draftText).toBeNull();
+  } finally {
+    release();
+    pause.mockRestore();
+  }
+});
+it("removes failed immutable copies when an invalid historical revision is released", async () => {
+  const corrupt = await createArt(owner, {
+    fileName: "bad-version.png",
+    data: Buffer.from("invalid image bytes"),
+  });
+  const document = doc();
+  document.bindings.bad = { kind: "pool", assetId: corrupt.id };
+  document.source.participants[0].media = { visual: "bad" };
+  const before = (await usageSummary(owner)).studio.bytes;
+  const project = await studio.createStudioProject(owner, { document });
+  expect(project.validation.ready).toBe(false);
+  expect(await storedFiles(`studio/${owner}/${project.id}`)).toEqual([]);
+  expect((await usageSummary(owner)).studio.bytes).toBe(before);
+  const replacement = await studio.saveStudioDraft(owner, project.id, {
+    ...mutation(project.version),
+    document: doc(),
+  });
+  await studio.commitStudioDraft(
+    owner,
+    project.id,
+    mutation(replacement.version),
+  );
+  await studio.deleteStudioRevision(owner, project.id, 1);
+  expect(await storedFiles(`studio/${owner}/${project.id}`)).toEqual([]);
+  expect(await readFile(absPath(corrupt.filePath))).toEqual(
+    Buffer.from("invalid image bytes"),
+  );
+});
+
+it("cleans failed staged bytes without unlinking a successful shared-hash copy", async () => {
+  const valid = await createArt(owner, {
+    fileName: "shared-success.png",
+    data: png,
+  });
+  const wrongKind = await prisma.art.create({
+    data: {
+      userId: owner,
+      filePath: valid.filePath,
+      kind: "audio",
+      sizeBytes: png.length,
+    },
+  });
+  const corrupt = await createArt(owner, {
+    fileName: "failed-copy.png",
+    data: Buffer.from("bad image"),
+  });
+  const before = (await usageSummary(owner)).studio.bytes;
+  const document = doc();
+  document.bindings = {
+    "a-good": { kind: "pool", assetId: valid.id },
+    "z-alias": { kind: "pool", assetId: wrongKind.id },
+    "z-corrupt": { kind: "pool", assetId: corrupt.id },
+  };
+  document.source.participants[0].media = { visual: "a-good" };
+  const project = await studio.createStudioProject(owner, { document });
+  expect(project.validation.ready).toBe(false);
+  const files = await storedFiles(`studio/${owner}/${project.id}`);
+  expect(files).toHaveLength(1);
+  expect(await readFile(absPath(files[0]))).toEqual(png);
+  expect((await usageSummary(owner)).studio.bytes - before).toBe(png.length);
+});
+
+it("saves author-declared generic preset text and geometry with server metadata and no concrete bindings", async () => {
+  const art = await createArt(owner, {
+    fileName: "preset-private.png",
+    data: png,
+  });
+  const document = createVideoDocument({
+    kind: "top",
+    participants: [
+      { id: "private-participant", label: "Thematic participant" },
+    ],
+  });
+  const geometry = "M 0 100 L 50 0 L 100 100 Z";
+  document.bindings["private-media"] = { kind: "pool", assetId: art.id };
+  document.scenes = [
+    {
+      id: "private-scene",
+      block: "custom",
+      duration: { sec: 1 },
+      nodes: [
+        { id: "private-text", type: "text", text: "Concrete holiday theme" },
+        { id: "private-shape", type: "shape", shape: "path", path: geometry },
+        { id: "private-image", type: "image", asset: "private-media" },
+      ],
+    },
+  ];
+  const template = extractVideoPreset(document, {
+    id: "caller-id",
+    name: "Ignored name",
+    version: 99,
+  });
+  const text = template.scenes[0].nodes.find((n) => n.type === "text")!;
+  if (text.type === "text") text.text = "Выбери персонажа";
+  const input = {
+    preset: template,
+    name: "Saved generic template",
+    idempotencyKey: randomUUID(),
+  };
+  const saved = await studio.saveStudioPreset(owner, input);
+  expect(saved.id).not.toBe("caller-id");
+  expect(saved.name).toBe("Saved generic template");
+  expect(saved.version).toBe(1);
+  expect((await studio.saveStudioPreset(owner, input)).id).toBe(saved.id);
+  const { personal: _catalogMetadata, ...definition } = saved;
+  const applied = applyVideoPreset(doc(), definition);
+  const plan = compileVideo(applied).plan;
+  expect(plan.scenes[0].nodes.find((n) => n.type === "text")?.text).toBe(
+    "Выбери персонажа",
+  );
+  expect(plan.scenes[0].nodes.find((n) => n.shape === "path")?.path).toBe(
+    geometry,
+  );
+  expect(JSON.stringify(saved)).not.toContain(art.id);
+  expect(JSON.stringify(saved)).not.toContain("private-");
+
+  const count = await prisma.studioPreset.count({ where: { userId: owner } });
+  const concreteMedia = structuredClone(template);
+  concreteMedia.scenes[0].nodes.push({
+    id: "bad-media",
+    type: "image",
+    asset: art.id,
+  });
+  const concreteParticipant = structuredClone(template);
+  concreteParticipant.scenes[0].nodes.push({
+    id: "bad-card",
+    type: "card",
+    participantId: "private-participant",
+  });
+  await expect(
+    studio.saveStudioPreset(owner, {
+      preset: concreteMedia,
+      name: "Rejected asset",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    studio.saveStudioPreset(owner, {
+      preset: concreteParticipant,
+      name: "Rejected participant",
+    }),
+  ).rejects.toThrow();
+  const concreteGroup = structuredClone(template);
+  concreteGroup.scenes[0].nodes.push({
+    id: "bad-group-label",
+    type: "text",
+    text: { bind: "group.label", groupId: "private-group" },
+  });
+  await expect(
+    studio.saveStudioPreset(owner, {
+      preset: concreteGroup,
+      name: "Rejected group identity",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    studio.saveStudioPreset(owner, {
+      preset: template,
+      document,
+      name: "Both",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    studio.saveStudioPreset(owner, { name: "Neither" }),
+  ).rejects.toThrow();
+  expect(await prisma.studioPreset.count({ where: { userId: owner } })).toBe(
+    count,
+  );
+
+  const extracted = await studio.saveStudioPreset(owner, {
+    document,
+    name: "Conservative extraction",
+  });
+  expect(JSON.stringify(extracted)).not.toContain("Concrete holiday theme");
+  expect(JSON.stringify(extracted)).not.toContain("Thematic participant");
+  expect(JSON.stringify(extracted)).not.toContain(art.id);
+  expect(
+    extracted.scenes[0].nodes.find((n) => n.type === "text"),
+  ).toMatchObject({ text: "Text" });
+  expect(
+    extracted.scenes[0].nodes.find((n) => n.type === "shape"),
+  ).toMatchObject({ path: geometry });
 });

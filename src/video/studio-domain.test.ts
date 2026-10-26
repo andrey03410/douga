@@ -5,6 +5,7 @@ import {
   extractVideoPreset,
   applyVideoPreset,
   parseVideoDocument,
+  videoPresetSchema,
 } from "./index";
 import type { VideoDocument } from "./types";
 
@@ -249,4 +250,99 @@ it("anchors card, timer, answer and transition sounds to compiled picker phases"
       (x) => x.code === "AUDIO_ANCHOR_NOT_FOUND",
     ),
   ).toBe(true);
+});
+
+it("preserves SVG path design through media-free preset extraction and reapplication", () => {
+  const document = createVideoDocument({
+    kind: "top",
+    participants: [{ id: "private-person", label: "Private label" }],
+  });
+  document.bindings["private-media"] = {
+    kind: "pool",
+    assetId: "private-file",
+  };
+  const geometry = "M 0 100 L 50 0 L 100 100 Z";
+  document.scenes = [
+    {
+      id: "private-scene",
+      block: "custom",
+      duration: { sec: 1 },
+      nodes: [
+        {
+          id: "private-shape",
+          type: "shape",
+          shape: "path",
+          path: geometry,
+          fill: "#abcdef",
+          rect: { x: 0, y: 0, width: 0.5, height: 0.5 },
+        },
+        { id: "private-image", type: "image", asset: "private-media" },
+      ],
+    },
+  ];
+  const preset = extractVideoPreset(document, {
+    id: "geometry",
+    name: "Geometry",
+  });
+  expect(preset.scenes[0].nodes[0]).toMatchObject({
+    type: "shape",
+    shape: "path",
+    path: geometry,
+    fill: "#abcdef",
+  });
+  expect(JSON.stringify(preset)).not.toContain("private-");
+  expect(JSON.stringify(preset)).not.toContain("Private label");
+  const applied = applyVideoPreset(
+    createVideoDocument({ kind: "top" }),
+    preset,
+  );
+  expect(
+    compileVideo(applied).plan.scenes[0].nodes.find((n) => n.shape === "path")
+      ?.path,
+  ).toBe(geometry);
+  expect(applied.bindings).toEqual({});
+});
+
+it("validates and reapplies an explicit generic text/geometry template without extracting away its declared text", () => {
+  const template = extractVideoPreset(createVideoDocument({ kind: "top" }), {
+    id: "generic",
+    name: "Generic",
+  });
+  template.scenes = [
+    {
+      id: "intro",
+      block: "custom",
+      duration: { sec: 1 },
+      nodes: [
+        { id: "prompt", type: "text", text: "Выбери персонажа" },
+        {
+          id: "triangle",
+          type: "shape",
+          shape: "path",
+          path: "M 0 100 L 50 0 L 100 100 Z",
+        },
+        { id: "image-slot", type: "image", asset: "slot:image:1" },
+      ],
+    },
+  ];
+  const parsed = videoPresetSchema.parse(template);
+  const applied = applyVideoPreset(
+    createVideoDocument({ kind: "top" }),
+    parsed,
+  );
+  const plan = compileVideo(applied).plan;
+  expect(plan.scenes[0].nodes.find((n) => n.type === "text")?.text).toBe(
+    "Выбери персонажа",
+  );
+  expect(plan.scenes[0].nodes.find((n) => n.shape === "path")?.path).toBe(
+    "M 0 100 L 50 0 L 100 100 Z",
+  );
+  expect(applied.bindings).toEqual({});
+  const invalid = structuredClone(template);
+  invalid.scenes[0].nodes.push({
+    id: "actual",
+    type: "card",
+    participantId: "person-actual",
+  });
+  expect(() => videoPresetSchema.parse(invalid)).toThrow();
 });

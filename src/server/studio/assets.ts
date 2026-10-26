@@ -1,7 +1,15 @@
 import "server-only";
 import path from "node:path";
 import { createReadStream } from "node:fs";
-import { mkdir, copyFile, realpath, stat, rename, rm } from "node:fs/promises";
+import {
+  mkdir,
+  copyFile,
+  realpath,
+  stat,
+  rename,
+  rm,
+  readdir,
+} from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
@@ -286,6 +294,23 @@ export async function resolveAssets(
         message: `Cannot resolve media binding ${key}: ${code}.`,
         path: `bindings.${key}`,
       });
+    }
+  }
+  if (directory) {
+    // Each evaluation owns its UUID directory. Keep successful aliases/posters,
+    // but never persist copied bytes that failed before entering the file ledger.
+    const recorded = new Set(
+      Object.values(files).flatMap((file) =>
+        file.posterPath ? [file.path, file.posterPath] : [file.path],
+      ),
+    );
+    if (!recorded.size) await cleanupDirectory(directory);
+    else {
+      for (const name of await readdir(absPath(directory))) {
+        const relative = `${directory}/${name}`;
+        if (!recorded.has(relative))
+          await rm(absPath(relative), { force: true });
+      }
     }
   }
   return { manifest, files, diagnostics };

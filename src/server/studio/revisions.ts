@@ -11,7 +11,12 @@ import {
   setReferences,
   runtime,
 } from "./assets";
-import { getStudioProject, addRevision, directoryFor } from "./projects";
+import {
+  getStudioProject,
+  addRevision,
+  directoryFor,
+  assertProjectSourcesUnchanged,
+} from "./projects";
 import { parseVideoDocument, type VideoDocument } from "@/video";
 import { reconcileSource } from "./sources";
 import { StudioError } from "./errors";
@@ -136,12 +141,7 @@ export async function freezeStudioProject(
       if (input.revision === undefined) {
         if (row.version !== project.version)
           throw new StudioError("VERSION_CONFLICT");
-        const source = await reconcileSource(userId, project.document, db);
-        if (
-          source.source.version !== project.sourceVersion &&
-          source.source.kind === "tournament"
-        )
-          throw new StudioError("VERSION_CONFLICT");
+        await assertProjectSourcesUnchanged(userId, project, db);
       }
       let saved = revision;
       if (prepared && draft) {
@@ -267,6 +267,7 @@ export async function deleteStudioRevision(
     if (
       current.revision === revision ||
       current.lastGoodRevision === revision ||
+      current.previewRevision === revision ||
       (await db.studioSnapshot.count({ where: { revisionId: old.id } }))
     )
       throw new StudioError("REVISION_IN_USE");

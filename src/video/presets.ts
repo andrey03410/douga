@@ -118,7 +118,6 @@ export function extractVideoPreset(
     }
     if (base.type === "audio" || base.type === "image" || base.type === "video")
       base.asset = `slot:${base.type}:${nodeIndex}`;
-    if (base.type === "shape" && base.shape === "path") delete base.path;
     return base;
   };
   const scenes: VideoScene[] = doc.scenes.map((s, i) => ({

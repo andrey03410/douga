@@ -531,6 +531,10 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
           issue([...at, "asset"]);
         if (n.type === "card" && n.participantId !== "$participant")
           issue([...at, "participantId"]);
+        const textValue =
+          n.type === "text" ? n.text : n.type === "card" ? n.label : undefined;
+        if (typeof textValue === "object" && textValue.groupId)
+          issue([...at, n.type === "text" ? "text" : "label", "groupId"]);
       });
     p.audio?.cues?.forEach((cue, i) => {
       if (
