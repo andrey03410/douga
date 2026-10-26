@@ -292,12 +292,16 @@ export async function deleteStudioRevision(
   }
   return result;
 }
-/** Task4 must check job references before calling this release operation. */
+/** Job FK protects the frozen revision until its result is explicitly released. */
 export async function deleteStudioSnapshot(userId: string, snapshotId: string) {
   const snapshot = await prisma.studioSnapshot.findUnique({
     where: { id: snapshotId },
   });
   if (!snapshot) throw new StudioError("NOT_FOUND");
   await owned(userId, snapshot.projectId);
-  await prisma.studioSnapshot.delete({ where: { id: snapshotId } });
+  await prisma.$transaction(async (db) => {
+    if (await db.studioJob.count({ where: { snapshotId } }))
+      throw new StudioError("JOB_IN_USE");
+    await db.studioSnapshot.delete({ where: { id: snapshotId } });
+  });
 }

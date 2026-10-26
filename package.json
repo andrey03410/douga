@@ -11,6 +11,7 @@
     "db:generate": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "studio:worker": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/studio-worker.ts",
     "mcp": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json src/mcp/server.ts"
   },
   "dependencies": {

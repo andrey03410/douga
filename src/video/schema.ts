@@ -1,3 +1,4 @@
+import { preflightVideoResources } from "./resource-limits";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { VideoDocument, VideoNode, VideoPreset } from "./types";
@@ -401,83 +402,89 @@ const documentObject = z
     preset: opt(z.object({ id, version: positive.int() }).strict()),
   })
   .strict();
-export const videoDocumentSchema: z.ZodType<VideoDocument> =
-  documentObject.superRefine((d, ctx) => {
-    const unique = (ids: string[], path: (string | number)[]) => {
-      const seen = new Set<string>();
-      ids.forEach((value, i) => {
-        if (seen.has(value))
+export const videoDocumentSchema: z.ZodType<VideoDocument> = z
+  .custom<VideoDocument>(
+    (input) => preflightVideoResources(input).length === 0,
+    { message: "RESOURCE_BUDGET_EXCEEDED" },
+  )
+  .pipe(
+    documentObject.superRefine((d, ctx) => {
+      const unique = (ids: string[], path: (string | number)[]) => {
+        const seen = new Set<string>();
+        ids.forEach((value, i) => {
+          if (seen.has(value))
+            ctx.addIssue({
+              code: "custom",
+              message: `Duplicate stable ID: ${value}`,
+              path: [...path, i, "id"],
+            });
+          seen.add(value);
+        });
+      };
+      unique(
+        d.source.participants.map((p) => p.id),
+        ["source", "participants"],
+      );
+      unique(
+        d.source.rounds.map((r) => r.id),
+        ["source", "rounds"],
+      );
+      unique(
+        d.scenes.map((s) => s.id),
+        ["scenes"],
+      );
+      unique(
+        d.source.rounds.flatMap((r) => r.cards.map((c) => c.id)),
+        ["source", "rounds"],
+      );
+      unique(
+        d.source.rounds.flatMap((r) => (r.groups ?? []).map((g) => g.id)),
+        ["source", "rounds"],
+      );
+      const ids: string[] = [];
+      const walk = (nodes: VideoNode[]) =>
+        nodes.forEach((node) => {
+          ids.push(node.id);
+          if (node.type === "container") walk(node.children);
+        });
+      d.scenes.forEach((s) => walk(s.nodes));
+      unique(ids, ["scenes"]);
+      if (d.source.kind === "tournament" && !d.source.tournamentId)
+        ctx.addIssue({
+          code: "custom",
+          message: "Tournament source requires tournamentId",
+          path: ["source", "tournamentId"],
+        });
+      d.scenes.forEach((s, i) => {
+        if (s.repeat && (s.participantId || s.roundId)) {
           ctx.addIssue({
             code: "custom",
-            message: `Duplicate stable ID: ${value}`,
-            path: [...path, i, "id"],
+            message:
+              "Scene repetition and explicit participant/round references are mutually exclusive",
+            path: ["scenes", i, "repeat"],
           });
-        seen.add(value);
+        }
+        if (
+          s.duration &&
+          ("frame" in s.duration ? s.duration.frame : s.duration.sec) <= 0
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Scene duration must be positive",
+            path: ["scenes", i, "duration"],
+          });
+        if (
+          (s.repeat === "participants" && s.block === "picker") ||
+          (s.repeat === "rounds" && s.block === "top")
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Repeat collection does not match block",
+            path: ["scenes", i, "repeat"],
+          });
       });
-    };
-    unique(
-      d.source.participants.map((p) => p.id),
-      ["source", "participants"],
-    );
-    unique(
-      d.source.rounds.map((r) => r.id),
-      ["source", "rounds"],
-    );
-    unique(
-      d.scenes.map((s) => s.id),
-      ["scenes"],
-    );
-    unique(
-      d.source.rounds.flatMap((r) => r.cards.map((c) => c.id)),
-      ["source", "rounds"],
-    );
-    unique(
-      d.source.rounds.flatMap((r) => (r.groups ?? []).map((g) => g.id)),
-      ["source", "rounds"],
-    );
-    const ids: string[] = [];
-    const walk = (nodes: VideoNode[]) =>
-      nodes.forEach((node) => {
-        ids.push(node.id);
-        if (node.type === "container") walk(node.children);
-      });
-    d.scenes.forEach((s) => walk(s.nodes));
-    unique(ids, ["scenes"]);
-    if (d.source.kind === "tournament" && !d.source.tournamentId)
-      ctx.addIssue({
-        code: "custom",
-        message: "Tournament source requires tournamentId",
-        path: ["source", "tournamentId"],
-      });
-    d.scenes.forEach((s, i) => {
-      if (s.repeat && (s.participantId || s.roundId)) {
-        ctx.addIssue({
-          code: "custom",
-          message:
-            "Scene repetition and explicit participant/round references are mutually exclusive",
-          path: ["scenes", i, "repeat"],
-        });
-      }
-      if (
-        s.duration &&
-        ("frame" in s.duration ? s.duration.frame : s.duration.sec) <= 0
-      )
-        ctx.addIssue({
-          code: "custom",
-          message: "Scene duration must be positive",
-          path: ["scenes", i, "duration"],
-        });
-      if (
-        (s.repeat === "participants" && s.block === "picker") ||
-        (s.repeat === "rounds" && s.block === "top")
-      )
-        ctx.addIssue({
-          code: "custom",
-          message: "Repeat collection does not match block",
-          path: ["scenes", i, "repeat"],
-        });
-    });
-  });
+    }),
+  );
 export const videoPresetSchema: z.ZodType<VideoPreset> = z
   .object({
     schemaVersion: z.literal(1),

@@ -1,3 +1,4 @@
+import { preflightVideoResources } from "@/video/resource-limits";
 import "server-only";
 import path from "node:path";
 import { createReadStream } from "node:fs";
@@ -449,6 +450,15 @@ export async function evaluate(
   directory?: string,
 ) {
   await references(userId, input);
+  const budget = preflightVideoResources(input);
+  if (budget.length)
+    return {
+      validation: { ready: false, diagnostics: budget },
+      plan: null,
+      resolvedDocument: null,
+      manifest: {},
+      files: {},
+    };
   const parsed = videoDocumentSchema.safeParse(input);
   if (!parsed.success) {
     const result = compileVideo(input as VideoDocument);

@@ -1,3 +1,4 @@
+import { videoResourceLimits } from "./resource-limits";
 import type {
   AudioCue,
   CompiledAudio,
@@ -22,6 +23,16 @@ export function addAudio(
     fadeOutSec?: number;
   },
 ): CompiledAudio | undefined {
+  if (ctx.audio.length >= videoResourceLimits.maxAudioCues) {
+    if (!ctx.diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED"))
+      diagnostic(
+        ctx,
+        "RESOURCE_BUDGET_EXCEEDED",
+        "Audio cue expansion exceeds resource budget.",
+        "audio",
+      );
+    return;
+  }
   const offsetFrames = Math.round((options.offsetSec ?? 0) * ctx.fps);
   const available =
     options.asset.durationSec === undefined
@@ -84,6 +95,15 @@ export function compileGlobalAudio(
   scenes: CompiledScene[],
 ): void {
   for (const cue of ctx.document.audio?.cues ?? []) {
+    if (ctx.audio.length >= videoResourceLimits.maxAudioCues) {
+      diagnostic(
+        ctx,
+        "RESOURCE_BUDGET_EXCEEDED",
+        "Audio cue expansion exceeds resource budget.",
+        "audio",
+      );
+      return;
+    }
     const asset = resolveAsset(
       ctx,
       cue.asset,
@@ -187,6 +207,15 @@ export function compileGlobalAudio(
       cursor < total &&
       (playlist.loop !== false || index < tracks.length)
     ) {
+      if (index >= videoResourceLimits.maxAudioCues) {
+        diagnostic(
+          ctx,
+          "RESOURCE_BUDGET_EXCEEDED",
+          "Playlist expansion exceeds resource budget.",
+          "audio.playlist",
+        );
+        return;
+      }
       const asset = tracks[index % tracks.length];
       const next = tracks[(index + 1) % tracks.length];
       const length = Math.max(1, Math.floor(asset.durationSec! * ctx.fps));
@@ -216,6 +245,18 @@ export function compileGlobalAudio(
   const duck = ctx.audio
     .filter((a) => a.role === "primary" || a.role === "voice")
     .map((a) => ({ from: a.from, to: a.from + a.durationInFrames }));
+  if (
+    duck.length * ctx.audio.filter((a) => a.role === "music").length >
+    videoResourceLimits.maxAudioPolicyWindows
+  ) {
+    diagnostic(
+      ctx,
+      "RESOURCE_BUDGET_EXCEEDED",
+      "Audio policy expansion exceeds resource budget.",
+      "audio",
+    );
+    return;
+  }
   for (const audio of ctx.audio)
     if (audio.role === "music")
       audio.duckWindows = duck.filter(

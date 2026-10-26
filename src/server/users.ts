@@ -64,7 +64,7 @@ interface KindTotals {
 }
 
 export interface UsageSummary {
-  studio: {projects:number;revisions:number;snapshots:number;bytes:number};
+  studio: {projects:number;revisions:number;snapshots:number;bytes:number;jobs:number;resultBytes:number};
   role: string;
   quotas: ReturnType<typeof quotasFor>;
   /** Pool totals with a per-kind split (images/videos/audio). */
@@ -148,7 +148,8 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
       if(file.posterPath) studioFiles.set(file.posterPath,file.posterBytes??0);
     }
   }
-  const studio = {projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)};
+  const studioJobs = await prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}});
+  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)};
   return {
     studio,
     role: user.role,
@@ -323,11 +324,13 @@ export async function deleteUser(actorId: string, targetId: string) {
   ];
   // Delete references and rows atomically before releasing any user bytes.
   await prisma.$transaction(async tx => {
+    if(await tx.studioJob.count({where:{userId:targetId}})) throw new Error("JOB_IN_USE");
     await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
     await tx.studioProject.deleteMany({where:{userId:targetId}});
     await tx.user.delete({where:{id:targetId}});
   });
   await removePath(path.join("studio",targetId));
+  await removePath(path.join("studio-jobs",targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
   }

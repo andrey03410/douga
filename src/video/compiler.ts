@@ -1,3 +1,7 @@
+import {
+  preflightVideoResources,
+  videoResourceLimits,
+} from "./resource-limits";
 import type {
   AssetManifest,
   CompileResult,
@@ -31,6 +35,8 @@ export function compileVideo(
     scenes: [],
     audio: [],
   };
+  const budget = preflightVideoResources(input);
+  if (budget.length) return { plan, ready: false, diagnostics: budget };
   const parsed = videoDocumentSchema.safeParse(input);
   const assets = assetManifestSchema.safeParse(manifest);
   if (!parsed.success || !assets.success)
@@ -77,11 +83,13 @@ export function compileVideo(
   };
   const muteWindows: Window[] = [];
   let cursor = 0;
+  let budgetExceeded = false;
   function emit(
     template: VideoScene,
     participant?: Participant,
     round?: PickerRound,
   ): void {
+    if (budgetExceeded) return;
     if (template.participantId && !participant) {
       diagnostic(
         ctx,
@@ -190,6 +198,14 @@ export function compileVideo(
       }
       plan.scenes.push(scene);
       cursor += scene.durationInFrames;
+      if (
+        !Number.isSafeInteger(cursor) ||
+        cursor > videoResourceLimits.maxDurationSeconds * ctx.fps ||
+        plan.audio.length > videoResourceLimits.maxAudioCues
+      ) {
+        budgetExceeded = true;
+        return;
+      }
     }
     if (round && round.music !== undefined)
       muteWindows.push({ from: scenes[0].from, to: cursor });
@@ -216,6 +232,19 @@ export function compileVideo(
         document.source.rounds.find((r) => r.id === template.roundId),
       );
   }
+  if (budgetExceeded)
+    return {
+      plan: { ...plan, scenes: [], audio: [] },
+      ready: false,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "RESOURCE_BUDGET_EXCEEDED",
+          path: "scenes",
+          message: "Expanded timeline exceeds duration or audio budgets.",
+        },
+      ],
+    };
   if (!plan.scenes.length)
     diagnostic(
       ctx,

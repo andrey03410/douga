@@ -530,6 +530,8 @@ export async function deleteStudioProject(
       input.expectedVersion !== row.version
     )
       throw new StudioError("VERSION_CONFLICT");
+    if (await db.studioJob.count({ where: { projectId: id } }))
+      throw new StudioError("JOB_IN_USE");
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
     await db.studioProject.delete({ where: { id } });
     const result = { deleted: true as const, id };

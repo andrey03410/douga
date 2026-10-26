@@ -27,6 +27,7 @@ model User {
   studioProjects StudioProject[]
   studioPresets StudioPreset[]
   studioMutations StudioMutation[]
+  studioJobs StudioJob[]
 }
 
 // ---- Phase 1: tournament ----
@@ -378,6 +379,7 @@ model StudioProject {
   revisions StudioRevision[]
   references StudioAssetReference[]
   snapshots StudioSnapshot[]
+  jobs StudioJob[]
 }
 model StudioRevision {
   id String @id @default(cuid())
@@ -417,6 +419,7 @@ model StudioSnapshot {
   revisionId String
   revision StudioRevision @relation(fields:[revisionId],references:[id],onDelete:Restrict)
   payloadJson String
+  jobs StudioJob[]
   bytes Float
   createdAt DateTime @default(now())
 }
@@ -442,4 +445,38 @@ model StudioAnalysis {
   key String @id
   startSec Float
   endSec Float
+}
+
+// Shared durable queue: imports may have no project/snapshot; composition jobs require both.
+model StudioJob {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Restrict)
+  projectId String?
+  project StudioProject? @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  snapshotId String?
+  snapshot StudioSnapshot? @relation(fields:[snapshotId],references:[id],onDelete:Restrict)
+  kind String
+  inputJson String
+  engineId String
+  status String @default("queued")
+  progress Float @default(0)
+  attempts Int @default(0)
+  workerId String?
+  leaseToken String?
+  leaseUntil DateTime?
+  availableAt DateTime @default(now())
+  error String?
+  resultJson String?
+  outputBytes Float @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status,availableAt])
+  @@index([userId,status])
+}
+// One persisted heavy-work slot. A lease token fences every attempt's writes.
+model StudioWorkerLease {
+  id String @id
+  token String?
+  until DateTime?
 }
