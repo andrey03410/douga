@@ -522,6 +522,38 @@ export function compilePicker(
           soundTaken = true;
       });
     });
+    // Equal automatic sizes prevent a smaller group from receiving larger
+    // characters. Explicit group geometry and free layouts remain authored.
+    const automaticGroups = new Set(
+      groups
+        .filter(
+          (group) =>
+            s.layout?.type !== "free" &&
+            !group.settings?.layout &&
+            !group.settings?.card?.orientation,
+        )
+        .map((group) => group.id),
+    );
+    const automaticCards = main.nodes.filter(
+      (node) =>
+        node.type === "card" &&
+        node.groupId &&
+        automaticGroups.has(node.groupId),
+    );
+    if (automaticCards.length) {
+      const width = Math.min(...automaticCards.map((node) => node.rect.width));
+      const height = Math.min(
+        ...automaticCards.map((node) => node.rect.height),
+      );
+      for (const card of automaticCards) {
+        card.rect = {
+          x: card.rect.x + (card.rect.width - width) / 2,
+          y: card.rect.y + (card.rect.height - height) / 2,
+          width,
+          height,
+        };
+      }
+    }
   } else {
     const free = s.layout?.type === "free";
     const rects = layoutCards(
