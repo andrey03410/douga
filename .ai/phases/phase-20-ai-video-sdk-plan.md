@@ -90,7 +90,7 @@
 
 **Files:** Additive studio-job models in `prisma/schema.prisma`; `src/server/studio/{jobs,worker,render,types,index}.ts` or adjacent focused modules; `scripts/studio-worker.ts`; package worker script; `src/integration/studio-jobs.integration.test.ts`.
 
-**Interfaces:** Consume Task3 frozen revision/manifests and Task2 `StudioVideo`/Studio composition. Export `startStudioJob(userId,projectId,input)`, `getStudioJob(userId,jobId)`, `cancelStudioJob(userId,jobId)`, `deleteStudioJob(userId,jobId)`, `runStudioWorkerOnce(options?:{jobId?:string;workerId?:string})` from the service barrel. Jobs support still/clip/audio/render and original-asset inspection/import as needed by parity; exact discriminated inputs/results are documented before Task5. Freeze at enqueue; no mutable-head reread at worker start.
+**Interfaces:** Consume Task3 frozen revision/manifests and Task2 `StudioVideo`/Studio composition. Export `startStudioJob(userId,projectId,input)`, `getStudioJob(userId,jobId)`, `cancelStudioJob(userId,jobId)`, `deleteStudioJob(userId,jobId)`, `runStudioWorkerOnce(options?:{jobId?:string;workerId?:string})` from the service barrel. This task implements composition still/clip/audio/render jobs; the same queue/worker is extended by Task5 for standalone durable URL imports; exact discriminated inputs/results are documented before Task5. Freeze at enqueue; no mutable-head reread at worker start.
 
 - [ ] Write failing DB tests for frozen inputs across source/document changes, one claim per job, leases/recovery/retry, idempotent enqueue, cancellation, permission/ownership/quota, preview budgets vs final admin render, protected artifacts and safe cleanup. Test workers scope themselves to their own generated job ID. Observe RED.
 - [ ] Implement separate Node worker with durable SQLite queue, lease/heartbeat, bounded retry/resource budgets, status/progress and cancellation. Default one heavy render at a time. Source reconciliation can run in the worker and on current-project reads.
@@ -98,7 +98,18 @@
 - [ ] Integrate job-aware revision/project/asset deletion guards and user usage/results. Preserve actual bytes for historical rerendering; canceled output must never later become done. Inspect real frame and MP4 through actual worker execution.
 - [ ] Run focused job tests, TypeScript and full suite once; commit worker, script and docs with detailed evidence/report.
 
-### Task 5: MCP discovery, editing, inspection and rendering
+### Task 5: Durable media imports through the shared worker
+
+**Files:** `src/server/studio/{imports,jobs,worker,types,index}.ts` or focused adjacent modules; additive job/asset relations in `prisma/schema.prisma` if required; reuse `src/lib/ytdlp.ts`, `src/server/arts.ts` and existing upload/import quota utilities. `src/integration/studio-imports.integration.test.ts`; update the actual job contract.
+
+**Interfaces:** Add `startStudioImport(userId,input)` for `{url,mode:'audio'|'video',quality?,idempotencyKey?}`; standalone import jobs use the same status/cancel/delete/worker contract as Task4. They do not require an existing video project. Successful result identifies an owned pool asset with media metadata. Small synchronous local/image imports may keep existing services; long new SDK URL imports are durable rather than delegated to the legacy in-process DownloadJob runner.
+
+- [ ] Write RED real-DB/loopback-yt-dlp tests for enqueue without execution, scoped worker import, ownership/fresh roles/pool quota, idempotent replay and conflicting payload, cancellation, recovery/retry and exactly one imported pool result. Test fixtures explicitly disable configured YTDLP_PROXY only for loopback calls.
+- [ ] Extend the shared durable queue/worker with URL imports, fresh permissions and quota at execution/publication, process cancellation/lease loss and bounded retry. Reuse probe/download/normalization/pool utilities. Do not execute imports in the web/MCP process or let a losing/canceled attempt publish an unexpected duplicate asset. Existing user DownloadJob records remain untouched.
+- [ ] Verify actual downloaded bytes/streams and restart-safe queued state. Integrate safe result cleanup/account usage while preserving an imported asset that is now used by a project; report protected references clearly.
+- [ ] Run covering import/queue/quota tests, TypeScript and full suite once; commit and document exact schemas/results for MCP/UI consumers. Controller owns subsequent task-scoped review.
+
+### Task 6: MCP discovery, editing, inspection and rendering
 
 **Files:** Create `src/mcp/studio-tools.ts`, modify `src/mcp/server.ts`, add `src/integration/studio-mcp.integration.test.ts` and exact protocol examples to SDK contract.
 
@@ -110,7 +121,7 @@
 - [ ] Recheck role fresh for mutations/render. Do not use stale cached role to bypass permissions or leak another user's absolute media paths.
 - [ ] Run MCP tests and TypeScript; commit adapter and docs.
 
-### Task 6: Authenticated SDK website and preview parity
+### Task 7: Authenticated SDK website and preview parity
 
 **Files:** Create `src/app/studio/[id]/page.tsx`, editor components, `src/app/api/studio/` routes using Task 3 services; modify project listing/navigation and tournament results/render entry links as needed; personal preset browsing. New creation flows point users to external MCP/code; preserve access to existing old projects.
 
@@ -122,7 +133,7 @@
 - [ ] Run tests, TypeScript and production build. Check the running site through CUA: project listing, edit/invalid draft/conflict, preview, presets, revisions and job result. Fix usability issues found against this workflow.
 - [ ] Commit UI deliverable with actual browser evidence in task report.
 
-### Task 7: End-to-end acceptance, regression repairs and handoff
+### Task 8: End-to-end acceptance, regression repairs and handoff
 
 **Files:** Add `scripts/verify-studio.mjs` and integration acceptance fixtures/tests as needed; update README/CLAUDE.md and `.ai/phases/phase-20-verification.md` with real evidence.
 
