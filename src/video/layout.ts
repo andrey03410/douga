@@ -37,15 +37,21 @@ export function layoutCards(
       height: r.height * area.height,
     }));
   const ratio = orientation === "portrait" ? 2 / 3 : 16 / 9;
+  const arc = layout.type === "arc";
+  // A curve needs at least three points. Small rosters share one arc; larger
+  // rosters may wrap, but automatic rows must still be able to show curvature.
+  const minimumColumns = arc ? (count <= 4 ? count : 3) : 1;
+  const rowHeight = arc && count >= 3 ? 1.35 : 1;
   let best = { columns: 1, width: 1, height: 1, area: 0 };
   for (let columns = 1; columns <= count; columns++) {
     if (layout.columns && columns !== Math.min(count, layout.columns)) continue;
+    if (!layout.columns && columns < minimumColumns) continue;
     const rows = Math.ceil(count / columns);
     const width = Math.max(
       1,
       Math.min(
         (a.width - gap * (columns - 1)) / columns,
-        ((a.height - gap * (rows - 1)) / rows) * ratio,
+        ((a.height - gap * (rows - 1)) / (rows * rowHeight)) * ratio,
       ),
     );
     const height = width / ratio;
@@ -63,23 +69,22 @@ export function layoutCards(
         (i % best.columns) * (best.width + gap),
       y:
         a.y +
-        (a.height - rows * best.height - (rows - 1) * gap) / 2 +
-        row * (best.height + gap),
+        (a.height - rows * best.height * rowHeight - (rows - 1) * gap) / 2 +
+        row * (best.height * rowHeight + gap),
       width: best.width,
       height: best.height,
     };
   });
-  if (layout.type !== "arc" || count < 2) return grid;
-  // Arc per row keeps even large rosters in bounds; reserve the arc's vertical amplitude.
-  const amplitude = Math.min(a.height / (rows * 6), best.height * 0.35);
+  if (!arc || count < 3) return grid;
+  // Reserve the curve's full height during sizing, preserving card aspect ratio.
+  const amplitude = best.height * (rowHeight - 1);
   return grid.map((r, i) => {
     const row = Math.floor(i / best.columns),
       rowCount = Math.min(best.columns, count - row * best.columns);
     const angle =
-      rowCount < 2 ? 0 : ((i % best.columns) / (rowCount - 1) - 0.5) * Math.PI;
+      rowCount < 3 ? 0 : ((i % best.columns) / (rowCount - 1) - 0.5) * Math.PI;
     return {
       ...r,
-      height: r.height - amplitude,
       y: r.y + amplitude * (1 - Math.cos(angle)),
     };
   });

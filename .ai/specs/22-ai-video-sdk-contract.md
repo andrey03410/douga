@@ -157,8 +157,12 @@ an inline answer phase or a separate answer scene. Separate answer scenes retain
 all cards for context and mark winners; no answer means no answer scene.
 
 Layout is `{type:"grid"|"arc"|"free",gap?,padding?,columns?,positions?}`. Grid
-searches feasible rows/columns for maximum card area; arc curves each row while
-keeping cards in frame. Free positions are normalized output rectangles, one
+searches feasible rows/columns for maximum card area. Automatic arc uses one row
+for up to four cards, then searches rows with at least three columns so curvature
+is visible. It reserves curve height before sizing, preserving card proportions
+and keeping rows disjoint and in frame. Explicit columns take precedence;
+one/two-card rows use centered/symmetric placement because they cannot express a
+three-point curve. Free positions are normalized output rectangles, one
 per card. Missing free positions produce a diagnostic; fallback layout exists
 only to aid inspection. Top layouts fill the output; picker automatic layout
 reserves prompt/timer regions. Containers can have their own layout.
