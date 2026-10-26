@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import ffmpeg from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { probeMediaInfo } from "@/lib/audio";
+import { MediaProbeError, mediaProbeLimits } from "@/lib/media-probe";
 import { actor } from "./shared";
 import { safeFile } from "./assets";
 import { getStudioJobArtifact } from "./jobs";
@@ -20,6 +21,7 @@ export const studioInspectionLimits = Object.freeze({
   longEdge: studioJobLimits.previewLongEdge,
   audioSeconds: studioJobLimits.previewSeconds,
   timeoutMs: 30_000,
+  probe: mediaProbeLimits,
 });
 const execute = promisify(execFile);
 /** No caller path is accepted. Clips are encoded only when their resource is read. */
@@ -65,7 +67,10 @@ async function inspect(
     if (e instanceof StudioError) throw e;
     throw new StudioError("ASSET_FILE_MISSING");
   }
-  const info = await probeMediaInfo(path);
+  const info = await probeMediaInfo(path).catch((error) => {
+    if (error instanceof MediaProbeError) throw new StudioError(error.code);
+    throw error;
+  });
   if (!info.hasVideo && !info.hasAudio)
     throw new StudioError("ASSET_MEDIA_INVALID");
   const mode =

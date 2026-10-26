@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import ffmpegPath from "ffmpeg-static";
 import { selectActiveSnippet, type Snippet } from "./domain/rms";
+import { captureMediaProbe } from "./media-probe";
 
 const FFMPEG = ffmpegPath as unknown as string;
 /** Low sample rate is plenty for energy analysis and keeps decoding fast. */
@@ -57,25 +58,20 @@ export interface MediaInfo {
 /**
  * Probe a media file's stream layout via ffmpeg stderr. Cover art embedded in
  * audio files shows up as an "attached pic" video stream and is not counted.
+ * Capture is deadline/byte bounded; ordinary missing/unreadable inputs retain
+ * the legacy null/false metadata fallback, while limit errors stay actionable.
  */
-export function probeMediaInfo(inputPath: string): Promise<MediaInfo> {
-  return new Promise((resolve) => {
-    const proc = spawn(FFMPEG, ["-i", inputPath], { stdio: ["ignore", "ignore", "pipe"] });
-    const err: Buffer[] = [];
-    proc.stderr.on("data", (d) => err.push(d));
-    proc.on("error", () => resolve({ durationSec: null, hasAudio: false, hasVideo: false }));
-    proc.on("close", () => {
-      const text = Buffer.concat(err).toString();
-      const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
-      const durationSec = m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
-      const streams = text.split("\n").filter((l) => /Stream #\d+/.test(l));
-      resolve({
-        durationSec,
-        hasAudio: streams.some((l) => /:\s*Audio:/.test(l)),
-        hasVideo: streams.some((l) => /:\s*Video:/.test(l) && !l.includes("attached pic")),
-      });
-    });
-  });
+export async function probeMediaInfo(inputPath: string): Promise<MediaInfo> {
+  const proc = spawn(FFMPEG, ["-i", inputPath], { stdio: ["ignore", "ignore", "pipe"] });
+  const text = await captureMediaProbe(proc);
+  const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
+  const durationSec = m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
+  const streams = text.split("\n").filter((l) => /Stream #\d+/.test(l));
+  return {
+    durationSec,
+    hasAudio: streams.some((l) => /:\s*Audio:/.test(l)),
+    hasVideo: streams.some((l) => /:\s*Video:/.test(l) && !l.includes("attached pic")),
+  };
 }
 
 /** Extract a poster frame (jpg). Seeks ~0.5s in; falls back to the first frame. */

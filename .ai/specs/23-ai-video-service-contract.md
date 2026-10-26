@@ -103,6 +103,17 @@ each subprocess is limited to 30 seconds and 12 MiB output. Fresh permission and
 ownership are rechecked after encoding. Only owned Art IDs resolve files through
 the existing safe-storage boundary; caller-supplied filesystem paths are absent.
 
+Initial stream probing is also bounded, including metadata-only (`content:false`)
+inspection and resource reads: `probeMediaInfo` uses the shared capture helper's
+30-second deadline and 1-MiB diagnostic cap. Hitting either bound sends SIGTERM,
+escalates to SIGKILL after 200 ms if necessary, and waits for the actual child
+`close` event before rejecting. No promise race leaves a probe running. Studio
+inspection surfaces structured `MEDIA_PROBE_TIMEOUT` or
+`MEDIA_PROBE_OUTPUT_LIMIT`, without returning stderr or private paths. These probe
+limits are published as `studioInspectionLimits.probe` in MCP capabilities.
+Normal stream/duration parsing and legacy missing-input null/false fallback
+remain unchanged. Encoder output retains its separate 12-MiB/30-second bounds.
+
 `readStudioJobResource(userId,jobId)` reuses the verified job-artifact boundary
 and returns at most 12 MiB of base64 bytes. Larger outputs fail
 `INSPECTION_BYTE_LIMIT`; this is an MCP inspection budget, not a render limit.

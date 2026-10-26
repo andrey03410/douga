@@ -730,3 +730,10 @@ from the existing compiled plan. Current last-good previews name their actual ed
 version and staleness; `revision` selects immutable saved history, including a
 job's frozen revision. This avoids guessing repeated/full/active scene durations.
 For example: `{"name":"video_timeline_get","arguments":{"projectId":"PROJECT_ID","revision":1,"limit":20}}`.
+
+Probe failures in original inspection also have structured codes:
+`MEDIA_PROBE_TIMEOUT` (30-second probe deadline) and `MEDIA_PROBE_OUTPUT_LIMIT`
+(1-MiB diagnostic capture). The server terminates the real probe, escalates after
+200 ms if required and awaits process closure before returning an error. The
+same bounds apply before metadata-only responses and resource reads; native
+capabilities publish the exact probe limits separately from encoder budgets.

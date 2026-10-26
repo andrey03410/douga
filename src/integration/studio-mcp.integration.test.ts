@@ -2,7 +2,7 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import { randomUUID, createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import ffmpeg from "ffmpeg-static";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
@@ -22,6 +22,7 @@ let owner: string,
   audioId: string,
   sourceId: string;
 let videoId: string;
+let noisyId: string;
 let client: Client, transport: StdioClientTransport;
 async function raw(name: string, args: Record<string, unknown> = {}) {
   return await client.callTool({ name, arguments: args });
@@ -114,6 +115,45 @@ beforeAll(async () => {
         hasAudio: true,
         durationSec: 1.2,
         sizeBytes: (await readFile(absPath(videoPath))).length,
+      },
+    })
+  ).id;
+  const metadataPath = `arts/${owner}/noisy-metadata.txt`;
+  const noisyPath = `arts/${owner}/noisy.m4a`;
+  await writeFile(
+    absPath(metadataPath),
+    `;FFMETADATA1\n${Array.from({ length: 8000 }, (_, i) => `tag${i}=${"x".repeat(200)}`).join("\n")}\n`,
+  );
+  execFileSync(ffmpeg!, [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=duration=0.1",
+    "-f",
+    "ffmetadata",
+    "-i",
+    absPath(metadataPath),
+    "-map",
+    "0:a",
+    "-map_metadata",
+    "1",
+    "-c:a",
+    "aac",
+    "-movflags",
+    "use_metadata_tags",
+    absPath(noisyPath),
+  ]);
+  noisyId = (
+    await prisma.art.create({
+      data: {
+        userId: owner,
+        kind: "audio",
+        filePath: noisyPath,
+        hasAudio: true,
+        sizeBytes: (await readFile(absPath(noisyPath))).length,
       },
     })
   ).id;
@@ -708,6 +748,21 @@ it("reuses personal group skeletons and applies design without changing source c
     { name: "Catalog is not canonical", preset: { ...preset, personal: true } },
     "SCHEMA_INVALID",
   );
+});
+
+it("bounds noisy probing before metadata-only inspection and resource reads with structured errors", async () => {
+  const result = await raw("video_asset_inspect", {
+    assetId: noisyId,
+    content: false,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent).toMatchObject({
+    error: { code: "MEDIA_PROBE_OUTPUT_LIMIT" },
+  });
+  expect(JSON.stringify(result)).not.toContain("/Users/");
+  await expect(
+    client.readResource({ uri: `video://asset/${noisyId}` }),
+  ).rejects.toThrow("MEDIA_PROBE_OUTPUT_LIMIT");
 });
 
 it("inspects later original video frames, sound and bounded clips through owned resources", async () => {
