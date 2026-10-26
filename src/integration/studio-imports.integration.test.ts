@@ -22,6 +22,11 @@ import * as studio from "@/server/studio";
 import * as importsInternal from "@/server/studio/imports";
 import { createVideoDocument } from "@/video";
 import { deleteArt } from "@/server/arts";
+import {
+  nativeWorkMs,
+  nativeTestMs,
+  importCleanupMs,
+} from "@/test/native-import-budget";
 
 let owner: string, other: string, server: Server, url: string, bytes: Buffer;
 let requests = 0;
@@ -105,6 +110,36 @@ afterAll(async () => {
 const start = (overrides = {}) =>
   studio.startStudioImport(owner, { url, mode: "video", ...overrides });
 
+function managedWorker(jobId: string) {
+  let working: ReturnType<typeof studio.runStudioWorkerOnce> | undefined;
+  let cleaning = false;
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = () =>
+    (cleanupPromise ??= (async () => {
+      cleaning = true;
+      onRequest = undefined;
+      const row = await prisma.studioJob.findFirst({
+        where: { id: jobId, userId: owner },
+      });
+      if (row && ["queued", "running"].includes(row.status))
+        await studio.cancelStudioJob(owner, jobId);
+      // Await the independent worker, never the test promise that calls cleanup.
+      await working?.catch(() => undefined);
+    })());
+  onTestFinished(cleanup, importCleanupMs); // Before any real native work.
+  return {
+    cleanup,
+    get cleaning() {
+      return cleaning;
+    },
+    run() {
+      if (cleaning) throw new Error("Test worker is already draining");
+      working = studio.runStudioWorkerOnce({ jobId });
+      return working;
+    },
+  };
+}
+
 describe("durable standalone imports", () => {
   it("queues without network/project/engine work, replays once and validates strict inputs", async () => {
     const before = requests;
@@ -144,67 +179,74 @@ describe("durable standalone imports", () => {
     expect(await studio.runStudioWorkerOnce({ jobId: a.id })).toBeNull();
     await studio.deleteStudioJob(owner, a.id);
   });
-  it("downloads actual streams in scoped child and publishes one complete owned pool asset", async () => {
-    const j = await start();
-    const result = await studio.runStudioWorkerOnce({ jobId: j.id });
-    expect(result).toMatchObject({
-      status: "done",
-      attempts: 1,
-      result: { kind: "import", asset: { kind: "video", hasAudio: true } },
-    });
-    if (result?.result?.kind !== "import")
-      throw new Error(JSON.stringify(result));
-    const art = await prisma.art.findUniqueOrThrow({
-      where: { id: result.result.asset.id },
-    });
-    expect(art.userId).toBe(owner);
-    expect(art.label).toContain("PRIVATE-IMPORT-TITLE-8426");
-    expect(JSON.stringify(result)).not.toContain("PRIVATE-IMPORT-TITLE-8426");
-    expect(result.result.asset).not.toHaveProperty("label");
-    expect(
-      JSON.stringify(await studio.getStudioJob(owner, j.id)),
-    ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
-    expect(
-      JSON.stringify(await studio.cancelStudioJob(owner, j.id)),
-    ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
-    expect(art.filePath).not.toBe("");
-    expect(await fileHash(absPath(art.filePath))).toBe(
-      result.result.asset.hash,
-    );
-    expect(await probeMediaInfo(absPath(art.filePath))).toMatchObject({
-      hasVideo: true,
-      hasAudio: true,
-    });
-    expect(art.durationSec).toBeGreaterThan(0);
-    expect(art.posterPath).toBeTruthy();
-    expect(await studio.runStudioWorkerOnce({ jobId: j.id })).toBeNull();
-    expect(await prisma.art.count({ where: { userId: owner } })).toBe(1);
-    expect(
-      (await prisma.studioJob.findUniqueOrThrow({ where: { id: j.id } }))
-        .outputBytes,
-    ).toBe(0);
-    const artifact = await studio.getStudioJobArtifact(owner, j.id);
-    expect(artifact.path).toBe(absPath(art.filePath));
-    await expect(studio.getStudioJobArtifact(other, j.id)).rejects.toThrow(
-      "NOT_FOUND",
-    );
-    const document = createVideoDocument({
-      kind: "top",
-      participants: [{ id: "one", label: "Imported" }],
-    });
-    document.bindings.imported = { kind: "pool", assetId: art.id };
-    const project = await studio.createStudioProject(owner, { document });
-    expect(await studio.deleteStudioJob(owner, j.id)).toMatchObject({
-      deleted: true,
-      preservedAssetId: art.id,
-    });
-    await expect(deleteArt(owner, art.id)).rejects.toThrow(
-      "STUDIO_ASSET_IN_USE",
-    );
-    await studio.deleteStudioProject(owner, project.id);
-    expect(await readFile(absPath(art.filePath))).toHaveLength(art.sizeBytes!);
-    await deleteArt(owner, art.id);
-  }, 60_000);
+  it(
+    "downloads actual streams in scoped child and publishes one complete owned pool asset",
+    async () => {
+      const j = await start();
+      const worker = managedWorker(j.id);
+      const result = await worker.run();
+      expect(result).toMatchObject({
+        status: "done",
+        attempts: 1,
+        result: { kind: "import", asset: { kind: "video", hasAudio: true } },
+      });
+      if (result?.result?.kind !== "import")
+        throw new Error(JSON.stringify(result));
+      const art = await prisma.art.findUniqueOrThrow({
+        where: { id: result.result.asset.id },
+      });
+      expect(art.userId).toBe(owner);
+      expect(art.label).toContain("PRIVATE-IMPORT-TITLE-8426");
+      expect(JSON.stringify(result)).not.toContain("PRIVATE-IMPORT-TITLE-8426");
+      expect(result.result.asset).not.toHaveProperty("label");
+      expect(
+        JSON.stringify(await studio.getStudioJob(owner, j.id)),
+      ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
+      expect(
+        JSON.stringify(await studio.cancelStudioJob(owner, j.id)),
+      ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
+      expect(art.filePath).not.toBe("");
+      expect(await fileHash(absPath(art.filePath))).toBe(
+        result.result.asset.hash,
+      );
+      expect(await probeMediaInfo(absPath(art.filePath))).toMatchObject({
+        hasVideo: true,
+        hasAudio: true,
+      });
+      expect(art.durationSec).toBeGreaterThan(0);
+      expect(art.posterPath).toBeTruthy();
+      expect(await studio.runStudioWorkerOnce({ jobId: j.id })).toBeNull();
+      expect(await prisma.art.count({ where: { userId: owner } })).toBe(1);
+      expect(
+        (await prisma.studioJob.findUniqueOrThrow({ where: { id: j.id } }))
+          .outputBytes,
+      ).toBe(0);
+      const artifact = await studio.getStudioJobArtifact(owner, j.id);
+      expect(artifact.path).toBe(absPath(art.filePath));
+      await expect(studio.getStudioJobArtifact(other, j.id)).rejects.toThrow(
+        "NOT_FOUND",
+      );
+      const document = createVideoDocument({
+        kind: "top",
+        participants: [{ id: "one", label: "Imported" }],
+      });
+      document.bindings.imported = { kind: "pool", assetId: art.id };
+      const project = await studio.createStudioProject(owner, { document });
+      expect(await studio.deleteStudioJob(owner, j.id)).toMatchObject({
+        deleted: true,
+        preservedAssetId: art.id,
+      });
+      await expect(deleteArt(owner, art.id)).rejects.toThrow(
+        "STUDIO_ASSET_IN_USE",
+      );
+      await studio.deleteStudioProject(owner, project.id);
+      expect(await readFile(absPath(art.filePath))).toHaveLength(
+        art.sizeBytes!,
+      );
+      await deleteArt(owner, art.id);
+    },
+    nativeTestMs(2),
+  );
   it("checks fresh roles and pool quota before executing", async () => {
     const j = await start();
     await prisma.user.update({ where: { id: owner }, data: { role: "guest" } });
@@ -316,7 +358,7 @@ describe("durable standalone imports", () => {
         ],
         {
           env: { ...process.env, TSX_TSCONFIG_PATH: "tsconfig.mcp.json" },
-          timeout: 60_000,
+          timeout: nativeWorkMs(2),
         },
       );
       const result = await studio.getStudioJob(owner, j.id);
@@ -345,44 +387,68 @@ describe("durable standalone imports", () => {
         preservedAssetId: null,
       });
     },
-    60_000,
+    nativeTestMs(3), // Interrupted metadata invocation plus metadata + download.
   );
-  it("bounds transient retries without publishing incomplete Art rows", async () => {
-    const j = await start({ url: url.replace(/[^/]+$/, "missing.mp4") });
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      await prisma.studioJob.update({
-        where: { id: j.id },
-        data: { availableAt: new Date(0) },
-      });
-      expect(await studio.runStudioWorkerOnce({ jobId: j.id })).toMatchObject({
-        status: attempt === 3 ? "failed" : "queued",
-        attempts: attempt,
-        error: "IMPORT_FAILED",
-      });
-      expect(await prisma.art.count({ where: { userId: owner } })).toBe(0);
-    }
-    await studio.deleteStudioJob(owner, j.id);
-  }, 60_000);
-
-  it("cancels an active child with no pool publication", async () => {
-    const j = await start();
-    let reached!: () => void;
-    const network = new Promise<void>((resolve) => {
-      reached = resolve;
-    });
-    onRequest = () => reached();
-    const working = studio.runStudioWorkerOnce({ jobId: j.id });
-    try {
-      await network;
-      await studio.cancelStudioJob(owner, j.id);
-      expect(await working).toMatchObject({ status: "canceled", result: null });
-      expect(await prisma.art.count({ where: { userId: owner } })).toBe(0);
+  it(
+    "bounds transient retries without publishing incomplete Art rows",
+    async () => {
+      const j = await start({ url: url.replace(/[^/]+$/, "missing.mp4") });
+      const worker = managedWorker(j.id);
+      try {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          if (worker.cleaning) return;
+          await prisma.studioJob.update({
+            where: { id: j.id },
+            data: { availableAt: new Date(0) },
+          });
+          const result = await worker.run();
+          if (worker.cleaning) return; // A framework timeout must not start another attempt.
+          expect(result).toMatchObject({
+            status: attempt === 3 ? "failed" : "queued",
+            attempts: attempt,
+            error: "IMPORT_FAILED",
+          });
+          expect(await prisma.art.count({ where: { userId: owner } })).toBe(0);
+        }
+      } finally {
+        await worker.cleanup();
+      }
       await studio.deleteStudioJob(owner, j.id);
-    } finally {
-      onRequest = undefined;
-      await working;
-    }
-  }, 60_000);
+    },
+    nativeTestMs(3),
+  ); // Three separate failed metadata processes, not one attempt.
+
+  it(
+    "cancels an active child with no pool publication",
+    async () => {
+      const j = await start();
+      const worker = managedWorker(j.id);
+      let reached!: () => void;
+      const network = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      onRequest = () => reached();
+      const working = worker.run();
+      try {
+        await network;
+        await worker.cleanup();
+        expect(await working).toMatchObject({
+          status: "canceled",
+          result: null,
+        });
+        expect(
+          (await prisma.studioJob.findUniqueOrThrow({ where: { id: j.id } }))
+            .leaseUntil,
+        ).toBeNull();
+        expect(() => worker.run()).toThrow("already draining");
+        expect(await prisma.art.count({ where: { userId: owner } })).toBe(0);
+        await studio.deleteStudioJob(owner, j.id);
+      } finally {
+        await worker.cleanup();
+      }
+    },
+    nativeTestMs(1),
+  );
   it.each(["role", "quota", "cancel", "lease"] as const)(
     "fences %s changes at publication and cleans only its attempt",
     async (change) => {
@@ -458,7 +524,7 @@ describe("durable standalone imports", () => {
             });
           await studio.deleteStudioJob(owner, j.id);
         })());
-      onTestFinished(cleanup);
+      onTestFinished(cleanup, importCleanupMs);
       try {
         working = studio.runStudioWorkerOnce({ jobId: j.id });
         const result = await working;
@@ -476,6 +542,6 @@ describe("durable standalone imports", () => {
         await cleanup();
       }
     },
-    60_000,
+    nativeTestMs(2),
   );
 });
