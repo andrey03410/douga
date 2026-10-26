@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tournament-bracket-video": {
+      "command": "npm",
+      "args": ["run", "--silent", "mcp"],
+      "cwd": "/Users/gel/my_projects/tournament-bracket-video"
+    }
+  }
+}

@@ -598,7 +598,8 @@ const PromptPlate: React.FC<{ text: string }> = ({ text }) => {
           marginTop: 36,
           opacity: anim,
           transform: `translateY(${(1 - anim) * -24}px)`,
-          maxWidth: "88%",
+          // Keep the heading clear of the countdown ring on the right.
+          maxWidth: "74%",
           padding: "18px 46px",
           background: "rgba(12,14,20,0.85)",
           border: `2px solid ${ACCENT}`,

@@ -19,7 +19,7 @@
 1. **Скачивание headless-shell**: если сеть блокирует `remotion.media`, загрузка
    падает. Решение: `npx remotion browser ensure` в окружении с доступом, либо
    заранее положить chrome-headless-shell в кэш Remotion.
-2. **Системный Chrome слишком новый**: при `browserExecutable=/usr/bin/google-chrome`
+2. **Системный Chrome слишком новый**: при `browserExecutable="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`
    с Chrome ≥ 132 падает с «Old Headless mode has been removed». Remotion 4.0.x
    запускает старый headless-режим — нужен именно `chrome-headless-shell`, а не
    обычный Chrome.
@@ -32,7 +32,7 @@
   **`chromeMode: "chrome-for-testing"`** — это новый headless-режим, совместимый с
   современным Chrome;
 - путь к браузеру берётся из `REMOTION_BROWSER_EXECUTABLE` (в `.env` указан
-  `/usr/bin/google-chrome`).
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`).
 
 Проверено end-to-end: рендер доходит до 100%, на выходе валидный MP4
 (H.264 1920×1080 @30fps + AAC stereo).

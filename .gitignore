@@ -11,3 +11,5 @@ storage/
 .vitest/
 next-env.d.ts
 tsconfig.tsbuildinfo
+/assets/
+/.ai/production/

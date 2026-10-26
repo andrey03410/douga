@@ -34,7 +34,7 @@
 |-----------------------------|------------------------------------------|--------------------------|
 | **Node.js ≥ 18.17** (лучше 20 LTS) | Next.js 14 и весь бэкенд          | `node -v`                |
 | **npm** (идёт с Node)       | установка зависимостей                   | `npm -v`                 |
-| **Google Chrome / Chromium** | только для **рендера MP4** (Remotion)   | `google-chrome --version` |
+| **Google Chrome / Chromium** | только для **рендера MP4** (Remotion)   | `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version` |
 
 Ставить отдельно **не нужно**: ffmpeg (идёт в комплекте — пакет
 `ffmpeg-static`), SQLite (встроен в Prisma), Remotion/React/Prisma и прочее —
@@ -59,7 +59,8 @@ npm run dev                   # http://localhost:3000
 использовать, задаёт переменная **`REMOTION_BROWSER_EXECUTABLE`** в `.env`:
 
 - Укажите путь к установленному Chrome/Chromium — например,
-  `/usr/bin/google-chrome` (Linux), `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` (macOS).
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` (macOS),
+  `/usr/bin/google-chrome` (Linux).
 - Если переменная **не задана**, Remotion попытается **скачать из интернета**
   свой chrome-headless-shell; в окружении без сети рендер упадёт с ошибкой
   вида «could not download / no browser executable». Скачивание можно сделать
@@ -504,6 +505,7 @@ scripts/             # вспомогательные скрипты (e2e, оч�
 
 Рендер работает end-to-end (проверено: на выходе валидный MP4 H.264 1920×1080 @30fps).
 Используется headless-режим `chrome-for-testing` с системным Chrome — путь задаётся
-через `REMOTION_BROWSER_EXECUTABLE` (в `.env.example` указан `/usr/bin/google-chrome`).
+через `REMOTION_BROWSER_EXECUTABLE` (в `.env.example` указан
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`).
 Альтернатива — `npx remotion browser ensure` (скачает chrome-headless-shell). Детали:
 [`.ai/research/remotion-headless-render.md`](.ai/research/remotion-headless-render.md).

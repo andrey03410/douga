@@ -115,13 +115,13 @@ BASE=http://localhost:3000 node scripts/e2e-run.mjs   # логин → ZIP → �
 
 ## Драйв UI (headless Chrome)
 
-Playwright/puppeteer в deps нет; есть `puppeteer-core` (devDep) + системный
-`/usr/bin/google-chrome`:
+Playwright/puppeteer в deps нет; есть `puppeteer-core` (devDep) + системный Chrome
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`:
 
 ```js
 import puppeteer from "puppeteer-core";
 const browser = await puppeteer.launch({
-  executablePath: "/usr/bin/google-chrome",
+  executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   headless: "new",
   args: ["--no-sandbox"],
 });
@@ -155,7 +155,7 @@ const browser = await puppeteer.launch({
   бери curl с сессионной кукой (`get-cookie.mjs` печатает Cookie-заголовок).
 - Видео в кроп-редакторе декодирует первый кадр ~1 c — скриншот сразу после
   `waitForSelector` будет чёрным; жди `readyState === 4` или 1–2 c.
-- Headless-рендер с видео работает: `REMOTION_BROWSER_EXECUTABLE=/usr/bin/google-chrome`
+- Headless-рендер с видео работает: `REMOTION_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`
   из `.env`; проверяй результат извлечением кадров из выходного MP4
   (`ffmpeg -ss <t> -i out.mp4 -frames:v 1`).
 
