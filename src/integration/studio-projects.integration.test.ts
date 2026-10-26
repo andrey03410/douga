@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile, stat, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import ffmpegPath from "ffmpeg-static";
+import { readFile, writeFile, stat, readdir, mkdir } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video";
@@ -204,6 +207,7 @@ describe("persistent Studio projects with real SQLite and files", () => {
         tournamentId: t.id,
         title: "A",
         filePath: "missing-a.wav",
+        sizeBytes: 0,
         kind: "audio",
         order: 0,
       },
@@ -213,6 +217,7 @@ describe("persistent Studio projects with real SQLite and files", () => {
         tournamentId: t.id,
         title: "B",
         filePath: "missing-b.wav",
+        sizeBytes: 0,
         kind: "audio",
         order: 1,
       },
@@ -287,6 +292,7 @@ describe("persistent Studio projects with real SQLite and files", () => {
         tournamentId: t.id,
         title: "C",
         filePath: "missing-c.wav",
+        sizeBytes: 0,
         order: 2,
       },
     });
@@ -633,6 +639,7 @@ it("does not trust client sourceVersion to overwrite source-owned labels or rank
       tournamentId: t.id,
       title: "Original source label",
       filePath: "not-used",
+      sizeBytes: 0,
       order: 0,
     },
   });
@@ -662,4 +669,163 @@ it("does not trust client sourceVersion to overwrite source-owned labels or rank
     rank: 1,
     caption: "My caption",
   });
+});
+
+it("initializes real silent source videos without audio while preserving voiced tracks and authored overrides", async () => {
+  const tournament = await prisma.tournament.create({
+    data: {
+      userId: owner,
+      title: "Real video source streams",
+      scheme: "merge",
+      topSize: 3,
+    },
+  });
+  const directory = `tournaments/${tournament.id}/tracks`;
+  await mkdir(absPath(directory), { recursive: true });
+  const ffmpeg = promisify(execFile);
+  let projectId: string | undefined;
+  try {
+    await ffmpeg(ffmpegPath as unknown as string, [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=blue:s=32x32:r=30:d=1",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-an",
+      absPath(`${directory}/silent.mp4`),
+    ]);
+    await ffmpeg(ffmpegPath as unknown as string, [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:s=32x32:r=30:d=1",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:duration=1",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-shortest",
+      absPath(`${directory}/voiced.mp4`),
+    ]);
+    await ffmpeg(ffmpegPath as unknown as string, [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=660:duration=1",
+      absPath(`${directory}/audio.wav`),
+    ]);
+    const tracks = [];
+    for (const [order, name, kind] of [
+      [0, "silent.mp4", "video"],
+      [1, "voiced.mp4", "video"],
+      [2, "audio.wav", "audio"],
+    ] as const) {
+      const track = await prisma.track.create({
+        data: {
+          tournamentId: tournament.id,
+          title: name,
+          filePath: `${directory}/${name}`,
+          sizeBytes: (await stat(absPath(`${directory}/${name}`))).size,
+          kind,
+          order,
+          durationSec: 1,
+        },
+      });
+      await prisma.ranking.create({
+        data: {
+          tournamentId: tournament.id,
+          trackId: track.id,
+          rank: order + 1,
+          score: 3 - order,
+        },
+      });
+      tracks.push(track);
+    }
+    const [silent, voiced, audio] = tracks;
+    const document = doc();
+    document.source = {
+      kind: "tournament",
+      tournamentId: tournament.id,
+      participants: [],
+      rounds: [],
+    };
+    document.settings.top = {
+      order: "source",
+      snippet: { mode: "active", durationSec: 0.2 },
+    };
+    const project = await studio.createStudioProject(owner, { document });
+    projectId = project.id;
+    expect(project.validation.ready).toBe(true);
+    expect(project.document.source.participants[0].media).toEqual({
+      visual: `source:${silent.id}`,
+    });
+    expect(project.document.source.participants[1].media).toEqual({
+      visual: `source:${voiced.id}`,
+      audio: `source:${voiced.id}`,
+    });
+    expect(project.document.source.participants[2].media).toEqual({
+      audio: `source:${audio.id}`,
+    });
+    const frozen = await studio.freezeStudioProject(owner, project.id);
+    expect(frozen.manifest[`source:${silent.id}`].hasAudio).toBe(false);
+    expect(frozen.plan.audio.map((cue) => cue.asset.id)).toEqual([
+      voiced.id,
+      audio.id,
+    ]);
+    expect(frozen.plan.scenes.map((scene) => scene.durationInFrames)).toEqual([
+      6, 6, 6,
+    ]);
+
+    const authored = structuredClone(project.document);
+    authored.source.participants[0].media!.audio = `source:${voiced.id}`;
+    const saved = await studio.saveStudioDraft(owner, project.id, {
+      ...mutation(project.version),
+      document: authored,
+    });
+    await prisma.track.update({
+      where: { id: silent.id },
+      data: { title: "Renamed silent track" },
+    });
+    const synced = await studio.getStudioProject(owner, project.id);
+    expect(synced.version).toBeGreaterThan(saved.version);
+    expect(
+      (synced.draft!.document as typeof authored).source.participants[0],
+    ).toMatchObject({
+      label: "Renamed silent track",
+      media: { visual: `source:${silent.id}`, audio: `source:${voiced.id}` },
+    });
+    expect(synced.validation.ready).toBe(true);
+
+    const explicitSilent = structuredClone(
+      synced.draft!.document as typeof authored,
+    );
+    explicitSilent.source.participants[0].media!.audio = `source:${silent.id}`;
+    const invalid = await studio.saveStudioDraft(owner, project.id, {
+      ...mutation(synced.version),
+      document: explicitSilent,
+    });
+    expect(
+      (invalid.draft!.document as typeof authored).source.participants[0].media!
+        .audio,
+    ).toBe(`source:${silent.id}`);
+    expect(
+      invalid.validation.diagnostics.some(
+        (d) => d.code === "ASSET_KIND_MISMATCH",
+      ),
+    ).toBe(true);
+  } finally {
+    if (projectId) await studio.deleteStudioProject(owner, projectId);
+    await deleteTournament(owner, tournament.id);
+  }
 });

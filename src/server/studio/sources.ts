@@ -1,5 +1,7 @@
 import type { VideoDocument, Participant } from "@/video";
 import { prisma } from "@/lib/db";
+import { probeMediaInfo } from "@/lib/audio";
+import { safeFile } from "./assets";
 import { hash, canonical, type Db } from "./shared";
 import { StudioError } from "./errors";
 /** Fingerprint real ranks, topSize and track metadata: ranking reorder does not touch updatedAt. */
@@ -42,7 +44,8 @@ export async function reconcileSource(
   // The caller-supplied version is never authority for rank/label fields.
   const old = new Map(document.source.participants.map((p) => [p.id, p]));
   const ranks = tournament.rankings.slice(0, tournament.topSize ?? undefined);
-  document.source.participants = ranks.map((rank) => {
+  const participants: Participant[] = [];
+  for (const rank of ranks) {
     const track = tournament.tracks.find((t) => t.id === rank.trackId);
     if (!track) throw new StudioError("SOURCE_TRACK_NOT_FOUND");
     const retained = old.get(track.id);
@@ -59,13 +62,24 @@ export async function reconcileSource(
         tournamentId: tournament.id,
         trackId: track.id,
       };
+      let hasAudio = true;
+      if (track.kind === "video") {
+        try {
+          hasAudio = (await probeMediaInfo(await safeFile(track.filePath)))
+            .hasAudio;
+        } catch {
+          // Missing/inaccessible media is diagnosed by manifest resolution. Do not
+          // reinterpret an unavailable stream as a proven silent video.
+        }
+      }
       participant.media = {
-        audio: key,
+        ...(hasAudio ? { audio: key } : {}),
         ...(track.kind === "video" ? { visual: key } : {}),
       };
     }
-    return participant;
-  });
+    participants.push(participant);
+  }
+  document.source.participants = participants;
   document.source.version = fingerprint;
   return document;
 }

@@ -106,7 +106,11 @@ then topSize selects source participants. The adapter always restores
 source-owned `id/rank/label`, even when a client supplies a matching version
 string. Participant `caption`, `media` and `settings` are retained by stable
 ID, never position. New participants receive owned track bindings under
-`source:<trackId>`; missing track bytes become actionable diagnostics.
+`source:<trackId>`. Initial video assignments probe the owned local stream:
+silent videos receive only visual media, voiced videos receive visual and audio,
+and audio tracks receive audio. This initialization never rewrites retained
+authored media assignments. Missing/unavailable video bytes cannot prove silence
+and remain actionable manifest diagnostics.
 Explicit scene/card references to removed participants remain diagnostic;
 there is no index rebinding. Existing declared bindings remain explicit
 references even when unused. Every source change saves a new source revision;
