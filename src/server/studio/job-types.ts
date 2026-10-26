@@ -58,7 +58,6 @@ export interface StudioImportResult {
   asset: {
     id: string;
     kind: "audio" | "video";
-    label: string | null;
     bytes: number;
     hash: string;
     mimeType: "audio/mp4" | "video/mp4";

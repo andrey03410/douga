@@ -51,6 +51,14 @@ skeletons, format settings, sound rules and media-free playlist policy survive.
 `SOURCE_KIND_INVALID`. Counts use the SDK technical resource budgets. It never
 creates a legacy VideoProject. Applying a preset to an existing project preserves
 its content/counts/answers/bindings; it does not use the new-project skeleton.
+Custom media transfers only through the SDK's deterministic scene/node
+correspondence (contract 22). Incompatible assigned content returns
+`PRESET_INCOMPATIBLE` with an actionable diagnostic before changing the draft,
+version or receipt. Corresponding authored text/card selectors remain content.
+Missing required custom image/video references block validation, commit and
+current freeze/final rendering, including `slot:` keys; only `required:false`
+permits an unfilled visual placeholder. Explicit valid historical revisions
+remain independently renderable.
 
 Factory creation, replace, semantic patch and preset application use shared
 private create/draft primitives. Semantic request hashes are constructed on the

@@ -81,6 +81,114 @@ export function getBuiltinPresets(): VideoPreset[] {
 export function getBuiltinPreset(id: string): VideoPreset | undefined {
   return getBuiltinPresets().find((p) => p.id === id);
 }
+export class PresetIncompatibleError extends Error {
+  constructor(public path: string) {
+    super(
+      `PRESET_INCOMPATIBLE: Cannot transfer assigned content at ${path}. Retain its scene/node structure and context, or explicitly remove/reassign that content before applying this preset.`,
+    );
+    this.name = "PresetIncompatibleError";
+  }
+}
+
+/** Correspondence is structural, never a search for a nearby same-kind asset.
+ * IDs may be unchanged or the exact canonical IDs produced by extraction.
+ * Keep project keys on matched nodes, so a slot alias cannot overwrite media
+ * used by a participant or another scene in the destination document.
+ */
+function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
+  let index = 0;
+  const slots = new Map<string, string>();
+  const assigned = (nodes: VideoNode[]): boolean =>
+    nodes.some((n) =>
+      n.type === "container"
+        ? assigned(n.children)
+        : (n.type === "image" || n.type === "video" || n.type === "audio") &&
+          Boolean(doc.bindings[n.asset]),
+    );
+  const match = (nodes: VideoNode[], targets: VideoNode[]): boolean => {
+    let compatible = nodes.length === targets.length;
+    nodes.forEach((node, i) => {
+      const canonicalId = `node-${++index}`;
+      const target = targets[i];
+      if (
+        !target ||
+        target.type !== node.type ||
+        (target.id !== node.id && target.id !== canonicalId)
+      )
+        compatible = false;
+      if (node.type === "container") {
+        if (
+          !match(
+            node.children,
+            target?.type === "container" ? target.children : [],
+          )
+        )
+          compatible = false;
+      }
+    });
+    return compatible;
+  };
+  const transfer = (nodes: VideoNode[], targets: VideoNode[], path: string) => {
+    nodes.forEach((node, i) => {
+      const target = targets[i];
+      const at = `${path}.${i}`;
+      if (node.type === "container" && target.type === "container")
+        transfer(node.children, target.children, `${at}.children`);
+      if (node.type === "text" && target.type === "text")
+        target.text = structuredClone(node.text);
+      if (node.type === "card" && target.type === "card") {
+        target.participantId = node.participantId;
+        target.label =
+          node.label === undefined ? undefined : structuredClone(node.label);
+      }
+      if (
+        (node.type === "image" ||
+          node.type === "video" ||
+          node.type === "audio") &&
+        (target.type === "image" ||
+          target.type === "video" ||
+          target.type === "audio")
+      ) {
+        const binding = doc.bindings[node.asset];
+        if (!binding) return;
+        // Sharing one abstract slot explicitly declares one assignment. Refuse
+        // conflicting destination content instead of picking the first item.
+        const identity = JSON.stringify(binding);
+        if (slots.has(target.asset) && slots.get(target.asset) !== identity)
+          throw new PresetIncompatibleError(`${at}.asset`);
+        slots.set(target.asset, identity);
+        target.asset = node.asset;
+      }
+    });
+  };
+  doc.scenes.forEach((scene, i) => {
+    const target = preset.scenes[i];
+    const structureMatches = match(scene.nodes, target?.nodes ?? []);
+    const extractedRepeat =
+      scene.repeat ??
+      (scene.participantId || scene.block === "top"
+        ? "participants"
+        : scene.roundId || scene.block === "picker"
+          ? "rounds"
+          : undefined);
+    const contextMatches =
+      target &&
+      target.block === scene.block &&
+      (target.id === scene.id || target.id === `scene-${i + 1}`) &&
+      (target.repeat === scene.repeat || target.repeat === extractedRepeat);
+    if (!structureMatches || !contextMatches) {
+      if (assigned(scene.nodes))
+        throw new PresetIncompatibleError(`scenes.${i}.nodes`);
+      return;
+    }
+    transfer(scene.nodes, target.nodes, `scenes.${i}.nodes`);
+    // Extraction makes reusable repetitions; applying design to existing content
+    // must retain its concrete participant/round scope.
+    target.repeat = scene.repeat;
+    target.participantId = scene.participantId;
+    target.roundId = scene.roundId;
+  });
+}
 function safeSettings(
   s: Settings | undefined,
   slots: Map<string, string>,
@@ -194,6 +302,7 @@ export function applyVideoPreset(
   const p = videoPresetSchema.parse(preset);
   if (doc.kind !== p.kind)
     throw new Error("Preset kind must match document kind");
+  transferCustomContent(doc, p);
   // Slot assignments belong to the destination project, never to the preset.
   const bindings = structuredClone(doc.bindings);
   const bind = (slot: string | undefined, current: string | undefined) => {

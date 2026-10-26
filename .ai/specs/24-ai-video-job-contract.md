@@ -238,7 +238,6 @@ interface StudioImportResult {
   asset: {
     id: string; // owned pool Art ID
     kind: 'audio' | 'video';
-    label: string | null; // source title, capped at 500 chars
     bytes: number; hash: string; mimeType: 'audio/mp4' | 'video/mp4';
     durationSec: number; hasAudio: boolean; hasVideo: boolean;
     poster: boolean;
@@ -247,6 +246,11 @@ interface StudioImportResult {
 ```
 
 Discriminate on `result.kind` before reading composition `result.resource`.
+Ordinary import start/status/cancel responses expose only this neutral asset
+descriptor, never the imported title. This also applies to previously persisted
+completion payloads containing a label. The title remains in owned pool metadata
+and is available through explicit asset inspection; result artifact access and
+publication ownership/hash checks are unchanged.
 The import metadata describes actual normalized output bytes. Video is MP4
 H.264 with optional AAC audio; silent video remains silent. Audio is M4A/AAC.
 Video height is capped even for generic direct URLs. Posters use the existing

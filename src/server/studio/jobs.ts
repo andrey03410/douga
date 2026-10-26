@@ -50,6 +50,28 @@ export async function jobView(
   const frozen = snapshot
     ? (JSON.parse(snapshot.payloadJson) as StudioFrozenRevision)
     : null;
+  const result = row.resultJson
+    ? (JSON.parse(row.resultJson) as StudioJobOutput)
+    : null;
+  // Project old as well as new import completions into an explicit neutral DTO.
+  // Private source titles remain in owned pool metadata for explicit inspection.
+  const neutralResult =
+    result?.kind === "import"
+      ? {
+          kind: result.kind,
+          asset: {
+            id: result.asset.id,
+            kind: result.asset.kind,
+            bytes: result.asset.bytes,
+            hash: result.asset.hash,
+            mimeType: result.asset.mimeType,
+            durationSec: result.asset.durationSec,
+            hasAudio: result.asset.hasAudio,
+            hasVideo: result.asset.hasVideo,
+            poster: result.asset.poster,
+          },
+        }
+      : result;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -63,7 +85,7 @@ export async function jobView(
     revisionId: frozen?.revisionId ?? null,
     snapshotHash: frozen?.hash ?? null,
     engineId: row.engineId,
-    result: row.resultJson ? JSON.parse(row.resultJson) : null,
+    result: neutralResult,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

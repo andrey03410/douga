@@ -71,6 +71,13 @@ the shared `StudioVideo` renderer directly.
 | `GET,HEAD /media?path=...` | exact owned persisted file-ledger/poster membership |
 | `GET,HEAD /builtin/:name` | authenticated `tick`, `reveal`, `answer` WAV |
 
+Ordinary import start, job status and cancel responses omit imported titles,
+including titles in older persisted result payloads. Asset ID, kind, bytes,
+hash and readiness metadata remain available; explicit owned asset inspection
+retains the title. Incompatible preset content transfer returns HTTP 400
+`PRESET_INCOMPATIBLE` with the affected path and a recovery instruction, without
+changing the draft or version.
+
 The normal shared mutation DTO includes document/plan content because the
 caller explicitly edits or creates that content. Initial and polling UI reads
 are neutral until the author opens SDK. Schemas remain strict; Zod field issues

@@ -265,11 +265,28 @@ Explicitly bound top/round scenes become source-repetition templates. SVG path
 geometry is preserved as design. Extraction replaces literal copy; an author can
 explicitly declare reusable generic copy in a canonical preset. It does not guess
 whether private text is safe to publish. User-supplied presets reject actual
-asset keys and participant IDs. Slot assets are unfilled design placeholders,
-reported as warnings; a service should expose them as fillable slots.
+asset keys and participant IDs. Image/video references, including abstract slot
+keys, are required by default. Explicit `required:true` blocks readiness when
+unfilled; `required:false` permits a warning-only visual placeholder. Audio and
+tick references are mandatory when authored. Omit optional participant media
+entirely for objects without visuals/audio. Built-in media-free presets remain
+ready; custom presets with mandatory slots require project bindings.
 
-Multiple explicitly bound source scenes become multiple repeated templates;
-they are not collapsed silently. A custom card using `$participant` requires a
+Applying a design preserves assigned custom image/video/audio and corresponding
+text/card content when the scene ordinal, block, repetition context, recursive
+node shape and node IDs correspond. IDs may be the current IDs or the canonical
+IDs produced by extraction. Matched nodes retain the destination's media keys
+(avoiding stale slot aliases), literal/bound text and concrete participant/round
+selectors; geometry and other design properties come from the preset. Reusing
+one target slot for conflicting assignments, or removing/reordering/retyping
+assigned custom media without this correspondence throws
+`PresetIncompatibleError` (`PRESET_INCOMPATIBLE`, with an actionable path).
+Retain the structure/context or explicitly remove/reassign the affected content
+before applying an incompatible design. No actual media enters the saved preset.
+
+Multiple explicitly bound source scenes become multiple repeated templates when
+creating a new project; compatible application to existing content retains its
+concrete scope. A custom card using `$participant` requires a
 participant repetition/context. Preset application does not invent a mapping
 from arbitrary literal custom text into participant content. Group
 label bindings require a round context as noted above.

@@ -8,6 +8,7 @@ import {
   videoDocumentSchema,
   patchVideoDocument,
   applyVideoPreset,
+  PresetIncompatibleError,
   createVideoDocument,
   type VideoDocument,
 } from "@/video";
@@ -441,12 +442,27 @@ export async function applyStudioPreset(
     id,
     input,
     requestHash(`apply-preset:${id}`, input),
-    async (current) => ({
-      document: applyVideoPreset(
-        editableDocument(current),
-        await getStudioPreset(userId, input.presetId),
-      ),
-    }),
+    async (current) => {
+      try {
+        return {
+          document: applyVideoPreset(
+            editableDocument(current),
+            await getStudioPreset(userId, input.presetId),
+          ),
+        };
+      } catch (error) {
+        if (error instanceof PresetIncompatibleError)
+          throw new StudioError("PRESET_INCOMPATIBLE", [
+            {
+              severity: "error",
+              code: "PRESET_INCOMPATIBLE",
+              path: error.path,
+              message: error.message,
+            },
+          ]);
+        throw error;
+      }
+    },
   );
 }
 function editableDocument(current: StudioProjectView) {

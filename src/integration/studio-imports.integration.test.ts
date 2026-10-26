@@ -69,7 +69,7 @@ beforeAll(async () => {
     res.end(bytes);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  url = `http://127.0.0.1:${(server.address() as { port: number }).port}/sample.mp4`;
+  url = `http://127.0.0.1:${(server.address() as { port: number }).port}/PRIVATE-IMPORT-TITLE-8426.mp4`;
   owner = (
     await prisma.user.create({
       data: { email: `imports-${randomUUID()}@test.local`, passwordHash: "x" },
@@ -158,6 +158,15 @@ describe("durable standalone imports", () => {
       where: { id: result.result.asset.id },
     });
     expect(art.userId).toBe(owner);
+    expect(art.label).toContain("PRIVATE-IMPORT-TITLE-8426");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE-IMPORT-TITLE-8426");
+    expect(result.result.asset).not.toHaveProperty("label");
+    expect(
+      JSON.stringify(await studio.getStudioJob(owner, j.id)),
+    ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
+    expect(
+      JSON.stringify(await studio.cancelStudioJob(owner, j.id)),
+    ).not.toContain("PRIVATE-IMPORT-TITLE-8426");
     expect(art.filePath).not.toBe("");
     expect(await fileHash(absPath(art.filePath))).toBe(
       result.result.asset.hash,
@@ -339,7 +348,7 @@ describe("durable standalone imports", () => {
     60_000,
   );
   it("bounds transient retries without publishing incomplete Art rows", async () => {
-    const j = await start({ url: url.replace("sample.mp4", "missing.mp4") });
+    const j = await start({ url: url.replace(/[^/]+$/, "missing.mp4") });
     for (let attempt = 1; attempt <= 3; attempt++) {
       await prisma.studioJob.update({
         where: { id: j.id },

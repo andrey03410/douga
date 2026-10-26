@@ -134,7 +134,6 @@ export async function importStudioAttempt(
         asset: {
           id: art.id,
           kind: input.mode,
-          label: art.label,
           bytes: art.sizeBytes,
           hash: await fileHash(absPath(art.filePath)),
           mimeType: input.mode === "video" ? "video/mp4" : "audio/mp4",

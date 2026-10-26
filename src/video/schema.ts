@@ -223,7 +223,13 @@ export const videoNodeSchema: z.ZodType<VideoNode> = z.lazy(() =>
         ...base,
         type: z.literal("image"),
         asset: id,
-        required: opt(z.boolean()),
+        required: opt(
+          z
+            .boolean()
+            .describe(
+              "Defaults to true, including preset slots. Set false to permit an unfilled visual placeholder.",
+            ),
+        ),
       })
       .strict(),
     z
@@ -231,7 +237,13 @@ export const videoNodeSchema: z.ZodType<VideoNode> = z.lazy(() =>
         ...base,
         type: z.literal("video"),
         asset: id,
-        required: opt(z.boolean()),
+        required: opt(
+          z
+            .boolean()
+            .describe(
+              "Defaults to true, including preset slots. Set false to permit an unfilled visual placeholder.",
+            ),
+        ),
       })
       .strict(),
     z

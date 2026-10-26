@@ -49,7 +49,7 @@ export function resolveAsset(
       `Resolve media key "${key}" in the asset manifest.`,
       path,
       undefined,
-      required && !key.startsWith("slot:") ? "error" : "warning",
+      required ? "error" : "warning",
     );
     return;
   }
