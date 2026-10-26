@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -56,6 +56,9 @@ async function cleanup() {
 }
 
 beforeAll(async () => {
+  // A developer may proxy external video sites in .env. These fixtures are
+  // loopback-only and must never be routed through that external proxy.
+  vi.stubEnv("YTDLP_PROXY", undefined);
   const dir = await mkdtemp(path.join(tmpdir(), "dl-it-"));
   await ffmpeg([
     "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10:duration=2",
@@ -90,6 +93,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanup();
   await new Promise((r) => server.close(r));
+  vi.unstubAllEnvs();
 });
 
 describe("url import pipeline", () => {
