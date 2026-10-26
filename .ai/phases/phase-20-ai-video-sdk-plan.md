@@ -115,11 +115,11 @@
 
 **Interfaces:** `registerStudioTools(server: McpServer, actor: Actor): void` uses Task 3 project services and Task 4 jobs. Namespace new tools `video_*`; preserve useful existing media/discovery tools, no old contract compatibility requirement. Server schemas are derived from SDK/service schemas, not independently maintained.
 
-- [ ] Write a real stdio MCP client test that discovers schemas/presets/examples, creates a project, binds media, edits/validates/commits, gets explicit image/audio preview, starts/polls/cancels a job and checks permission denial/isolation/CAS/idempotent retry. Observe RED.
-- [ ] Expose capabilities, document/schema/examples, preset catalog/save/apply, project list/create/read, draft replace/semantic patch/validate/commit/restore/history, asset inspection/import access, still/clip/audio preview, final render/job status/cancel.
-- [ ] Return structured diagnostics and paginated collections. Inspection returns real image/audio resource content when requested; clips use accessible resources/links. Ordinary output is neutral and does not auto-display project content. Include client limitation and current supported API/protocol info.
-- [ ] Recheck role fresh for mutations/render. Do not use stale cached role to bypass permissions or leak another user's absolute media paths.
-- [ ] Run MCP tests and TypeScript; commit adapter and docs.
+- [x] Write a real stdio MCP client test that discovers schemas/presets/examples, creates a project, binds media, edits/validates/commits, gets explicit image/audio preview, starts/polls/cancels a job and checks permission denial/isolation/CAS/idempotent retry. Observe RED.
+- [x] Expose capabilities, document/schema/examples, preset catalog/save/apply, project list/create/read, draft replace/semantic patch/validate/commit/restore/history, asset inspection/import access, still/clip/audio preview, final render/job status/cancel.
+- [x] Return structured diagnostics and paginated collections. Inspection returns real image/audio resource content when requested; clips use accessible resources/links. Ordinary output is neutral and does not auto-display project content. Include client limitation and current supported API/protocol info.
+- [x] Recheck role fresh for mutations/render. Do not use stale cached role to bypass permissions or leak another user's absolute media paths.
+- [x] Run MCP tests and TypeScript; commit adapter and docs.
 
 ### Task 7: Authenticated SDK website and preview parity
 
