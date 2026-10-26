@@ -385,3 +385,134 @@ it("lists neutral owned snapshot references and releases a standalone freeze for
     });
   }
 });
+it("saves a malformed draft from the actual loopback browser origin despite NextRequest URL normalization", async () => {
+  const { NextRequest } = await import("next/server");
+  session.id = owner;
+  const p = await studio.getStudioProject(owner, id);
+  const req = new NextRequest(
+    `http://127.0.0.1:3000/api/studio/projects/${id}/draft`,
+    {
+      method: "PUT",
+      headers: {
+        origin: "http://127.0.0.1:3000",
+        host: "127.0.0.1:3000",
+        "x-forwarded-host": "127.0.0.1:3000",
+        "x-forwarded-proto": "http",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        expectedVersion: p.version,
+        text: '{"schemaVersion":',
+      }),
+    },
+  );
+  expect(new URL(req.url).hostname).toBe("localhost");
+  const response = await studioHttp(req);
+  expect(response.status).toBe(200);
+  const saved = await response.json();
+  expect(saved.draft.text).toBe('{"schemaVersion":');
+  expect(saved.validation.ready).toBe(false);
+  expect(saved.version).toBe(p.version + 1);
+  const foreign = new NextRequest(
+    `http://127.0.0.1:3000/api/studio/projects/${id}/draft`,
+    {
+      method: "PUT",
+      headers: {
+        origin: "https://foreign.example",
+        host: "127.0.0.1:3000",
+        "x-forwarded-host": "127.0.0.1:3000",
+        "x-forwarded-proto": "http",
+      },
+      body: JSON.stringify({ expectedVersion: saved.version, text: "{}" }),
+    },
+  );
+  expect((await studioHttp(foreign)).status).toBe(403);
+  expect((await studio.getStudioProject(owner, id)).version).toBe(
+    saved.version,
+  );
+});
+it("persists first-completion rankings and the current top N before SDK navigation, then retains manual ranking on N changes", async () => {
+  session.id = owner;
+  const tournament = await prisma.tournament.create({
+    data: {
+      userId: owner,
+      title: "SDK result entry",
+      scheme: "round_robin",
+      status: "in_progress",
+    },
+  });
+  const tracks = await Promise.all(
+    ["First", "Second"].map((title, order) =>
+      prisma.track.create({
+        data: {
+          tournamentId: tournament.id,
+          title,
+          order,
+          filePath: `unused-${order}.mp3`,
+        },
+      }),
+    ),
+  );
+  await prisma.comparison.create({
+    data: {
+      tournamentId: tournament.id,
+      trackAId: tracks[0].id,
+      trackBId: tracks[1].id,
+      result: "a",
+    },
+  });
+  const { POST } = await import("@/app/api/tournaments/[id]/finalize/route");
+  const { finalizeResultsBeforeNavigation } =
+    await import("@/app/tournaments/[id]/results-actions");
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) =>
+    POST(new Request(`http://localhost${url}`, init), {
+      params: { id: tournament.id },
+    }),
+  );
+  try {
+    expect(
+      await prisma.ranking.count({ where: { tournamentId: tournament.id } }),
+    ).toBe(0);
+    await finalizeResultsBeforeNavigation(tournament.id, 1, async () => {
+      const source = await studio.getStudioSource(owner, tournament.id);
+      expect(source.items).toHaveLength(1);
+      expect(source.items[0].id).toBe(tracks[0].id);
+      expect(
+        await prisma.ranking.count({ where: { tournamentId: tournament.id } }),
+      ).toBe(2);
+      expect(
+        (
+          await prisma.tournament.findUniqueOrThrow({
+            where: { id: tournament.id },
+          })
+        ).topSize,
+      ).toBe(1);
+    });
+    await prisma.ranking.updateMany({
+      where: { tournamentId: tournament.id, trackId: tracks[0].id },
+      data: { rank: 2 },
+    });
+    await prisma.ranking.updateMany({
+      where: { tournamentId: tournament.id, trackId: tracks[1].id },
+      data: { rank: 1 },
+    });
+    await finalizeResultsBeforeNavigation(tournament.id, 2, async () => {
+      const source = await studio.getStudioSource(owner, tournament.id);
+      expect(source.items.map((p) => p.id)).toEqual([
+        tracks[1].id,
+        tracks[0].id,
+      ]);
+      expect(
+        (
+          await prisma.tournament.findUniqueOrThrow({
+            where: { id: tournament.id },
+          })
+        ).topSize,
+      ).toBe(2);
+    });
+  } finally {
+    vi.stubGlobal("fetch", originalFetch);
+    await prisma.tournament.delete({ where: { id: tournament.id } });
+  }
+});

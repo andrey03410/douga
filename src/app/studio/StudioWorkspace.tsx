@@ -1,12 +1,14 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { readLoadedJobWindow } from "./job-feed";
 import type { CompiledVideo } from "@/video";
 import type { StudioJobView } from "@/server/studio/job-types";
 import type { StudioProjectView } from "@/server/studio/types";
 import type { studioProjectMetadata } from "@/server/studio/queries";
 import {
   acceptRemote,
+  acceptActionResult,
   editBuffer,
   openBuffer,
   type EditorBuffer,
@@ -119,6 +121,16 @@ export function StudioWorkspace({
     [result, setResult] = useState<StudioJobView | null>(null);
   const [fromFrame, setFromFrame] = useState(0),
     [durationFrames, setDurationFrames] = useState(90);
+  const jobWindowCount = useRef(20);
+  async function readJobs() {
+    return readLoadedJobWindow(
+      ({ limit, cursor }) =>
+        studioRequest(
+          `${base}/jobs?limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+        ),
+      jobWindowCount.current,
+    );
+  }
   const editor = useRef<HTMLTextAreaElement>(null);
   const editorOpen = buffer !== null;
   async function run(action: () => Promise<void>) {
@@ -152,18 +164,12 @@ export function StudioWorkspace({
           studioRequest<StudioProjectView | Metadata>(
             `${base}${editorOpen ? "?content=code" : ""}`,
           ),
-          studioRequest<Page<StudioJobView>>(`${base}/jobs`),
+          readJobs(),
         ]);
         if (!active) return;
         const m = "document" in p ? metadata(p) : p;
         setMeta((old) => (m.version >= old.version ? m : old));
-        setJobs((old) => ({
-          ...j,
-          items: [
-            ...j.items,
-            ...old.items.filter((x) => !j.items.some((y) => y.id === x.id)),
-          ],
-        }));
+        setJobs(j);
         if ("document" in p) {
           setBuffer((b) => (b ? acceptRemote(b, p) : b));
           setValidation(p.validation);
@@ -193,7 +199,7 @@ export function StudioWorkspace({
   function applyProject(p: StudioProjectView) {
     setMeta(metadata(p));
     setValidation(p.validation);
-    setBuffer((b) => (b ? openBuffer(p) : b));
+    setBuffer((b) => acceptActionResult(b, p));
   }
   async function loadEditor() {
     const p = await studioRequest<StudioProjectView>(`${base}?content=code`);
@@ -973,7 +979,7 @@ export function StudioWorkspace({
                           ? { fromFrame, durationFrames }
                           : {}),
                     });
-                    setJobs(await studioRequest(`${base}/jobs`));
+                    setJobs(await readJobs());
                     const p = await studioRequest<StudioProjectView>(
                       `${base}?content=code`,
                     );
@@ -1014,7 +1020,7 @@ export function StudioWorkspace({
                       onClick={() =>
                         void run(async () => {
                           await studioRequest(`jobs/${j.id}/cancel`, "POST");
-                          setJobs(await studioRequest(`${base}/jobs`));
+                          setJobs(await readJobs());
                         })
                       }
                     >
@@ -1027,7 +1033,7 @@ export function StudioWorkspace({
                       onClick={() =>
                         void run(async () => {
                           await studioRequest(`jobs/${j.id}`, "DELETE");
-                          setJobs(await studioRequest(`${base}/jobs`));
+                          setJobs(await readJobs());
                           if (result?.id === j.id) setResult(null);
                         })
                       }
@@ -1062,18 +1068,8 @@ export function StudioWorkspace({
             disabled={busy}
             onClick={() =>
               void run(async () => {
-                const more = await studioRequest<Page<StudioJobView>>(
-                  `${base}/jobs?cursor=${jobs.nextCursor}`,
-                );
-                setJobs((old) => ({
-                  ...more,
-                  items: [
-                    ...old.items,
-                    ...more.items.filter(
-                      (j) => !old.items.some((x) => x.id === j.id),
-                    ),
-                  ],
-                }));
+                jobWindowCount.current += 20;
+                setJobs(await readJobs());
               })
             }
           >

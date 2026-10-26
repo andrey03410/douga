@@ -3,7 +3,12 @@
 Implemented 2026-10-26. All endpoints below are under `/api/studio` and use the
 current web session's database ID. Fresh authorization/ownership remains in the
 same Studio services as MCP. Client actor/email/path overrides are not accepted.
-Mutations reject a foreign `Origin` header. JSON errors and successful metadata
+Mutations reject a foreign `Origin` header using the validated browser-facing
+authority (`x-forwarded-host`, then `Host`) and protocol (`x-forwarded-proto`,
+then the request protocol). NextRequest normalizes loopback URL hostnames, so
+the internal request URL alone is not authoritative. Deployment proxies must
+replace forwarding headers with their trusted public origin. Ambiguous lists
+and malformed forwarding values fail closed. JSON errors and successful metadata
 use `Cache-Control: private, no-store`.
 
 ## Pages and surprise boundary
@@ -12,13 +17,18 @@ use `Cache-Control: private, no-store`.
   current authenticated email, and existing legacy projects.
 - `/studio/new`: explicit JSON creation with shared SDK top/picker examples.
   `?sourceId=<owned-tournament-id>` attaches the top example to that source.
+  The tournament results action finalizes/persists the currently displayed top-N
+  before navigating, including the first completion of comparison ranking.
 - `/studio/<id>`: neutral initial status. Code, diagnostics, history content,
   asset inspection, Player and job-result media require explicit reveal.
 
 `Открыть SDK` fetches the document. Background polling retains dirty local text
 and its original `baseVersion`; another writer marks a conflict and cannot
 silently move the local CAS token. Clean buffers may refresh. Explicit reload
-replaces the buffer; comparison never does. Saving writes a draft and validates;
+replaces the buffer; comparison never does. Commit/restore/preset/enqueue
+acknowledgements also preserve text typed while those requests are pending,
+retaining its original CAS token and marking a conflict on a changed version.
+Saving writes a draft and validates;
 commit creates a revision. Preview is the retained successful plan with its
 `previewVersion`/`previewRevision`, and is labeled stale for dirty/invalid code.
 Preview does not autoplay and is loaded in a separate client chunk. It consumes
@@ -86,7 +96,10 @@ only the three declared names after current actor authorization.
 
 Queue mutations never execute a worker. Start `npm run studio:worker` separately;
 final rendering stays subject to the shared fresh admin permission. UI results
-are revealed explicitly. Cancel/delete/snapshot/history/project guards come
+are revealed explicitly. The loaded job-window size is independent of page
+cursors. Polling re-reads the whole loaded window and replaces its rows
+authoritatively, including external deletions and older job status changes.
+Cancel/delete/snapshot/history/project guards come
 from the shared services, including frozen revision protection.
 
 Legacy single media/tournament deletion maps Studio reference protection to

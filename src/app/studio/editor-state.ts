@@ -25,3 +25,10 @@ export function acceptRemote(
     return { ...b, conflict: b.conflict || p.version !== b.baseVersion };
   return openBuffer(p);
 }
+
+export function acceptActionResult(
+  b: EditorBuffer | null,
+  p: StudioProjectView,
+): EditorBuffer | null {
+  return b ? acceptRemote(b, p) : null;
+}

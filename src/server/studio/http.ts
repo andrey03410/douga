@@ -9,6 +9,7 @@ import * as studio from "./index";
 import { actor, owned } from "./shared";
 import { safeFile, builtin } from "./assets";
 import { ownedStudioMedia, streamStudioFile } from "./http-media";
+import { isStudioMutationOriginAllowed } from "./http-origin";
 const json = (value: unknown, status = 200) =>
   NextResponse.json(value, {
     status,
@@ -62,11 +63,7 @@ export async function studioHttp(
   const [collection, id, action, detail] = parts;
   const read = req.method === "GET" || req.method === "HEAD";
   try {
-    if (
-      !read &&
-      req.headers.has("origin") &&
-      req.headers.get("origin") !== url.origin
-    )
+    if (!read && !isStudioMutationOriginAllowed(req))
       return json({ error: "FORBIDDEN_ORIGIN" }, 403);
     await actor(uid);
     if (collection === "media" && read)

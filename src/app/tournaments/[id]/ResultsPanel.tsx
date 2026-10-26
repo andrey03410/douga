@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { finalizeResultsBeforeNavigation } from "./results-actions";
 
 export interface RankRow {
   trackId: string;
@@ -30,19 +31,19 @@ export function ResultsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(goRender: boolean) {
+  async function save(destination: "stay" | "studio" | "legacy") {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/finalize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topSize }),
+      await finalizeResultsBeforeNavigation(tournamentId, topSize, () => {
+        if (destination === "studio")
+          router.push(
+            `/studio/new?sourceId=${encodeURIComponent(tournamentId)}`,
+          );
+        else if (destination === "legacy")
+          router.push(`/tournaments/${tournamentId}/render`);
+        else router.refresh();
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ошибка");
-      if (goRender) router.push(`/tournaments/${tournamentId}/render`);
-      else router.refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -76,7 +77,9 @@ export function ResultsPanel({
 
   return (
     <div className="panel">
-      <h2>{completed ? "Итоговый топ" : "Турнир завершён — выберите размер топа"}</h2>
+      <h2>
+        {completed ? "Итоговый топ" : "Турнир завершён — выберите размер топа"}
+      </h2>
 
       <label>Размер топа (top-N из {total})</label>
       <div className="row">
@@ -88,11 +91,27 @@ export function ResultsPanel({
           onChange={(e) => setTopSize(Number(e.target.value))}
           style={{ maxWidth: 120 }}
         />
-        <button className="btn secondary" onClick={() => save(false)} disabled={busy}>
+        <button
+          className="btn secondary"
+          onClick={() => save("stay")}
+          disabled={busy}
+        >
           Сохранить N
         </button>
-        <a className="btn" href={`/studio/new?sourceId=${encodeURIComponent(tournamentId)}`}>Создать видео через SDK →</a>
-        <button className="btn ghost" onClick={() => save(true)} disabled={busy}>Открыть прежний рендер</button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => void save("studio")}
+        >
+          Создать видео через SDK →
+        </button>
+        <button
+          className="btn ghost"
+          onClick={() => save("legacy")}
+          disabled={busy}
+        >
+          Открыть прежний рендер
+        </button>
       </div>
       {error ? <div className="error">{error}</div> : null}
       {completed ? (
@@ -103,13 +122,23 @@ export function ResultsPanel({
 
       <div style={{ marginTop: 10 }}>
         {rows.map((r, i) => (
-          <div className="rank-row" key={r.trackId} style={{ opacity: r.rank <= topSize ? 1 : 0.4 }}>
+          <div
+            className="rank-row"
+            key={r.trackId}
+            style={{ opacity: r.rank <= topSize ? 1 : 0.4 }}
+          >
             <div className="rank-num">{r.rank}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>{r.title}</div>
-              {r.artist ? <div className="muted" style={{ fontSize: 13 }}>{r.artist}</div> : null}
+              {r.artist ? (
+                <div className="muted" style={{ fontSize: 13 }}>
+                  {r.artist}
+                </div>
+              ) : null}
             </div>
-            <div className="muted" style={{ fontSize: 13, marginRight: 8 }}>{r.score} очк.</div>
+            <div className="muted" style={{ fontSize: 13, marginRight: 8 }}>
+              {r.score} очк.
+            </div>
             {completed ? (
               <div className="row" style={{ gap: 4 }}>
                 <button
