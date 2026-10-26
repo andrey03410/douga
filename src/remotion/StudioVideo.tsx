@@ -9,6 +9,8 @@ import {
   Sequence,
   staticFile,
   useCurrentFrame,
+  useRemotionEnvironment,
+  useVideoConfig,
 } from "remotion";
 import type {
   CompiledAudio,
@@ -25,6 +27,8 @@ import {
   inWindows,
   mediaFrameAt,
   mediaLayout,
+  nativePlaybackAt,
+  playerMediaSync,
   transitionAt,
 } from "./studio-frame";
 
@@ -45,10 +49,27 @@ const Media: React.FC<{
   mode: AssetMode;
   heldFrame?: number;
 }> = ({ node, frame, mode, heldFrame }) => {
+  const { isPlayer } = useRemotionEnvironment();
+  const { fps } = useVideoConfig();
   const media = node.media;
   if (!media) return null;
   const layout = mediaLayout(media, node.rect);
   const source = resolveAsset(media.asset.src, mode);
+  const playback =
+    isPlayer && media.asset.kind === "video"
+      ? nativePlaybackAt(node, frame, heldFrame)
+      : undefined;
+  const advancing =
+    playback?.type === "play" ? (
+      <OffthreadVideo
+        muted
+        src={source}
+        trimBefore={playback.trimBefore}
+        trimAfter={playback.trimAfter}
+        {...playerMediaSync(fps)}
+        style={layout.source}
+      />
+    ) : null;
   const outsideActive =
     heldFrame !== undefined ||
     (node.activeWindow && !inWindows([node.activeWindow], frame));
@@ -61,16 +82,37 @@ const Media: React.FC<{
           src={resolveAsset(media.asset.posterSrc, mode)}
           style={layout.source}
         />
+      ) : playback?.type === "play" ? (
+        // A constant source trim lets Player use native playback and buffering.
+        // Sequence/Loop supply the same node-local segment time as the offline
+        // source-frame calculation, including pause, seek, and offset loops.
+        <Sequence
+          from={playback.from}
+          durationInFrames={playback.durationInFrames}
+          layout="none"
+        >
+          {playback.loopFrames === null ? (
+            advancing
+          ) : (
+            <Loop durationInFrames={playback.loopFrames} layout="none">
+              {advancing}
+            </Loop>
+          )}
+        </Sequence>
       ) : (
-        // Freeze maps every output frame onto the exact source frame, including
-        // offset loops, inactive card stills, and non-looping source-tail holds.
+        // Offline captures seek the exact source frame. Player reaches this
+        // branch only for inactive card stills and non-looping source-tail holds.
         // Keep Freeze at zero: a large frozen frame plus the scene offset can
         // exceed the composition duration and Remotion clamps that timeline.
         <Freeze frame={0}>
           <OffthreadVideo
             muted
             src={source}
-            startFrom={heldFrame ?? mediaFrameAt(node, frame)}
+            startFrom={
+              playback?.type === "hold"
+                ? playback.sourceFrame
+                : (heldFrame ?? mediaFrameAt(node, frame))
+            }
             style={layout.source}
           />
         </Freeze>
@@ -327,12 +369,14 @@ const AudioCue: React.FC<{ cue: CompiledAudio; mode: AssetMode }> = ({
   mode,
 }) => {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const audio = (
     <Audio
       src={resolveAsset(cue.asset.src, mode)}
       startFrom={cue.offsetFrames}
       endAt={cue.offsetFrames + (cue.loopFrames ?? cue.durationInFrames)}
       volume={() => audioVolumeAt(cue, cue.from + frame)}
+      {...playerMediaSync(fps)}
     />
   );
   // The envelope closes over cue-local time outside Loop: it never resets with

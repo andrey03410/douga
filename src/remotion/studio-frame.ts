@@ -271,3 +271,48 @@ export function fitTextSize(
   }
   return Math.floor(low * 10) / 10;
 }
+
+/** Native Player playback keeps source trims stable; only held states seek a frame. */
+export function nativePlaybackAt(
+  node: CompiledNode,
+  frame: number,
+  heldFrame?: number,
+):
+  | { type: "hold"; sourceFrame: number }
+  | {
+      type: "play";
+      from: number;
+      durationInFrames: number;
+      trimBefore: number;
+      trimAfter: number;
+      loopFrames: number | null;
+    } {
+  const hold = {
+    type: "hold" as const,
+    sourceFrame: heldFrame ?? mediaFrameAt(node, frame),
+  };
+  const media = node.media;
+  if (!media || heldFrame !== undefined) return hold;
+  const from = node.activeWindow?.from ?? node.from;
+  const end = node.activeWindow?.to ?? node.from + node.durationInFrames;
+  const available =
+    (media.freezeAtFrame ?? media.offsetFrames + end - from - 1) -
+    media.offsetFrames +
+    1;
+  const durationInFrames =
+    media.loopFrames === null ? Math.min(end - from, available) : end - from;
+  if (frame < from || frame >= from + durationInFrames) return hold;
+  return {
+    type: "play",
+    from,
+    durationInFrames,
+    trimBefore: media.offsetFrames,
+    trimAfter: media.offsetFrames + (media.loopFrames ?? durationInFrames),
+    loopFrames: media.loopFrames,
+  };
+}
+
+/** Share an output-frame sync budget; Remotion's default permits 0.65 seconds. */
+export function playerMediaSync(fps: number) {
+  return { acceptableTimeShiftInSeconds: 2 / fps, pauseWhenBuffering: true };
+}

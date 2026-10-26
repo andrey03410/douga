@@ -10,6 +10,8 @@ import {
   audioVolumeAt,
   evaluateNode,
   mediaFrameAt,
+  nativePlaybackAt,
+  playerMediaSync,
   mediaLayout,
   transitionAt,
   answerCardFrames,
@@ -395,4 +397,103 @@ describe("Studio primitive renderer boundary", () => {
     expect(html(scene(cards), 50)).toContain('data-answer="true"');
     expect(html(scene(cards), 50)).toContain("Группа А");
   });
+});
+
+describe("native Player source segments", () => {
+  const moving = () =>
+    node({
+      media: {
+        asset: { id: "v", src: "v.mp4", kind: "video" },
+        offsetFrames: 20,
+        loopFrames: 15,
+        fit: "cover",
+        freezeAtFrame: 34,
+      },
+      activeWindow: { from: 30, to: 70 },
+    });
+  // Catches per-output-frame source trimming, which reloads FullHD media fragments.
+  it("keeps native trims constant while advancing and crossing offset-segment loops", () => {
+    const expected = {
+      type: "play",
+      from: 30,
+      durationInFrames: 40,
+      trimBefore: 20,
+      trimAfter: 35,
+      loopFrames: 15,
+    };
+    expect(nativePlaybackAt(moving(), 30)).toEqual(expected);
+    expect(nativePlaybackAt(moving(), 31)).toEqual(expected);
+    expect(nativePlaybackAt(moving(), 45)).toEqual(expected);
+    expect(nativePlaybackAt(moving(), 69)).toEqual(expected);
+  });
+  it("retains the same source segment when seeking backward or resuming", () => {
+    const n = moving();
+    expect(nativePlaybackAt(n, 61)).toMatchObject({
+      type: "play",
+      from: 30,
+      trimBefore: 20,
+      trimAfter: 35,
+    });
+    expect(nativePlaybackAt(n, 32)).toMatchObject({
+      type: "play",
+      from: 30,
+      trimBefore: 20,
+      trimAfter: 35,
+    });
+  });
+  it("freezes inactive card frames and explicit separate-answer stills", () => {
+    expect(nativePlaybackAt(moving(), 20)).toEqual({
+      type: "hold",
+      sourceFrame: 29,
+    });
+    expect(nativePlaybackAt(moving(), 70)).toEqual({
+      type: "hold",
+      sourceFrame: 29,
+    });
+    expect(nativePlaybackAt(moving(), 50, 11)).toEqual({
+      type: "hold",
+      sourceFrame: 11,
+    });
+  });
+  it("advances nonlooping footage to its real tail then freezes the final source frame", () => {
+    const n = moving();
+    n.media!.loopFrames = null;
+    expect(nativePlaybackAt(n, 30)).toEqual({
+      type: "play",
+      from: 30,
+      durationInFrames: 15,
+      trimBefore: 20,
+      trimAfter: 35,
+      loopFrames: null,
+    });
+    expect(nativePlaybackAt(n, 44).type).toBe("play");
+    expect(nativePlaybackAt(n, 45)).toEqual({ type: "hold", sourceFrame: 34 });
+  });
+  it("uses node-local timing for standalone videos, including late scenes", () => {
+    const n = moving();
+    n.activeWindow = undefined;
+    n.media!.loopFrames = null;
+    expect(nativePlaybackAt(n, 10)).toEqual({
+      type: "play",
+      from: 10,
+      durationInFrames: 15,
+      trimBefore: 20,
+      trimAfter: 35,
+      loopFrames: null,
+    });
+    expect(nativePlaybackAt(n, 24).type).toBe("play");
+    expect(nativePlaybackAt(n, 25)).toEqual({ type: "hold", sourceFrame: 34 });
+  });
+});
+
+describe("native media timeline synchronization", () => {
+  it.each([24, 30, 60])(
+    "sets the advancing video/audio correction budget within two output frames at %s fps",
+    (fps) => {
+      const sync = playerMediaSync(fps);
+      expect(sync.acceptableTimeShiftInSeconds * fps).toBeGreaterThanOrEqual(1);
+      expect(sync.acceptableTimeShiftInSeconds * fps).toBeLessThanOrEqual(2);
+      expect(sync.pauseWhenBuffering).toBe(true);
+    },
+  );
 });
