@@ -104,10 +104,10 @@
 
 **Interfaces:** Add `startStudioImport(userId,input)` for `{url,mode:'audio'|'video',quality?,idempotencyKey?}`; standalone import jobs use the same status/cancel/delete/worker contract as Task4. They do not require an existing video project. Successful result identifies an owned pool asset with media metadata. Small synchronous local/image imports may keep existing services; long new SDK URL imports are durable rather than delegated to the legacy in-process DownloadJob runner.
 
-- [ ] Write RED real-DB/loopback-yt-dlp tests for enqueue without execution, scoped worker import, ownership/fresh roles/pool quota, idempotent replay and conflicting payload, cancellation, recovery/retry and exactly one imported pool result. Test fixtures explicitly disable configured YTDLP_PROXY only for loopback calls.
-- [ ] Extend the shared durable queue/worker with URL imports, fresh permissions and quota at execution/publication, process cancellation/lease loss and bounded retry. Reuse probe/download/normalization/pool utilities. Do not execute imports in the web/MCP process or let a losing/canceled attempt publish an unexpected duplicate asset. Existing user DownloadJob records remain untouched.
-- [ ] Verify actual downloaded bytes/streams and restart-safe queued state. Integrate safe result cleanup/account usage while preserving an imported asset that is now used by a project; report protected references clearly.
-- [ ] Run covering import/queue/quota tests, TypeScript and full suite once; commit and document exact schemas/results for MCP/UI consumers. Controller owns subsequent task-scoped review.
+- [x] Write RED real-DB/loopback-yt-dlp tests for enqueue without execution, scoped worker import, ownership/fresh roles/pool quota, idempotent replay and conflicting payload, cancellation, recovery/retry and exactly one imported pool result. Test fixtures explicitly disable configured YTDLP_PROXY only for loopback calls.
+- [x] Extend the shared durable queue/worker with URL imports, fresh permissions and quota at execution/publication, process cancellation/lease loss and bounded retry. Reuse probe/download/normalization/pool utilities. Do not execute imports in the web/MCP process or let a losing/canceled attempt publish an unexpected duplicate asset. Existing user DownloadJob records remain untouched.
+- [x] Verify actual downloaded bytes/streams and restart-safe queued state. Integrate safe result cleanup/account usage while preserving an imported asset that is now used by a project; report protected references clearly.
+- [x] Run covering import/queue/quota tests, TypeScript and full suite once; commit and document exact schemas/results for MCP/UI consumers. Controller owns subsequent task-scoped review.
 
 ### Task 6: MCP discovery, editing, inspection and rendering
 
