@@ -1,5 +1,7 @@
 "use client";
 
+import { poolBulkDeleteOutcome } from "@/lib/domain/bulk-delete";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeDeletion, sumUsage, pluralRu, type UsageBreakdown } from "@/lib/domain/art-usage";
 
@@ -215,15 +217,12 @@ export function useMediaPool({
       body: JSON.stringify({ ids }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(data.error ?? "Не удалось удалить");
-      return;
-    }
-    forget(new Set<string>(data.deleted ?? []));
-    clearSelection();
-    onChange?.();
-    const failed = (data.failed ?? []).length;
-    setError(failed ? `Не удалось удалить: ${failed}` : null);
+    const outcome=poolBulkDeleteOutcome(res.status,data);
+    forget(new Set(outcome.deleted));
+    if(outcome.failedIds.length)setSelected(new Set(outcome.failedIds));
+    else if(res.ok)clearSelection();
+    if(outcome.deleted.length)onChange?.();
+    setError(outcome.error);
   }, [arts, selected, forget, clearSelection, onChange]);
 
   return {

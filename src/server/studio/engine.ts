@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { fork } from "node:child_process";
-import { VERSION } from "remotion";
+import { VERSION } from "remotion/version";
 import { absPath } from "@/lib/storage";
 import { hash } from "./shared";
 import { fileHash } from "./assets";

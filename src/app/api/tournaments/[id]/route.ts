@@ -1,3 +1,4 @@
+import { studioProtectionResponse } from "@/lib/studio-protection";
 import { NextResponse } from "next/server";
 import { userOr401, notFound, badRequest } from "@/lib/api";
 import { deleteTournament, setGroupSize } from "@/server/tournaments";
@@ -14,6 +15,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const groupSize = await setGroupSize(auth.userId, params.id, body.groupSize);
     return NextResponse.json({ ok: true, groupSize });
   } catch (e) {
+    const protectedResponse=studioProtectionResponse(e); if(protectedResponse)return protectedResponse;
     if (String((e as Error).message) === "NOT_FOUND") return notFound();
     throw e;
   }
@@ -27,6 +29,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     await deleteTournament(auth.userId, params.id);
     return NextResponse.json({ ok: true });
   } catch (e) {
+    const protectedResponse=studioProtectionResponse(e); if(protectedResponse)return protectedResponse;
     if (String((e as Error).message) === "NOT_FOUND") return notFound();
     throw e;
   }

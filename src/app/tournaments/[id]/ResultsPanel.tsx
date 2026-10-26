@@ -91,9 +91,8 @@ export function ResultsPanel({
         <button className="btn secondary" onClick={() => save(false)} disabled={busy}>
           Сохранить N
         </button>
-        <button className="btn" onClick={() => save(true)} disabled={busy}>
-          Перейти к рендеру →
-        </button>
+        <a className="btn" href={`/studio/new?sourceId=${encodeURIComponent(tournamentId)}`}>Создать видео через SDK →</a>
+        <button className="btn ghost" onClick={() => save(true)} disabled={busy}>Открыть прежний рендер</button>
       </div>
       {error ? <div className="error">{error}</div> : null}
       {completed ? (

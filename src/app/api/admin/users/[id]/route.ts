@@ -1,8 +1,10 @@
+import { studioProtectionResponse } from "@/lib/studio-protection";
 import { NextResponse } from "next/server";
 import { permissionOr403, badRequest, forbidden, notFound } from "@/lib/api";
 import { deleteUser, setUserRole } from "@/server/users";
 
 function mapError(e: Error) {
+  const protectedResponse=studioProtectionResponse(e);if(protectedResponse)return protectedResponse;
   switch (e.message) {
     case "NOT_FOUND":
       return notFound();

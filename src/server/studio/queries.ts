@@ -95,6 +95,7 @@ export async function listStudioHistorySummaries(
     cursor &&
     !(await prisma.studioRevision.findFirst({
       where: { id: cursor, projectId },
+      select: { id: true },
     }))
   )
     throw new StudioError("NOT_FOUND");

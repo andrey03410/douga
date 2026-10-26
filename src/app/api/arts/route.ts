@@ -1,3 +1,4 @@
+import { studioProtectionMessage } from "@/lib/studio-protection";
 import { NextResponse } from "next/server";
 import { userOr401, permissionOr403, badRequest, tooLarge, serverError } from "@/lib/api";
 import { formatBytes, quotasFor } from "@/lib/domain/permissions";
@@ -83,7 +84,8 @@ export async function DELETE(req: Request) {
 
   try {
     const result = await deleteArts(auth.userId, ids);
-    return NextResponse.json(result);
+    const failed=result.failed.map(entry=>({...entry,...(studioProtectionMessage(entry.reason)?{message:studioProtectionMessage(entry.reason)}:{})}));
+    return NextResponse.json({...result,failed},{status:failed.some(entry=>studioProtectionMessage(entry.reason))?409:200});
   } catch (e) {
     const msg = (e as Error).message;
     if (msg === "NO_IDS") return badRequest("Не выбрано ни одного файла");

@@ -1,3 +1,4 @@
+import { studioProtectionResponse } from "@/lib/studio-protection";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
@@ -60,6 +61,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const art = await renameArt(auth.userId, params.id, parsed.data.label);
     return NextResponse.json({ id: art.id, label: art.label });
   } catch (e) {
+    const protectedResponse=studioProtectionResponse(e); if(protectedResponse)return protectedResponse;
     if ((e as Error).message === "NOT_FOUND") return notFound();
     throw e;
   }
@@ -73,6 +75,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     await deleteArt(auth.userId, params.id);
     return NextResponse.json({ ok: true });
   } catch (e) {
+    const protectedResponse=studioProtectionResponse(e); if(protectedResponse)return protectedResponse;
     if ((e as Error).message === "NOT_FOUND") return notFound();
     throw e;
   }

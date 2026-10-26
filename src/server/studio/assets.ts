@@ -14,7 +14,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
-import { VERSION } from "remotion";
+import { VERSION } from "remotion/version";
 import { prisma } from "@/lib/db";
 import { absPath, STORAGE_ROOT } from "@/lib/storage";
 import { findActiveSnippet, probeMediaInfo } from "@/lib/audio";
@@ -73,7 +73,7 @@ async function ffmpeg(args: string[]) {
     proc.on("close", (code) => resolve(err));
   });
 }
-async function builtin(name: string) {
+export async function builtin(name: string) {
   const relative = `studio/builtin/${name}.wav`;
   try {
     await safeFile(relative);
