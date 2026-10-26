@@ -341,13 +341,35 @@ describe("discovery and service integration", () => {
       "voice",
     ]);
   });
-  it("extracted explicitly bound scenes become reusable repetition templates", () => {
+  it("reuses extracted bound scenes for new projects while preserving existing selections on apply", () => {
     const d = top();
     d.scenes = [scene({ id: "specific", block: "top", participantId: "b" })];
     const preset = extractVideoPreset(d, { id: "reuse", name: "Reusable" });
-    const next = applyVideoPreset(d, preset);
-    expect(compileVideo(next).ready).toBe(true);
-    expect(compileVideo(next).plan.scenes).toHaveLength(2);
+    expect(preset.scenes[0].repeat).toBe("participants");
+    expect(preset.scenes[0].participantId).toBeUndefined();
+
+    const applied = compileVideo(applyVideoPreset(d, preset));
+    expect(applied.ready).toBe(true);
+    expect(applied.plan.scenes.map((s) => s.participantId)).toEqual(["b"]);
+    expect(
+      applied.plan.scenes[0].nodes.find((n) => n.type === "card")?.label,
+    ).toBe("B");
+
+    const created = compileVideo(
+      createVideoDocument({
+        kind: "top",
+        preset,
+        participants: d.source.participants,
+      }),
+    );
+    expect(created.ready).toBe(true);
+    expect(created.plan.scenes.map((s) => s.participantId)).toEqual(["b", "a"]);
+    expect(
+      created.plan.scenes
+        .flatMap((s) => s.nodes)
+        .filter((n) => n.type === "card")
+        .map((n) => n.label),
+    ).toEqual(["B", "A"]);
   });
 });
 
