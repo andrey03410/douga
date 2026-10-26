@@ -127,11 +127,11 @@
 
 **Interfaces:** All routes call the same Task3/Task4 services as MCP. JSON editor supports draft/save/validate/commit with revision conflict handling; preview consumes Task 1 plan and Task 2 StudioVideo. Media/result URLs enforce owner access and support Range. UI does not maintain a competing visual settings model.
 
-- [ ] Write focused route/service tests for auth, CAS, malformed JSON, last-good-preview behavior and media Range. Observe RED.
-- [ ] Build readable Russian SDK workspace: code editing, diagnostics linked to node/field, explicit preview reveal, asset browsing/inspection, versions/diff/restore, preset save/catalog and job status/cancel/download. Keep surprise preview hidden until requested.
-- [ ] Integrate existing pool/discovery entry points without breaking tournament/manual-top sources. New project listing clearly exposes SDK projects and sample MCP commands; no built-in agent/chat.
-- [ ] Run tests, TypeScript and production build. Check the running site through CUA: project listing, edit/invalid draft/conflict, preview, presets, revisions and job result. Fix usability issues found against this workflow.
-- [ ] Commit UI deliverable with actual browser evidence in task report.
+- [x] Write focused route/service tests for auth, CAS, malformed JSON, last-good-preview behavior and media Range. Observe RED.
+- [x] Build readable Russian SDK workspace: code editing, diagnostics linked to node/field, explicit preview reveal, asset browsing/inspection, versions/diff/restore, preset save/catalog and job status/cancel/download. Keep surprise preview hidden until requested.
+- [x] Integrate existing pool/discovery entry points without breaking tournament/manual-top sources. New project listing clearly exposes SDK projects and sample MCP commands; no built-in agent/chat.
+- [x] Run tests, TypeScript and production build. Check the running site through CUA: project listing, edit/invalid draft/conflict, preview, presets, revisions and job result. Fix usability issues found against this workflow.
+- [x] Commit UI deliverable with actual browser evidence in task report.
 
 ### Task 8: End-to-end acceptance, regression repairs and handoff
 
