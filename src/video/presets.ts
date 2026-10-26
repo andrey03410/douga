@@ -225,10 +225,12 @@ export function applyVideoPreset(
           audio: {
             ...doc.audio,
             ...(p.audio.cues ? { cues: p.audio.cues } : {}),
-            ...(doc.audio?.playlist
+            ...(doc.audio?.playlist ||
+            Object.keys(p.audio).some((key) => key !== "cues")
               ? {
                   playlist: {
-                    ...doc.audio.playlist,
+                    tracks: [],
+                    ...doc.audio?.playlist,
                     ...Object.fromEntries(
                       Object.entries(p.audio).filter(([key]) => key !== "cues"),
                     ),

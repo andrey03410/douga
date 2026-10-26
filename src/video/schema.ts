@@ -573,3 +573,33 @@ export function getVideoDocumentJsonSchema(): Record<string, unknown> {
     $refStrategy: "root",
   });
 }
+
+const patchTargetSchema = z.union([
+  z.object({ type: z.literal("document") }).strict(),
+  z
+    .object({
+      type: z.enum(["participant", "round", "card", "group", "scene", "node"]),
+      id: z.string().min(1),
+    })
+    .strict(),
+]);
+/** Stable-ID patches; protected path semantics are checked by patchVideoDocument. */
+export const videoPatchOperationSchema = z.discriminatedUnion("op", [
+  z
+    .object({
+      op: z.literal("set"),
+      target: patchTargetSchema,
+      path: z.array(z.string().min(1)).min(1),
+      value: z
+        .unknown()
+        .refine((v) => v !== undefined, "Set requires a JSON value"),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("unset"),
+      target: patchTargetSchema,
+      path: z.array(z.string().min(1)).min(1),
+    })
+    .strict(),
+]);

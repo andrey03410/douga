@@ -258,8 +258,8 @@ binding prefixes/suffixes, remaps node/scene IDs, removes source references,
 background media and tick bindings, replaces asset references with generic
 `slot:<node-type>:<number>`, and replaces custom participant refs with `$participant`.
 Explicitly bound top/round scenes become source-repetition templates. SVG path
-content is stripped on extraction. This intentionally requires an author to
-restore any desired universal copy/path after extraction; it does not guess
+geometry is preserved as design. Extraction replaces literal copy; an author can
+explicitly declare reusable generic copy in a canonical preset. It does not guess
 whether private text is safe to publish. User-supplied presets reject actual
 asset keys and participant IDs. Slot assets are unfilled design placeholders,
 reported as warnings; a service should expose them as fillable slots.
@@ -603,3 +603,130 @@ The service computes absent active-snippet ranges from actual PCM/RMS per
 scene/participant/window length; it does not ask the caller to approximate them.
 Text/image-only and silent-video objects can use an active template without
 mandatory audio analysis. Explicit intervals still compile as authored.
+
+## External-agent MCP adapter (Task 6)
+
+`npm run mcp` starts the real stdio server. `MCP_ACTOR_EMAIL` identifies one
+existing account; service calls retain that account's immutable ID and check
+its role/ownership freshly. No service accepts a client actor, quota, arbitrary
+filesystem path, JavaScript, TSX or shell program. Retained Shikimori, local
+allowlist and media-discovery tools remain useful. `create_top_project` and
+`create_picker_project` are explicitly labeled **LEGACY VideoProject**; new
+`video_*` tools only create canonical Studio projects.
+
+`video_capabilities` reports API 1, schema 1, compiler 1.0.0, the installed MCP
+SDK's latest/supported handshake versions, permissions and actual budgets.
+The installed SDK currently negotiates through 2025-11-25 and includes
+2024-11-05. The integration client verifies both current SDK initialization and
+an explicit 2024-11-05 handshake. Object results and adapter diagnostics have
+native `structuredContent` plus the same JSON serialized in a text content block.
+Older/text-only clients can read the JSON fallback. SDK-level argument validation
+errors may use the SDK's standard MCP error text before entering the adapter.
+
+Ordinary create/edit/list/job-status results contain neutral IDs, versions,
+readiness/counts or job metadata. They never embed documents, plans, draft text,
+answers, inline media or private absolute paths. They do not navigate/open a
+website or preview. Content is requested through explicit document/source/schema/
+inspection tools, whose content blocks use `annotations.audience:["assistant"]`.
+This is a hint, not a guarantee: external clients can display raw tool/resource
+content. Image/audio/video rendering or playback depends on the client's actual
+modality support. `video://` resources require this authenticated MCP connection;
+they are not public HTTP links. Clips/finals use a JSON text descriptor with URI,
+MIME, bytes and hash, avoiding a dependency on newer `resource_link` content.
+
+### Tools and pagination
+
+All collection inputs accept `limit` (1–100, default 20) and `cursor`, and return
+`{items,nextCursor}`. A null cursor means the end. Cursors are collection/owner
+checked. Project/history lists use bounded SQL scalar projections; reading a
+specific project reconciles its authoritative source. Personal preset catalog
+summaries have ID/name; explicitly get the canonical preset to inspect its kind,
+settings and structure.
+
+| Tool | Input / behavior |
+|---|---|
+| `video_capabilities` | `{}`; versions, budgets, fresh permissions, client caveat |
+| `video_schema_get` | `{name?:"document"|"preset"|"patch"|"services"}`; shared schemas and runtime constraints |
+| `video_examples` | `{}`; two complete SDK-generated documents |
+| `video_preset_list` / `video_preset_get` | page / `{presetId}`; canonical get strips catalog-only metadata |
+| `video_preset_save` | `{name,document?,preset?,idempotencyKey?}`; exactly one content field; neutral saved-template identity |
+| `video_project_list` / `video_project_get` | page / `{projectId}`; neutral metadata |
+| `video_project_create` | exactly one `document` or `presetId`; factory options `title?`, `sourceId?`, `roundCount?`, `cardsPerRound?`; optional key |
+| `video_document_get` | `{projectId,section?:"head"|"draft"|"source"|"settings"|"scenes"|"bindings",revision?}`; explicit content |
+| `video_draft_replace` | `{projectId,expectedVersion,document?,text?,idempotencyKey?}`; exactly one content field |
+| `video_draft_patch` | `{projectId,expectedVersion,operations,idempotencyKey?}`; stable-ID SDK operations |
+| `video_preset_apply` | `{projectId,expectedVersion,presetId,idempotencyKey?}`; design-only draft |
+| `video_project_validate` | `{projectId}`; explicit structured current diagnostics |
+| `video_timeline_get` | `{projectId,revision?,limit?,cursor?}`; explicit stored compiled scene intervals, preview origin/stale and recommended absolute still frames |
+| `video_draft_commit` | `{projectId,expectedVersion,idempotencyKey?}` |
+| `video_revision_restore` | same plus `revision`; creates new saved history |
+| `video_history_list` | `{projectId,limit?,cursor?}`; neutral saved-revision metadata |
+| `video_source_list` / `video_source_get` | page / `{sourceId,limit?,cursor?}`; discover owned authorial tops and read authoritative stable-ID ranks |
+| `video_asset_list` | page plus `kind?:"image"|"audio"|"video",query?`; owned IDs/resource URIs |
+| `video_asset_inspect` | `{assetId,content?:false,mode?:"auto"|"image"|"audio"|"clip",fromSec?:0,durationSec?}`; explicit original-media inspection |
+| `video_import_start` | strict shared HTTP(S) import schema; enqueue only |
+| `video_job_start` | `{projectId,...StartStudioJobInput}`; exact shared variant schema enforced |
+| `video_job_get` / `video_job_cancel` / `video_job_inspect` | `{jobId}`; neutral status/cancel or explicit result content |
+
+The input objects are strict. Recursive SDK/document schemas live in discovery
+resources; registration also retains strict service validation and XOR refinements.
+Historical document reads cannot select `section:"draft"`: saved revisions contain
+committed documents, while drafts belong to the current edit head.
+`expectedVersion` is an edit token, distinct from `revision`. Keys are account-wide
+and action-specific. Reusing the same key/request returns the original response,
+including after intervening edits or deletion of a personal preset; read again
+for the latest state. Preset creation uses its round/card/group skeleton. Applying
+it to an existing project preserves content/counts/answers/media. Template save
+from `document` conservatively replaces literal text; explicit canonical `preset`
+preserves author-declared generic copy. Do not pass catalog `personal` metadata
+into the strict canonical schema.
+
+### Exact protocol examples
+
+Values such as `PROJECT_ID`, `JOB_ID`, `SOURCE_ID`, `ASSET_ID` below are copied
+from prior owned responses. Requests use JSON-RPC over stdio (one line per message).
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"video_capabilities","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"video://schema/document"}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"video_preset_list","arguments":{"limit":10}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"video_source_list","arguments":{"limit":20}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"video_source_get","arguments":{"sourceId":"SOURCE_ID","limit":100}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"video_project_create","arguments":{"presetId":"top.classic.wide","sourceId":"SOURCE_ID","idempotencyKey":"create-my-top-1"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"video_project_create","arguments":{"presetId":"picker.two-groups.vertical","roundCount":2,"cardsPerRound":6,"idempotencyKey":"create-picker-1"}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"video_document_get","arguments":{"projectId":"PROJECT_ID","section":"head"}}}
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"video_draft_patch","arguments":{"projectId":"PROJECT_ID","expectedVersion":1,"idempotencyKey":"style-1","operations":[{"op":"set","target":{"type":"document"},"path":["settings","card","borderRadius"],"value":24}]}}}
+{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"video_project_validate","arguments":{"projectId":"PROJECT_ID"}}}
+{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"video_draft_commit","arguments":{"projectId":"PROJECT_ID","expectedVersion":2,"idempotencyKey":"commit-1"}}}
+{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"video_job_start","arguments":{"projectId":"PROJECT_ID","kind":"still","frame":0,"expectedVersion":3,"idempotencyKey":"still-1"}}}
+{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"video_job_get","arguments":{"jobId":"JOB_ID"}}}
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"video_job_inspect","arguments":{"jobId":"JOB_ID"}}}
+{"jsonrpc":"2.0","id":15,"method":"resources/read","params":{"uri":"video://job/JOB_ID"}}
+{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"video_asset_inspect","arguments":{"assetId":"ASSET_ID","content":true,"mode":"image","fromSec":0.8}}}
+{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"video_asset_inspect","arguments":{"assetId":"ASSET_ID","content":true,"mode":"audio","fromSec":0.5,"durationSec":0.25}}}
+{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"video_asset_inspect","arguments":{"assetId":"ASSET_ID","content":true,"mode":"clip","fromSec":0.8,"durationSec":0.25}}}
+{"jsonrpc":"2.0","id":19,"method":"resources/read","params":{"uri":"video://asset/ASSET_ID?mode=clip&fromSec=0.8&durationSec=0.25"}}
+{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"video_import_start","arguments":{"url":"https://example.com/video.mp4","mode":"video","quality":720,"idempotencyKey":"import-1"}}}
+{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"video_job_cancel","arguments":{"jobId":"JOB_ID"}}}
+```
+
+`video://schema/{document,preset,patch,services}` and `video://examples` are static
+owned-session resources. Dynamic templates are `video://job/{jobId}`,
+`video://asset/{assetId}` (default original inspection),
+`video://asset/{assetId}/frame/{fromSec}`, and
+`video://asset/{assetId}{?mode,fromSec,durationSec}`. Use the returned URI exactly;
+fragment query URIs contain all three parameters in that order. Resource reads
+return `{contents:[{uri,mimeType,blob}]}` with real base64 binary content. Job
+resources retain the output hash checked by the shared service; original previews
+are current source inspections, not immutable job artifacts. Read/render limits
+are published in capabilities: 15-second previews, <=720px, 12 MiB inline/resource
+bytes; original transcodes have a 30-second timeout. Larger final jobs remain
+valid but exceed MCP inspection bytes and need the separately authenticated
+streaming/download adapter. No public download URL is invented by this server.
+
+For autonomous inspection, call `video_timeline_get` before selecting still/clip/audio
+frames. Its scene intervals, phase boundaries and recommended frame indices come
+from the existing compiled plan. Current last-good previews name their actual edit
+version and staleness; `revision` selects immutable saved history, including a
+job's frozen revision. This avoids guessing repeated/full/active scene durations.
+For example: `{"name":"video_timeline_get","arguments":{"projectId":"PROJECT_ID","revision":1,"limit":20}}`.

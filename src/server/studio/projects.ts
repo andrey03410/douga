@@ -1,10 +1,14 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@prisma/client";
+import { ZodError } from "zod";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
   videoDocumentSchema,
+  patchVideoDocument,
+  applyVideoPreset,
+  createVideoDocument,
   type VideoDocument,
 } from "@/video";
 import {
@@ -25,6 +29,7 @@ import {
 } from "./assets";
 import { reconcileSource } from "./sources";
 import { StudioError } from "./errors";
+import { getStudioPreset } from "./queries";
 import {
   createStudioProjectSchema,
   saveStudioDraftSchema,
@@ -38,6 +43,12 @@ import {
   type StudioValidation,
   deleteStudioResourceSchema,
   type DeleteStudioResourceInput,
+  patchStudioDraftSchema,
+  applyStudioPresetSchema,
+  type PatchStudioDraftInput,
+  type ApplyStudioPresetInput,
+  createStudioProjectFromPresetSchema,
+  type CreateStudioProjectFromPresetInput,
 } from "./types";
 
 export const directoryFor = (userId: string, id: string) =>
@@ -250,8 +261,52 @@ export async function createStudioProject(
 ): Promise<StudioProjectView> {
   const input = createStudioProjectSchema.parse(raw);
   jsonText(input.document);
+  return createFromDocument(
+    userId,
+    input,
+    requestHash("create", input),
+    () => input.document,
+  );
+}
+export async function createStudioProjectFromPreset(
+  userId: string,
+  raw: CreateStudioProjectFromPresetInput,
+) {
+  const input = createStudioProjectFromPresetSchema.parse(raw);
+  return createFromDocument(
+    userId,
+    input,
+    requestHash("create-from-preset", input),
+    async () => {
+      const preset = await getStudioPreset(userId, input.presetId);
+      const document = createVideoDocument({
+        kind: preset.kind,
+        preset,
+        title: input.title,
+        roundCount: input.roundCount,
+        cardsPerRound: input.cardsPerRound,
+      });
+      if (input.sourceId) {
+        if (preset.kind !== "top") throw new StudioError("SOURCE_KIND_INVALID");
+        document.source = {
+          kind: "tournament",
+          tournamentId: input.sourceId,
+          participants: [],
+          rounds: [],
+        };
+      }
+      return document;
+    },
+  );
+}
+/** The factory resolves mutable owned inputs only after checking its semantic receipt. */
+async function createFromDocument(
+  userId: string,
+  input: { idempotencyKey?: string },
+  request: string,
+  makeDocument: () => unknown | Promise<unknown>,
+): Promise<StudioProjectView> {
   await actor(userId);
-  const request = requestHash("create", input);
   const old = await replay<StudioProjectView>(
     prisma,
     userId,
@@ -259,11 +314,13 @@ export async function createStudioProject(
     request,
   );
   if (old) return old;
+  const rawDocument = await makeDocument();
+  jsonText(rawDocument);
   const id = randomUUID();
   const directory = directoryFor(userId, id);
   const document = await reconcileSource(
     userId,
-    parseVideoDocument(input.document),
+    parseVideoDocument(rawDocument),
   );
   try {
     const result = await evaluate(userId, document, directory);
@@ -329,8 +386,90 @@ export async function saveStudioDraft(
   raw: SaveStudioDraftInput,
 ): Promise<StudioProjectView> {
   const input = saveStudioDraftSchema.parse(raw);
+  return writeDraft(
+    userId,
+    id,
+    input,
+    requestHash(`draft:${id}`, input),
+    () => input,
+  );
+}
+export async function patchStudioDraft(
+  userId: string,
+  id: string,
+  raw: PatchStudioDraftInput,
+) {
+  const input = patchStudioDraftSchema.parse(raw);
+  return writeDraft(
+    userId,
+    id,
+    input,
+    requestHash(`patch:${id}`, input),
+    (current) => {
+      const document = editableDocument(current);
+      try {
+        return {
+          document: patchVideoDocument(
+            document,
+            input.operations.map((op) =>
+              op.op === "set" ? { ...op, value: op.value } : op,
+            ),
+          ),
+        };
+      } catch (e) {
+        if (e instanceof ZodError) throw e;
+        throw new StudioError("PATCH_INVALID", [
+          {
+            severity: "error",
+            code: "PATCH_INVALID",
+            path: "operations",
+            message: e instanceof Error ? e.message : "Invalid semantic patch",
+          },
+        ]);
+      }
+    },
+  );
+}
+export async function applyStudioPreset(
+  userId: string,
+  id: string,
+  raw: ApplyStudioPresetInput,
+) {
+  const input = applyStudioPresetSchema.parse(raw);
+  return writeDraft(
+    userId,
+    id,
+    input,
+    requestHash(`apply-preset:${id}`, input),
+    async (current) => ({
+      document: applyVideoPreset(
+        editableDocument(current),
+        await getStudioPreset(userId, input.presetId),
+      ),
+    }),
+  );
+}
+function editableDocument(current: StudioProjectView) {
+  const parsed = videoDocumentSchema.safeParse(
+    current.draft ? current.draft.document : current.document,
+  );
+  if (!parsed.success) throw new StudioError("DRAFT_REPLACEMENT_REQUIRED");
+  return parsed.data;
+}
+/** Trusted request identity is constructed by each public operation, never supplied by callers.
+ * All three editor paths share source guards, evaluation, CAS and atomic receipt publication. */
+async function writeDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string },
+  request: string,
+  content: (
+    current: StudioProjectView,
+  ) =>
+    | { document?: unknown; text?: string }
+    | Promise<{ document?: unknown; text?: string }>,
+): Promise<StudioProjectView> {
   await owned(userId, id);
-  const request = requestHash(`draft:${id}`, input);
   const old = await replay<StudioProjectView>(
     prisma,
     userId,
@@ -339,9 +478,19 @@ export async function saveStudioDraft(
   );
   if (old) return old;
   const current = await getStudioProject(userId, id);
-  if (current.version !== input.expectedVersion)
+  if (current.version !== input.expectedVersion) {
+    // An identical in-flight operation may have committed while get reconciled.
+    const replayed = await replay<StudioProjectView>(
+      prisma,
+      userId,
+      input.idempotencyKey,
+      request,
+    );
+    if (replayed) return replayed;
     throw new StudioError("VERSION_CONFLICT");
-  let text = input.text ?? jsonText(input.document);
+  }
+  const replacement = await content(current);
+  let text = replacement.text ?? jsonText(replacement.document);
   let value = parseDraft(text);
   const parsed = videoDocumentSchema.safeParse(value);
   if (parsed.success) {

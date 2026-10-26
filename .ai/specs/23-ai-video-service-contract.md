@@ -19,9 +19,12 @@ are not charged again to the original media-pool quota.
 | Export | Input after userId/projectId | Result |
 |---|---|---|
 | `createStudioProject(userId,input)` | `{document:unknown,idempotencyKey?}` | `StudioProjectView` |
+| `createStudioProjectFromPreset(userId,input)` | `{presetId,title?,sourceId?,roundCount?,cardsPerRound?,idempotencyKey?}` | shared factory + normal saved project |
 | `listStudioProjects(userId)` | none | `StudioProjectView[]`, newest first, reconciled |
 | `getStudioProject(userId,id)` | none | reconciled `StudioProjectView` |
 | `saveStudioDraft(userId,id,input)` | `{expectedVersion,idempotencyKey?,document?:unknown,text?:string}`; exactly one content field | `StudioProjectView` |
+| `patchStudioDraft(userId,id,input)` | `{expectedVersion,idempotencyKey?,operations:PatchOperation[]}` | semantic edit of current draft/head |
+| `applyStudioPreset(userId,id,input)` | `{expectedVersion,idempotencyKey?,presetId}` | design-only draft edit, preserving source content |
 | `commitStudioDraft(userId,id,input)` | `{expectedVersion,idempotencyKey?}` | new saved revision; clears draft |
 | `restoreStudioRevision(userId,id,input)` | same plus `revision:number` | new revision copied from history, reconciled to current source |
 | `listStudioRevisions(userId,id)` | none | `StudioRevisionView[]`, newest first |
@@ -35,10 +38,76 @@ are not charged again to the original media-pool quota.
 | `deleteStudioSnapshot(userId,snapshotId)` | owned snapshot ID | releases the frozen-reference row |
 
 Schema exports are `mutationSchema`, `createStudioProjectSchema`,
+`createStudioProjectFromPresetSchema`, `patchStudioDraftSchema`, `applyStudioPresetSchema`,
 `saveStudioDraftSchema`, `commitStudioDraftSchema`,
 `restoreStudioRevisionSchema`, `freezeStudioProjectSchema`,
 `saveStudioPresetSchema`, `deleteStudioResourceSchema`, and
 `studioManifestModeSchema`.
+
+Factory creation resolves a canonical owned/built-in preset and uses the shared
+SDK `createVideoDocument({kind,preset,...})` factory. Personal round/card/group
+skeletons, format settings, sound rules and media-free playlist policy survive.
+`sourceId` attaches an owned tournament to a top; picker source attachment fails
+`SOURCE_KIND_INVALID`. Counts use the SDK technical resource budgets. It never
+creates a legacy VideoProject. Applying a preset to an existing project preserves
+its content/counts/answers/bindings; it does not use the new-project skeleton.
+
+Factory creation, replace, semantic patch and preset application use shared
+private create/draft primitives. Semantic request hashes are constructed on the
+server; no input can override a receipt identity. Receipts are checked before
+reading mutable head/preset/source, then again in the transaction. A retry after
+an intervening edit or deletion of its personal preset returns the original
+response. Concurrent identical requests produce one mutation; version mismatch
+rechecks the receipt before returning `VERSION_CONFLICT`. Different actions or
+inputs with the same account key still fail `IDEMPOTENCY_CONFLICT`.
+Patch operations are a bounded 1–1000 array of SDK `videoPatchOperationSchema`
+values. Schema-valid drafts with semantic diagnostics can be repaired by patch.
+Malformed/schema-invalid drafts fail `DRAFT_REPLACEMENT_REQUIRED` for patch/apply;
+they never fall back to the committed head. Replace remains the repair path.
+Missing stable-ID targets or protected semantic paths return `PATCH_INVALID`
+with operation diagnostics; resulting schema errors retain field issues.
+
+## Bounded queries and original inspection (Task 6)
+
+`studioPageSchema` accepts `{limit?:1..100,cursor?:string}`, default 20.
+`listStudioProjectSummaries`, `listStudioHistorySummaries`,
+`listStudioPresetSummaries`, `listStudioSources` return `{items,nextCursor}`.
+Project/history queries select neutral scalar metadata in SQL and never load
+every document, draft or plan. Listing does not reconcile sources; individual
+get/write remains authoritative. Cursors are owner/collection checked before
+querying. Preset summaries contain complete built-in metadata and owned personal
+ID/name metadata; `getStudioPreset(userId,id)` reads the strict canonical template
+without catalog-only `personal`. `getStudioSource(userId,sourceId,page?)` reuses
+`reconcileSource`, returning the current fingerprint, bounded stable-ID ranking
+items and their binding identities, without paths. It is an explicit content read.
+
+`inspectStudioAsset(userId,assetId,input?)` uses the shared strict
+`inspectStudioAssetSchema`:
+
+```ts
+{content?:boolean; mode?:'auto'|'image'|'audio'|'clip'; fromSec?:number; durationSec?:number}
+// defaults content=false, mode=auto, fromSec=0
+// fromSec: finite, 0..7200; durationSec: finite, >0 and <=15
+```
+
+Auto chooses PNG for image/video and AAC for audio. Video may explicitly request
+a later image, an audible excerpt, or an H.264/AAC MP4 fragment. Actual streams
+and source duration are probed. A missing stream fails `ASSET_KIND_MISMATCH`;
+an interval outside the source or a duration on an image request fails
+`ASSET_RANGE_INVALID`. Omitted excerpt duration uses the available tail, at most
+15 seconds. The metadata describes the original asset and its preview interval;
+it never contains an absolute path. Explicit image/audio content is returned
+only when requested. Clips return a descriptor and encode only when read through
+`readStudioAssetResource`. PNG longest edge is <=720, MP4 is even-sized <=720,
+each subprocess is limited to 30 seconds and 12 MiB output. Fresh permission and
+ownership are rechecked after encoding. Only owned Art IDs resolve files through
+the existing safe-storage boundary; caller-supplied filesystem paths are absent.
+
+`readStudioJobResource(userId,jobId)` reuses the verified job-artifact boundary
+and returns at most 12 MiB of base64 bytes. Larger outputs fail
+`INSPECTION_BYTE_LIMIT`; this is an MCP inspection budget, not a render limit.
+Task 7's authenticated streaming/download routes serve larger complete outputs.
+The MCP resource forms and client-display caveat are specified in contract 22.
 
 `saveStudioPreset` has two explicit modes. `document` parses a `VideoDocument`
 and conservatively extracts a preset: thematic literal text becomes `Text`,
@@ -242,3 +311,27 @@ Important codes: `NOT_FOUND`, `FORBIDDEN`, `VERSION_CONFLICT`,
 `ASSET_HASH_MISMATCH`, `AUDIO_ANALYSIS_FAILED`. Legacy deletion guards report
 `STUDIO_ASSET_IN_USE` / `STUDIO_SOURCE_IN_USE`. Runtime input schemas may throw
 ZodError; adapters should return field issues, not a generic server error.
+
+## Compiled timeline inspection (Task 6)
+
+`getStudioTimeline(userId,projectId,input?)` uses `studioTimelineSchema`:
+`{revision?:positiveInteger,limit?:1..100,cursor?:string}`. Scene cursors allow
+4096 characters because generated IDs percent-encode authored/source ID segments.
+It authorizes/reconciles the current project through the existing service, then
+reads its retained last-good preview, or reads the requested owned immutable
+revision's `planJson`. It never expands a document or implements a compiler.
+The response has current `version/revision`, `available`, `stale`, `previewStale`,
+`origin:{kind:'preview'|'revision',version,revision}`, plan FPS/dimensions/duration,
+and bounded `{items,nextCursor}`. A historical origin has null edit version and
+is not stale; a current preview names its actual edit token and saved revision
+(null for draft previews). An unavailable plan is explicit and does not fall
+back to a different origin.
+
+Scene summaries expose the actual absolute `[from,to)` interval, kind, stable
+participant/round IDs, absolute phase boundaries and sorted unique recommended
+still-frame points. Points are selected from stored scene/transition, visibility,
+label, active-window, answer and animation-keyframe boundaries; no asset paths,
+compiled media sources or raw plan nodes are serialized. External agents can
+pass these frame indices directly to still/clip/audio jobs. Given a job's
+`projectId` and `revision`, requesting that historical timeline inspects the
+same saved plan rather than a later draft preview.

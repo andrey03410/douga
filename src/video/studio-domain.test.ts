@@ -9,6 +9,41 @@ import {
 } from "./index";
 import type { VideoDocument } from "./types";
 
+it("keeps media-free playlist policy when applying a preset before music is assigned", () => {
+  const doc = createVideoDocument({ kind: "top" });
+  const preset = extractVideoPreset(doc, { id: "policy", name: "Policy" });
+  preset.audio = { volume: 0.4, crossfadeSec: 0.2, loop: true };
+  expect(applyVideoPreset(doc, preset).audio?.playlist).toEqual({
+    tracks: [],
+    volume: 0.4,
+    crossfadeSec: 0.2,
+    loop: true,
+  });
+  expect(createVideoDocument({ kind: "top", preset }).audio?.playlist).toEqual({
+    tracks: [],
+    volume: 0.4,
+    crossfadeSec: 0.2,
+    loop: true,
+  });
+  doc.audio = { playlist: { tracks: ["owned"], volume: 0.8 } };
+  doc.bindings.owned = { kind: "pool", assetId: "owned" };
+  expect(applyVideoPreset(doc, preset).audio?.playlist).toEqual({
+    tracks: ["owned"],
+    volume: 0.4,
+    crossfadeSec: 0.2,
+    loop: true,
+  });
+});
+it("bounds generated picker skeleton allocation before materializing cards", () => {
+  expect(() =>
+    createVideoDocument({
+      kind: "picker",
+      roundCount: 2,
+      cardsPerRound: 10001,
+    }),
+  ).toThrow("RESOURCE_BUDGET_EXCEEDED");
+});
+
 const sound = {
   id: "sound",
   kind: "audio" as const,

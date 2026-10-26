@@ -6,9 +6,16 @@ import type {
   VideoFormat,
   VideoNode,
   VideoScene,
+  VideoPreset,
 } from "./types";
-import { parseVideoDocument, sceneSchema, videoNodeSchema } from "./schema";
-import { getBuiltinPreset } from "./presets";
+import {
+  parseVideoDocument,
+  sceneSchema,
+  videoNodeSchema,
+  videoPresetSchema,
+} from "./schema";
+import { getBuiltinPreset, applyVideoPreset } from "./presets";
+import { videoResourceLimits } from "./resource-limits";
 export interface CreateVideoOptions {
   kind: "top" | "picker";
   id?: string;
@@ -17,6 +24,8 @@ export interface CreateVideoOptions {
   fps?: number;
   seed?: number;
   presetId?: string;
+  /** A canonical media-free preset, including an owned personal template. */
+  preset?: VideoPreset;
   participants?: Participant[];
   rounds?: PickerRound[];
   roundCount?: number;
@@ -25,9 +34,14 @@ export interface CreateVideoOptions {
 export function createVideoDocument(
   options: CreateVideoOptions,
 ): VideoDocument {
-  const preset = getBuiltinPreset(
-    options.presetId ?? `${options.kind}.classic.${options.format ?? "wide"}`,
-  );
+  if (options.preset && options.presetId)
+    throw new Error("Supply preset or presetId, not both");
+  const preset = options.preset
+    ? videoPresetSchema.parse(options.preset)
+    : getBuiltinPreset(
+        options.presetId ??
+          `${options.kind}.classic.${options.format ?? "wide"}`,
+      );
   if (!preset) throw new Error(`Unknown preset: ${options.presetId}`);
   if (preset.kind !== options.kind)
     throw new Error("Preset kind does not match requested kind");
@@ -54,6 +68,11 @@ export function createVideoDocument(
       throw new Error(
         "Round and card counts must be nonnegative/positive integers",
       );
+    if (
+      count > videoResourceLimits.maxExpandedScenes ||
+      count * perRound > videoResourceLimits.maxExpandedNodes
+    )
+      throw new Error("RESOURCE_BUDGET_EXCEEDED");
     rounds = Array.from({ length: count }, (_, ri) => {
       const cards = Array.from({ length: perRound }, (_, ci) => {
         const pid = `participant-${ri + 1}-${ci + 1}`;
@@ -80,22 +99,34 @@ export function createVideoDocument(
       };
     });
   }
-  return parseVideoDocument({
-    schemaVersion: 1,
-    id: options.id ?? "video",
-    title: options.title ?? "Untitled video",
-    kind: options.kind,
-    seed: options.seed ?? 1,
-    output: {
-      format: options.format ?? preset.output.format,
-      fps: options.fps ?? preset.output.fps,
-    },
-    source: { kind: "manual", participants, rounds },
-    bindings: {},
-    settings: preset.settings,
-    scenes: preset.scenes,
-    preset: { id: preset.id, version: preset.version },
-  });
+  const document = applyVideoPreset(
+    parseVideoDocument({
+      schemaVersion: 1,
+      id: options.id ?? "video",
+      title: options.title ?? "Untitled video",
+      kind: options.kind,
+      seed: options.seed ?? 1,
+      output: {
+        format: options.format ?? preset.output.format,
+        fps: options.fps ?? preset.output.fps,
+      },
+      source: { kind: "manual", participants, rounds },
+      bindings: {},
+      settings: preset.settings,
+      ...(preset.formatSettings
+        ? { formatSettings: preset.formatSettings }
+        : {}),
+      scenes: preset.scenes,
+      ...(preset.audio?.cues ? { audio: { cues: preset.audio.cues } } : {}),
+      preset: { id: preset.id, version: preset.version },
+    }),
+    preset,
+  );
+  document.output = {
+    format: options.format ?? preset.output.format,
+    fps: options.fps ?? preset.output.fps,
+  };
+  return parseVideoDocument(document);
 }
 export function time(sec: number): Time {
   if (!Number.isFinite(sec) || sec < 0)

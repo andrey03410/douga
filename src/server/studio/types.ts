@@ -6,7 +6,29 @@ import type {
   VideoDocument,
   VideoPreset,
 } from "@/video";
+import { videoPatchOperationSchema } from "@/video";
+import { videoResourceLimits } from "@/video/resource-limits";
+import { studioJobLimits } from "./job-types";
 const key = z.string().min(1).max(200);
+export const inspectStudioAssetSchema = z
+  .object({
+    content: z.boolean().default(false),
+    mode: z.enum(["auto", "image", "audio", "clip"]).default("auto"),
+    fromSec: z
+      .number()
+      .finite()
+      .min(0)
+      .max(videoResourceLimits.maxDurationSeconds)
+      .default(0),
+    durationSec: z
+      .number()
+      .finite()
+      .positive()
+      .max(studioJobLimits.previewSeconds)
+      .optional(),
+  })
+  .strict();
+export type InspectStudioAssetInput = z.input<typeof inspectStudioAssetSchema>;
 export const mutationSchema = z
   .object({
     expectedVersion: z.number().int().positive(),
@@ -16,6 +38,29 @@ export const mutationSchema = z
 export const createStudioProjectSchema = z
   .object({ document: z.unknown(), idempotencyKey: key.optional() })
   .strict();
+export const createStudioProjectFromPresetSchema = z
+  .object({
+    presetId: key,
+    title: z.string().max(200).optional(),
+    sourceId: key.optional(),
+    roundCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(videoResourceLimits.maxExpandedScenes)
+      .optional(),
+    cardsPerRound: z
+      .number()
+      .int()
+      .min(1)
+      .max(videoResourceLimits.maxExpandedNodes)
+      .optional(),
+    idempotencyKey: key.optional(),
+  })
+  .strict();
+export type CreateStudioProjectFromPresetInput = z.infer<
+  typeof createStudioProjectFromPresetSchema
+>;
 export const saveStudioDraftSchema = mutationSchema
   .extend({
     document: z.unknown().optional(),
@@ -26,6 +71,14 @@ export const saveStudioDraftSchema = mutationSchema
     "Supply exactly one of document or text",
   );
 export const commitStudioDraftSchema = mutationSchema;
+export const patchStudioDraftSchema = mutationSchema.extend({
+  operations: z.array(videoPatchOperationSchema).min(1).max(1000),
+});
+export const applyStudioPresetSchema = mutationSchema.extend({
+  presetId: key,
+});
+export type PatchStudioDraftInput = z.infer<typeof patchStudioDraftSchema>;
+export type ApplyStudioPresetInput = z.infer<typeof applyStudioPresetSchema>;
 export const restoreStudioRevisionSchema = mutationSchema.extend({
   revision: z.number().int().positive(),
 });

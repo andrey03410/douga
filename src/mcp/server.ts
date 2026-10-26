@@ -23,6 +23,8 @@ import { projectSummary } from "@/mcp/project-summary";
 import type { ShikimoriType } from "@/lib/domain/shikimori";
 import { setTopItems, topItemsSchema } from "@/server/manual-top";
 import { topSummary } from "@/mcp/top-summary";
+import { registerStudioTools } from "@/mcp/studio-tools";
+import { actor as authorizeActor } from "@/server/studio/shared";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -38,25 +40,24 @@ const fail = (message: string): ToolResult => ({
 const groupIdsOf = async (uid: string, roundId: string) =>
   (await listGroups(uid, roundId)).map((g) => g.id);
 
-/** Wrap a handler so service-layer throws become tool errors, not crashes. */
-function guard(fn: () => Promise<unknown>): Promise<ToolResult> {
-  return fn().then(ok).catch((e) => fail((e as Error)?.message ?? String(e)));
-}
-
 async function main() {
   const actor: Actor = await resolveActor();
-  const maxPoolBytes = quotasFor(actor.role).maxPoolBytes;
-  const canUpload = can(actor.role, "media:upload");
   const uid = actor.userId;
+  /** Retained legacy tools also authorize the original identity freshly per call. */
+  function guard(fn: (current: Actor) => Promise<unknown>): Promise<ToolResult> {
+    return authorizeActor(uid).then((user) => fn({ ...actor, role: user.role }))
+      .then(ok).catch((e) => fail((e as Error)?.message ?? String(e)));
+  }
 
   const server = new McpServer({ name: "tournament-bracket-video", version: "0.1.0" });
+  registerStudioTools(server, actor);
 
   server.registerTool(
     "create_top_project",
-    { description: "Создать ручной топ без турнира. Затем set_top_items задаёт позиции. Рендер запускает пользователь в UI. → {projectId,url}",
+    { description: "LEGACY VideoProject (не SDK): создать ручной топ без турнира. Для новых SDK-проектов используйте video_project_create. Затем set_top_items задаёт позиции. → {projectId,url}",
       inputSchema: { title: z.string().trim().min(1).max(200) } },
-    ({ title }) => guard(async () => {
-      if (!can(actor.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
+    ({ title }) => guard(async (current) => {
+      if (!can(current.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
       const project = await createProject(uid, title, "top");
       return { projectId: project.id, url: `/projects/${project.id}` };
     }),
@@ -68,8 +69,8 @@ async function main() {
         "clipSec:30 по умолчанию, берётся самый активный фрагмент по RMS. order:desc показывает N→1. " +
         "Пустые introText/outroText выключают титры. До 200 уникальных треков. После вызова get_project рассчитывает фрагменты и проверяет файлы.",
       inputSchema: topItemsSchema.shape },
-    (args) => guard(async () => {
-      if (!can(actor.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
+    (args) => guard(async (current) => {
+      if (!can(current.role, "tournament:create")) throw new Error("Создание видео недоступно вашей роли");
       return setTopItems(uid, args);
     }),
   );
@@ -170,8 +171,7 @@ async function main() {
     { description: "Импортировать постер (аниме/персонаж) в пул как картинку. → {artId}",
       inputSchema: { type: z.enum(["anime", "character"]), id: z.number(), posterPath: z.string(), label: z.string().optional() } },
     ({ type, id, posterPath, label }) =>
-      !canUpload ? Promise.resolve(fail("Импорт медиа недоступен вашей роли"))
-        : guard(() => importPoster(uid, { type: type as ShikimoriType, id, posterPath, label: label ?? null, maxPoolBytes })),
+      guard((current) => importPoster(uid, { type: type as ShikimoriType, id, posterPath, label: label ?? null, maxPoolBytes: quotasFor(current.role).maxPoolBytes })),
   );
   server.registerTool(
     "list_pool",
@@ -220,22 +220,20 @@ async function main() {
         "→ {items:[{artId, label, kind, durationSec, sizeBytes}], failed:[{path, error}]}",
       inputSchema: { paths: z.array(z.string()) } },
     ({ paths }) =>
-      !canUpload ? Promise.resolve(fail("Импорт медиа недоступен вашей роли"))
-        : guard(() => importLocalMedia(uid, { paths, maxPoolBytes })),
+      guard((current) => importLocalMedia(uid, { paths, maxPoolBytes: quotasFor(current.role).maxPoolBytes })),
   );
   server.registerTool(
     "import_youtube_audio",
     { description: "Скачать звук с YouTube (yt-dlp) в пул. Дожидается завершения. → {artId}",
       inputSchema: { url: z.string() } },
     ({ url }) =>
-      !canUpload ? Promise.resolve(fail("Импорт медиа недоступен вашей роли"))
-        : guard(() => importYoutubeAudio(uid, { url, maxPoolBytes })),
+      guard((current) => importYoutubeAudio(uid, { url, maxPoolBytes: quotasFor(current.role).maxPoolBytes })),
   );
 
   // ---- Picker building ----
   server.registerTool(
     "create_picker_project",
-    { description: "Создать проект «Пикер». Стартует с одним пустым раундом (firstRoundId) и включёнными интро/аутро (титульный и финальный экраны по 3 сек). Пустая строка в introText/outroText выключает экран. → {projectId, firstRoundId}",
+    { description: "LEGACY VideoProject (не SDK): создать проект «Пикер». Для новых SDK-проектов используйте video_project_create. Стартует с пустым раундом и интро/аутро. → {projectId, firstRoundId}",
       inputSchema: {
         title: z.string(),
         orientation: z.enum(["landscape", "portrait"]).optional(),
@@ -331,12 +329,11 @@ async function main() {
         fitMode: z.enum(["cover", "fill", "contain"]).optional(),
       } },
     ({ roundId, groupId, type, id, posterPath, label, isAnswer, fitMode }) =>
-      !canUpload ? Promise.resolve(fail("Импорт медиа недоступен вашей роли"))
-        : guard(async () => {
+      guard(async (current) => {
             if (!roundId && !groupId) throw new Error("Укажите roundId или groupId");
             const result = await addTileFromShikimori(uid, {
               roundId, groupId, type: type as ShikimoriType, id, posterPath,
-              label: label ?? null, isAnswer, maxPoolBytes,
+              label: label ?? null, isAnswer, maxPoolBytes: quotasFor(current.role).maxPoolBytes,
             });
             if (fitMode != null) {
               await patchTile(uid, result.tileId, { fitMode });
@@ -388,12 +385,12 @@ async function main() {
     "get_project",
     { description: "Прочитать проект для самопроверки. Пикер: раунды/плитки/плейлист. Ручной топ: позиции/фон/активные фрагменты/таймлайн/readyToRender/warnings. Первый расчёт фрагментов может занять несколько минут. → summary",
       inputSchema: { projectId: z.string() } },
-    ({ projectId }) => guard(async () => {
+    ({ projectId }) => guard(async (current) => {
       const p = await getProject(uid, projectId);
       if (!p) throw new Error("Проект не найден");
       if (p.kind === "top") return {
         id: p.id, title: p.title, kind: p.kind, url: `/projects/${p.id}`,
-        ...await topSummary(uid, projectId), renderAllowed: can(actor.role, "render:run"),
+        ...await topSummary(uid, projectId), renderAllowed: can(current.role, "render:run"),
       };
       // Planned runtime helps size a playlist to the video (pickers only).
       const durationSec =

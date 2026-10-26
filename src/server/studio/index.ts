@@ -2,9 +2,12 @@ export * from "./types";
 export * from "./errors";
 export {
   createStudioProject,
+  createStudioProjectFromPreset,
   listStudioProjects,
   getStudioProject,
   saveStudioDraft,
+  patchStudioDraft,
+  applyStudioPreset,
   commitStudioDraft,
   restoreStudioRevision,
   deleteStudioProject,
@@ -25,3 +28,6 @@ export { runStudioWorkerOnce } from "./worker";
 export { videoResourceLimits } from "@/video/resource-limits";
 
 export { startStudioImport } from "./imports";
+export * from "./queries";
+export * from "./inspection";
+export * from "./timeline";
