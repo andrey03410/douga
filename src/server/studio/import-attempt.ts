@@ -7,6 +7,7 @@ import ffmpegPath from "ffmpeg-static";
 import { absPath } from "@/lib/storage";
 import { probeUrl, downloadMedia } from "@/lib/ytdlp";
 import { preparePoolArtFromFile } from "@/server/arts";
+import { assertPublicUrl } from "@/server/media-url";
 import { fileHash } from "./assets";
 import { filesUnder } from "./engine";
 import { StudioError } from "./errors";
@@ -51,6 +52,13 @@ export async function importStudioAttempt(
     }
   }, 1000);
   try {
+    // Same SSRF guard as at enqueue: DNS may point elsewhere by now. A blocked
+    // host is terminal; an unresolvable one is a transient import failure.
+    await assertPublicUrl(new URL(input.url)).catch((e: Error) => {
+      throw new StudioError(
+        e.message === "BLOCKED_HOST" ? "BLOCKED_HOST" : "IMPORT_FAILED",
+      );
+    });
     const probe = await probeUrl(input.url, input.mode, input.quality ?? 1080);
     if (
       probe.durationSec &&

@@ -31,11 +31,22 @@ import {
   nativeTestMs,
   importCleanupMs,
 } from "@/test/native-import-budget";
+import { PRIVATE_NAME, UNRESOLVED_NAME } from "@/test/private-dns";
 
 // Integration tests for URL imports. yt-dlp's generic extractor downloads
 // from a LOCAL http server (no external network), the rest of the pipeline
 // (job -> pool art with probe/poster/quota) is the real thing.
 // Require the installed binary; the tests never fetch an external dependency.
+// The fixture lives on loopback, so the SSRF guard is lifted with
+// MEDIA_URL_ALLOW_PRIVATE=1 for the whole file and dropped where it is tested.
+
+vi.mock("node:dns/promises", async (importOriginal) =>
+  (await import("@/test/private-dns")).fakeDns(await importOriginal()),
+);
+const session = vi.hoisted(() => ({ id: "" }));
+vi.mock("@/auth", () => ({
+  requireUser: async () => ({ id: session.id, email: "dl@test.local", role: "user" }),
+}));
 
 const EMAIL = `integration-downloads-${randomUUID()}@test.local`;
 const FFMPEG = ffmpegPath as unknown as string;
@@ -99,6 +110,7 @@ beforeAll(async () => {
   // loopback-only and must never be routed through that external proxy.
   vi.stubEnv("YTDLP_PROXY", undefined);
   vi.stubEnv("YTDLP_PATH", absPath("bin/yt-dlp"));
+  vi.stubEnv("MEDIA_URL_ALLOW_PRIVATE", "1"); // restored by unstubAllEnvs
   const dir = await mkdtemp(path.join(tmpdir(), "dl-it-"));
   fixtureDir = dir;
   await ffmpeg([
@@ -153,6 +165,7 @@ beforeAll(async () => {
   userId = (
     await prisma.user.create({ data: { email: EMAIL, passwordHash: "x" } })
   ).id;
+  session.id = userId;
 }, 60000);
 
 afterAll(async () => {
@@ -355,5 +368,88 @@ describe("url import pipeline", () => {
 
     const list = await listDownloads(userId);
     expect(list.every((j) => j.userId === userId)).toBe(true);
+  });
+});
+
+describe("ssrf guard for yt-dlp links", () => {
+  // Loopback, LAN, a machine-local name, IPv6 loopback and a public-looking
+  // name that resolves into the LAN.
+  const PRIVATE_URLS = [
+    "http://127.0.0.1/clip.mp4",
+    "http://10.0.0.5/clip.mp4",
+    "http://localhost/clip.mp4",
+    "http://[::1]/clip.mp4",
+    `http://${PRIVATE_NAME}/clip.mp4`,
+  ];
+  const jobCount = () => prisma.downloadJob.count({ where: { userId } });
+  const withoutAllowance = async (fn: () => Promise<void>) => {
+    vi.stubEnv("MEDIA_URL_ALLOW_PRIVATE", undefined);
+    try {
+      await fn();
+    } finally {
+      vi.stubEnv("MEDIA_URL_ALLOW_PRIVATE", "1");
+    }
+  };
+
+  it("refuses private targets and unresolvable hosts before a job row exists", async () => {
+    await withoutAllowance(async () => {
+      const before = await jobCount();
+      for (const url of PRIVATE_URLS)
+        await expect(
+          startDownload(userId, { url, mode: "audio", maxPoolBytes: null }),
+          url,
+        ).rejects.toThrow("BLOCKED_HOST");
+      await expect(
+        startDownload(userId, {
+          url: `http://${UNRESOLVED_NAME}/clip.mp4`,
+          mode: "audio",
+          maxPoolBytes: null,
+        }),
+      ).rejects.toThrow("HOST_UNRESOLVED");
+      expect(await jobCount()).toBe(before);
+    });
+  });
+
+  it("MEDIA_URL_ALLOW_PRIVATE=1 lets the same targets past the guard", async () => {
+    // Two active jobs make the next check refuse, so passing the guard is
+    // observable without ever starting yt-dlp against these addresses.
+    await prisma.downloadJob.createMany({
+      data: [
+        { userId, url: "http://x/busy-1", status: "running" },
+        { userId, url: "http://x/busy-2", status: "queued" },
+      ],
+    });
+    try {
+      for (const url of PRIVATE_URLS)
+        await expect(
+          startDownload(userId, { url, mode: "audio", maxPoolBytes: null }),
+          url,
+        ).rejects.toThrow("TOO_MANY_ACTIVE");
+    } finally {
+      await prisma.downloadJob.deleteMany({
+        where: { userId, url: { startsWith: "http://x/busy-" } },
+      });
+    }
+  });
+
+  it("POST /api/downloads answers 400 with a readable reason", async () => {
+    const { POST } = await import("@/app/api/downloads/route");
+    const post = (url: string) =>
+      POST(
+        new Request("http://localhost/api/downloads", {
+          method: "POST",
+          body: JSON.stringify({ url, mode: "video" }),
+        }),
+      );
+    await withoutAllowance(async () => {
+      const before = await jobCount();
+      const blocked = await post("http://10.0.0.5/clip.mp4");
+      expect(blocked.status).toBe(400);
+      expect((await blocked.json()).error).toMatch(/^По этому адресу ходить нельзя/);
+      const missing = await post(`http://${UNRESOLVED_NAME}/clip.mp4`);
+      expect(missing.status).toBe(400);
+      expect((await missing.json()).error).toMatch(/не найден/);
+      expect(await jobCount()).toBe(before);
+    });
   });
 });

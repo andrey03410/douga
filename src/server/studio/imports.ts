@@ -5,6 +5,7 @@ import type { StudioJob } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { absPath } from "@/lib/storage";
 import { quotasFor } from "@/lib/domain/permissions";
+import { assertPublicUrl } from "@/server/media-url";
 import { actor, receipt, replay, requestHash, type Db } from "./shared";
 import { activeJobStatuses, jobView } from "./jobs";
 import { cleanupDirectory, fileHash, safeFile } from "./assets";
@@ -34,6 +35,11 @@ export async function startStudioImport(
   raw: StartStudioImportInput,
 ): Promise<StudioJobView> {
   const input = startStudioImportSchema.parse(raw);
+  // SSRF: a loopback/LAN target never becomes a job. DNS trouble is not ours to
+  // judge here: the worker re-checks before yt-dlp and retries like any fetch.
+  await assertPublicUrl(new URL(input.url)).catch((e: Error) => {
+    if (e.message === "BLOCKED_HOST") throw new StudioError("BLOCKED_HOST");
+  });
   const request = requestHash("import", input);
   const enqueue = () =>
     prisma.$transaction(async (db) => {
