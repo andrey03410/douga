@@ -1,13 +1,12 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 
-import { ensureAdminRole } from "@/server/roles";
+import { verifyCredentials } from "@/server/accounts";
 
 const credsSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(1),
 });
 
@@ -21,11 +20,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credsSchema.safeParse(raw);
         if (!parsed.success) return null;
         const { email, password } = parsed.data;
-        const user = await prisma.user.findUnique({ where: { email } });
+        // Case-insensitive lookup, password check and ADMIN_EMAILS bootstrap.
+        const user = await verifyCredentials(email, password);
         if (!user) return null;
-        const ok = await bcrypt.compare(password, user.passwordHash);
-        if (!ok) return null;
-        await ensureAdminRole(user);
         return { id: user.id, email: user.email };
       },
     }),

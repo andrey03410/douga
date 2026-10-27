@@ -256,6 +256,7 @@ it("streams authenticated completed job results above the MCP 12 MiB cap, includ
       outputBytes: bytes.length,
     },
   });
+  let active: { id: string } | null = null;
   const dir = `studio-jobs/${owner}/${job.id}/attempts/${leaseToken}`;
   await mkdir(absPath(dir), { recursive: true });
   await writeFile(absPath(`${dir}/large.mp4`), bytes);
@@ -308,14 +309,29 @@ it("streams authenticated completed job results above the MCP 12 MiB cap, includ
     session.id = owner;
     const { DELETE: deleteAccount } =
       await import("@/app/api/admin/users/[id]/route");
+    // A finished job no longer blocks account deletion; an active one does.
+    active = await prisma.studioJob.create({
+      data: {
+        userId: owner,
+        projectId: id,
+        kind: "still",
+        engineId: "http-test",
+        inputJson: "{}",
+        status: "queued",
+      },
+    });
     session.id = other;
     const cleanup = await deleteAccount(
       new Request("http://localhost", { method: "DELETE" }),
       { params: { id: owner } },
     );
     expect(cleanup.status).toBe(409);
-    expect((await cleanup.json()).code).toBe("JOB_IN_USE");
+    const refusal = await cleanup.json();
+    expect(refusal.code).toBe("JOB_IN_USE");
+    expect(refusal.error).toMatch(/активн/);
+    expect(await prisma.user.findUnique({ where: { id: owner } })).not.toBeNull();
   } finally {
+    if (active) await prisma.studioJob.delete({ where: { id: active.id } });
     await studio.deleteStudioJob(owner, job.id);
     await removePath(`studio-jobs/${owner}`);
   }

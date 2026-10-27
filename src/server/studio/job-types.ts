@@ -5,6 +5,9 @@ const common = {
   idempotencyKey: z.string().min(1).max(200).optional(),
 };
 const frame = z.number().int().nonnegative().max(2_147_483_647);
+/** Job states that still own a worker slot; shared by light modules (account deletion). */
+export const activeJobStatuses = ["queued", "running"];
+
 export const startStudioJobSchema = z.discriminatedUnion("kind", [
   z.object({ ...common, kind: z.literal("still"), frame }).strict(),
   z

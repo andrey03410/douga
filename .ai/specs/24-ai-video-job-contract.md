@@ -108,8 +108,12 @@ jobs and canceled attempts with an unexpired lease (`JOB_ACTIVE`); wait until
 the attempt stops or its lease expires. Deletion removes result bytes, job row
 and its now-unreferenced snapshot. All job states protect their project and
 snapshot until explicit job deletion (`JOB_IN_USE`). Revision deletion is
-already protected by the snapshot FK. Account deletion is also blocked while
-any Studio job record remains; cancel/delete jobs first. Input pool/source
+already protected by the snapshot FK. Account deletion is blocked
+(`JOB_IN_USE`) only while one of the account's jobs is active by the same rule
+as job deletion: queued/running, or a canceled attempt with an unexpired lease;
+cancel it and wait for the lease to expire. Otherwise the account's job rows
+are deleted in the same transaction as its snapshots and projects, then its
+result bytes under `studio-jobs/<userId>`; shared engines are kept. Input pool/source
 references remain protected by the saved revision. Result deletion never
 removes revision media or a shared engine.
 

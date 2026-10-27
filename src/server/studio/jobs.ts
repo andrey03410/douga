@@ -19,13 +19,14 @@ import { cleanupImportPool } from "./imports";
 import { prepareStudioEngine } from "./engine";
 import type { StudioFrozenRevision } from "./types";
 import {
+  activeJobStatuses,
   startStudioJobSchema,
   studioJobLimits,
   type StartStudioJobInput,
   type StudioJobView,
   type StudioJobOutput,
 } from "./job-types";
-export const activeJobStatuses = ["queued", "running"];
+export { activeJobStatuses };
 export const jobDirectory = (userId: string, id: string) =>
   `studio-jobs/${userId}/${id}`;
 export async function jobActor(userId: string, kind: string, db: Db = prisma) {

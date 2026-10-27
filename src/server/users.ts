@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { can, isAssignableRole, quotasFor } from "@/lib/domain/permissions";
 import { failStaleRenderJobs } from "@/server/render-jobs";
+import { BOOTSTRAP_ROLE, isBootstrapAdmin } from "@/server/roles";
+import { activeJobStatuses } from "@/server/studio/job-types";
 
 // Personal-cabinet usage overview + admin user management. Framework-free
 // (thin routes on top), covered by integration tests against the real schema.
@@ -268,6 +270,8 @@ export interface AdminUserRow {
   createdAt: Date;
   tournamentCount: number;
   diskBytes: number;
+  /** Listed in ADMIN_EMAILS: elevated on every login, so it cannot be demoted here. */
+  bootstrapAdmin: boolean;
 }
 
 export async function listUsers(): Promise<AdminUserRow[]> {
@@ -290,23 +294,34 @@ export async function listUsers(): Promise<AdminUserRow[]> {
       ...u,
       tournamentCount,
       diskBytes: (trackAgg._sum.sizeBytes ?? 0) + (artAgg._sum.sizeBytes ?? 0),
+      bootstrapAdmin: isBootstrapAdmin(u.email),
     });
   }
   return rows;
 }
 
-/** Change a user's role. Actors cannot change their own role (last-admin guard). */
+/**
+ * Change a user's role. Actors cannot change their own role (last-admin guard).
+ * An email listed in ADMIN_EMAILS is elevated back on its next login, so a
+ * demotion would silently undo itself: refused with ADMIN_BOOTSTRAP.
+ */
 export async function setUserRole(actorId: string, targetId: string, role: string) {
   if (!isAssignableRole(role)) throw new Error("BAD_ROLE");
   if (actorId === targetId) throw new Error("SELF_CHANGE");
   const target = await prisma.user.findUnique({ where: { id: targetId } });
   if (!target) throw new Error("NOT_FOUND");
+  if (role !== BOOTSTRAP_ROLE && isBootstrapAdmin(target.email)) {
+    throw new Error("ADMIN_BOOTSTRAP");
+  }
   return prisma.user.update({ where: { id: targetId }, data: { role } });
 }
 
 /**
  * Delete a user with everything they own on disk: tournament media, render
- * outputs/temp, the media pool directory. DB rows go via cascade.
+ * outputs/temp, the media pool directory, Studio revision media and job
+ * results. DB rows go via cascade, except the Restrict-guarded Studio rows,
+ * which are deleted explicitly. Refused with JOB_IN_USE while a Studio job is
+ * active (same rule as deleteStudioJob); finished jobs go with the account.
  */
 export async function deleteUser(actorId: string, targetId: string) {
   if (actorId === targetId) throw new Error("SELF_CHANGE");
@@ -327,7 +342,15 @@ export async function deleteUser(actorId: string, targetId: string) {
   ];
   // Delete references and rows atomically before releasing any user bytes.
   await prisma.$transaction(async tx => {
-    if(await tx.studioJob.count({where:{userId:targetId}})) throw new Error("JOB_IN_USE");
+    const activeJobs = await tx.studioJob.count({
+      where: {
+        userId: targetId,
+        OR: [{ status: { in: activeJobStatuses } }, { leaseUntil: { gt: new Date() } }],
+      },
+    });
+    if (activeJobs) throw new Error("JOB_IN_USE");
+    // Jobs reference snapshots and projects with onDelete: Restrict.
+    await tx.studioJob.deleteMany({ where: { userId: targetId } });
     await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
     await tx.studioProject.deleteMany({where:{userId:targetId}});
     await tx.user.delete({where:{id:targetId}});

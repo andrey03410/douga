@@ -1,14 +1,12 @@
 "use server";
 
 import { AuthError } from "next-auth";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
 import { signIn } from "@/auth";
-import { ensureAdminRole } from "@/server/roles";
+import { normalizeEmail, registerAccount } from "@/server/accounts";
 
 const schema = z.object({
-  email: z.string().email("Введите корректный email"),
+  email: z.string().trim().email("Введите корректный email"),
   password: z.string().min(6, "Пароль минимум 6 символов"),
 });
 
@@ -40,14 +38,17 @@ export async function registerAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Некорректные данные" };
   }
-  const { email, password } = parsed.data;
+  const email = normalizeEmail(parsed.data.email);
+  const { password } = parsed.data;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return { error: "Пользователь с таким email уже существует" };
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({ data: { email, passwordHash } });
-  await ensureAdminRole(user);
+  try {
+    await registerAccount(email, password);
+  } catch (error) {
+    if ((error as Error).message === "EMAIL_TAKEN") {
+      return { error: "Пользователь с таким email уже существует" };
+    }
+    throw error;
+  }
 
   try {
     await signIn("credentials", { email, password, redirectTo: "/projects" });

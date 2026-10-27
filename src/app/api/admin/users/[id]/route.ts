@@ -12,6 +12,15 @@ function mapError(e: Error) {
       return forbidden("Нельзя менять или удалять собственный аккаунт");
     case "BAD_ROLE":
       return badRequest("Неизвестная роль");
+    case "ADMIN_BOOTSTRAP":
+      return NextResponse.json(
+        {
+          error:
+            "Этот email указан в ADMIN_EMAILS, поэтому при следующем входе роль снова станет «Администратор». Чтобы понизить пользователя, сначала уберите его email из ADMIN_EMAILS в .env и перезапустите сервер.",
+          code: "ADMIN_BOOTSTRAP",
+        },
+        { status: 409 },
+      );
     default:
       throw e;
   }
