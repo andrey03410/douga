@@ -19,7 +19,8 @@ import {
   type PlanGroupInput,
   type RoundMode,
 } from "@/lib/domain/picker-plan";
-import { describeRenderError, renderTmpDir, withRenderTmp } from "@/server/render";
+import { describeRenderError, renderTmpDir, withRenderJob } from "@/server/render";
+import { completeRenderJob, failRenderJob } from "@/server/render-jobs";
 import { effectivePlaylist, OUTRO_FALLBACK, type LoadedProject } from "@/server/projects";
 
 // Picker preview plan + headless render pipeline (mirrors render.ts for tops).
@@ -169,12 +170,7 @@ export async function startPickerRenderJob(userId: string, projectId: string) {
   const job = await prisma.renderJob.create({
     data: { projectId, status: "queued", progress: 0 },
   });
-  void runPickerRender(job.id).catch(async (err) => {
-    await prisma.renderJob.update({
-      where: { id: job.id },
-      data: { status: "failed", error: describeRenderError(err) },
-    });
-  });
+  void runPickerRender(job.id).catch((err) => failRenderJob(job.id, describeRenderError(err)));
   return job.id;
 }
 
@@ -187,7 +183,7 @@ async function setProgress(jobId: string, progress: number) {
 }
 
 function runPickerRender(jobId: string): Promise<void> {
-  return withRenderTmp(jobId, () => renderPicker(jobId));
+  return withRenderJob(jobId, () => renderPicker(jobId));
 }
 
 async function renderPicker(jobId: string): Promise<void> {
@@ -449,8 +445,5 @@ async function renderPicker(jobId: string): Promise<void> {
   });
 
   const { size } = await stat(outputLocation);
-  await prisma.renderJob.update({
-    where: { id: jobId },
-    data: { status: "done", progress: 1, outputPath: outputRel, outputBytes: size },
-  });
+  await completeRenderJob(jobId, { outputPath: outputRel, outputBytes: size });
 }

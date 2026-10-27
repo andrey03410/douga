@@ -17,7 +17,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
 - [`src/mcp/actor.ts`](../../src/mcp/actor.ts) — `resolveActor()` по `MCP_ACTOR_EMAIL`.
 - [`src/mcp/compose.ts`](../../src/mcp/compose.ts) — `addTileFromShikimori`: импорт постера и карточка одним вызовом.
 - [`src/mcp/youtube.ts`](../../src/mcp/youtube.ts) — `import_youtube_audio`: запускает `DownloadJob` (yt-dlp, только звук) и опрашивает его до 180 с.
-- [`src/mcp/project-summary.ts`](../../src/mcp/project-summary.ts) — ответ `get_project` для пикера: раунды, блоки, фон, `playlistSec`, плановый `durationSec`.
+- [`src/mcp/project-summary.ts`](../../src/mcp/project-summary.ts) — ответ `get_project` для пикера: раунды, блоки, фон, `playlistSec`, плановый `durationSec` и `invalidRounds`. Это раунды с карточками, на которых рендер откажет (`ROUND_TOO_SMALL`); `durationSec` их не считает. Поля нет, если все раунды годны.
 - [`src/mcp/top-summary.ts`](../../src/mcp/top-summary.ts) — ответ `get_project` для ручного топа: фрагменты, таймлайн, `readyToRender`, `warnings`.
 - Логика лежит в сервисах: [`projects.ts`](../../src/server/projects.ts), [`manual-top.ts`](../../src/server/manual-top.ts), [`local-media.ts`](../../src/server/local-media.ts), [`downloads.ts`](../../src/server/downloads.ts), [`src/server/studio/`](../../src/server/studio/).
 - Запуск: `npm run mcp`, то есть `tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json src/mcp/server.ts`. Сервер для Claude Code прописан в [`.mcp.json`](../../.mcp.json) (`npm run --silent mcp`), конфиг для Claude Desktop — в [README](../../README.md), раздел «MCP-сервер».

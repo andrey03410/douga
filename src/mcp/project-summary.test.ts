@@ -72,4 +72,19 @@ describe("projectSummary", () => {
     expect(s.background).toEqual({ artId: "bg1", label: "Нагиса", kind: "image" });
     expect(s.durationSec).toBe(551.9);
   });
+
+  it("names the rounds the render will refuse, and only when there are some", () => {
+    expect(projectSummary(fake)).not.toHaveProperty("invalidRounds");
+    const lonely = {
+      ...fake,
+      rounds: [
+        ...fake.rounds,
+        { id: "r2", order: 1, prompt: null, mode: "single", groups: [],
+          tiles: [{ id: "t3", label: null, isAnswer: false, artId: "a3" }] },
+        { id: "r3", order: 2, prompt: null, mode: "single", groups: [], tiles: [] },
+      ],
+    } as unknown as LoadedProject;
+    // round 2 has one card (render refuses); empty round 3 is skipped silently
+    expect(projectSummary(lonely).invalidRounds).toEqual([2]);
+  });
 });

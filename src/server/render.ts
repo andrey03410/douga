@@ -25,7 +25,13 @@ import {
   type PoolMediaInfo,
 } from "@/lib/domain/position-media";
 import { renderJobDto, type RenderJobDto } from "@/lib/domain/render-jobs";
-import { failStaleRenderJobs } from "@/server/render-jobs";
+import {
+  completeRenderJob,
+  failRenderJob,
+  failStaleRenderJobs,
+  RENDER_HEARTBEAT_MS,
+  touchRenderJob,
+} from "@/server/render-jobs";
 
 /**
  * Render jobs of one tournament or project (newest first), as UI DTOs.
@@ -306,12 +312,7 @@ async function queueTopRender(owner: { tournamentId?: string; projectId?: string
     data: { ...owner, status: "queued", progress: 0 },
   });
   // Fire-and-forget: render in the background, report progress via the job row.
-  void runRender(job.id).catch(async (err) => {
-    await prisma.renderJob.update({
-      where: { id: job.id },
-      data: { status: "failed", error: describeRenderError(err) },
-    });
-  });
+  void runRender(job.id).catch((err) => failRenderJob(job.id, describeRenderError(err)));
   return job.id;
 }
 
@@ -329,20 +330,28 @@ export function renderTmpDir(jobId: string): string {
 }
 
 /**
- * Run a render and always drop its scratch dir afterwards, on success and on
+ * Supervise a render job: a heartbeat keeps the row fresh through phases that
+ * write no progress (so failStaleRenderJobs never takes a live render for an
+ * orphan), and the scratch dir is dropped afterwards, on success and on
  * failure; the finished MP4 lives outside it (renderOutputPath). Cleanup is
  * best effort, so it never fails a finished job nor masks the render's error.
  */
-export async function withRenderTmp(jobId: string, run: () => Promise<void>): Promise<void> {
+export async function withRenderJob(
+  jobId: string,
+  run: () => Promise<void>,
+  heartbeatMs = RENDER_HEARTBEAT_MS,
+): Promise<void> {
+  const heartbeat = setInterval(() => void touchRenderJob(jobId), heartbeatMs);
   try {
     await run();
   } finally {
+    clearInterval(heartbeat);
     await removePath(renderTmpDir(jobId)).catch(() => {});
   }
 }
 
 function runRender(jobId: string): Promise<void> {
-  return withRenderTmp(jobId, () => renderTop(jobId));
+  return withRenderJob(jobId, () => renderTop(jobId));
 }
 
 async function renderTop(jobId: string): Promise<void> {
@@ -547,10 +556,7 @@ async function renderTop(jobId: string): Promise<void> {
   });
 
   const { size } = await stat(outputLocation);
-  await prisma.renderJob.update({
-    where: { id: jobId },
-    data: { status: "done", progress: 1, outputPath: outputRel, outputBytes: size },
-  });
+  await completeRenderJob(jobId, { outputPath: outputRel, outputBytes: size });
 }
 
 export { STORAGE_ROOT };

@@ -1,4 +1,5 @@
 import { OUTRO_FALLBACK, type LoadedProject } from "@/server/projects";
+import { unrenderableRounds } from "@/lib/domain/picker-plan";
 
 export interface ProjectSummary {
   id: string;
@@ -15,6 +16,13 @@ export interface ProjectSummary {
   playlistSec: number;
   /** Planned runtime of the video, when the caller computed the plan. */
   durationSec?: number;
+  /**
+   * 1-based numbers of rounds that hold cards but cannot render (a single
+   * round needs 2+ cards, a group round 2+ non-empty blocks). The render
+   * refuses with ROUND_TOO_SMALL and durationSec leaves them out. Absent when
+   * every round is fine.
+   */
+  invalidRounds?: number[];
   rounds: {
     id: string;
     order: number;
@@ -57,6 +65,7 @@ export function projectSummary(
     label: pl.art.label,
     durationSec: pl.art.durationSec,
   }));
+  const invalidRounds = unrenderableRounds(p.rounds);
   return {
     id: p.id,
     title: p.title,
@@ -70,6 +79,7 @@ export function projectSummary(
     playlist,
     playlistSec: playlist.reduce((sum, t) => sum + (t.durationSec ?? 0), 0),
     ...(opts.durationSec !== undefined ? { durationSec: opts.durationSec } : {}),
+    ...(invalidRounds.length ? { invalidRounds } : {}),
     rounds: p.rounds.map((r) => ({
       id: r.id,
       order: r.order,

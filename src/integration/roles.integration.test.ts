@@ -500,4 +500,30 @@ describe("email case (T08)", () => {
     // no exact hit: deterministic, the oldest account
     expect((await findUserByEmail("integration-roles-twin@TEST.local"))?.id).toBe(a.id);
   });
+
+  it("a legacy mixed-case account signs in although a lowercase twin exists", async () => {
+    const legacy = await prisma.user.create({
+      data: { email: "Integration-Roles-Bob@Test.Local", passwordHash: await bcrypt.hash("bob-old", 4) },
+    });
+    const twin = await prisma.user.create({
+      data: { email: "integration-roles-bob@test.local", passwordHash: await bcrypt.hash("bob-new", 4) },
+    });
+    try {
+      // typed exactly: that row wins
+      expect((await findUserByEmail("Integration-Roles-Bob@Test.Local"))?.id).toBe(legacy.id);
+      // typed in another case: each owner still gets in with their own password
+      expect((await verifyCredentials("INTEGRATION-ROLES-BOB@test.local", "bob-old"))?.id).toBe(
+        legacy.id,
+      );
+      expect((await verifyCredentials("integration-roles-bob@test.local", "bob-old"))?.id).toBe(
+        legacy.id,
+      );
+      expect((await verifyCredentials("integration-roles-bob@test.local", "bob-new"))?.id).toBe(
+        twin.id,
+      );
+      expect(await verifyCredentials("integration-roles-bob@test.local", "wrong")).toBeNull();
+    } finally {
+      await prisma.user.deleteMany({ where: { id: { in: [legacy.id, twin.id] } } });
+    }
+  });
 });

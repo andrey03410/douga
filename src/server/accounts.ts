@@ -16,28 +16,31 @@ export function normalizeEmail(email: string): string {
 }
 
 /**
- * Find the account for an email regardless of its case.
- *
- * 1. Exact match on the normalized email: hits the unique index and every
- *    account created since emails are stored lowercased.
- * 2. Fallback for legacy mixed-case rows: `lower(email) = ?` via raw SQL
- *    (portable between SQLite and Postgres). If several legacy rows differ
- *    only in case, the one typed exactly wins, otherwise the oldest.
+ * Every account an email can mean, best match first: the row typed exactly,
+ * then the canonical lowercase row, then legacy case variants, oldest first.
+ * Matching is `lower(email) = ?` via raw SQL (portable between SQLite and
+ * Postgres). SQLite's lower() folds ASCII only, so a legacy row with a
+ * non-ASCII capital is found only when typed exactly as stored.
  */
-export async function findUserByEmail(email: string): Promise<User | null> {
+async function findUsersByEmail(email: string): Promise<User[]> {
   const normalized = normalizeEmail(email);
-  if (!normalized) return null;
-  const exact = await prisma.user.findUnique({ where: { email: normalized } });
-  if (exact) return exact;
-
+  if (!normalized) return [];
+  const typed = email.trim();
   const rows = await prisma.$queryRaw<{ id: string; email: string }[]>`
     SELECT "id", "email" FROM "User"
-    WHERE lower("email") = ${normalized}
+    WHERE lower("email") = ${normalized} OR "email" = ${typed}
     ORDER BY "createdAt" ASC, "id" ASC`;
-  if (rows.length === 0) return null;
-  const typed = email.trim();
-  const match = rows.find((r) => r.email === typed) ?? rows[0];
-  return prisma.user.findUnique({ where: { id: match.id } });
+  if (rows.length === 0) return [];
+  const rank = (r: { email: string }) => (r.email === typed ? 0 : r.email === normalized ? 1 : 2);
+  const ordered = [...rows].sort((a, b) => rank(a) - rank(b)); // stable: oldest first within a rank
+  const users = await prisma.user.findMany({ where: { id: { in: ordered.map((r) => r.id) } } });
+  const byId = new Map(users.map((u) => [u.id, u]));
+  return ordered.flatMap((r) => byId.get(r.id) ?? []);
+}
+
+/** The account for an email regardless of its case (best match, see findUsersByEmail). */
+export async function findUserByEmail(email: string): Promise<User | null> {
+  return (await findUsersByEmail(email))[0] ?? null;
 }
 
 /**
@@ -67,9 +70,12 @@ export async function registerAccount(email: string, password: string): Promise<
  * Applies the ADMIN_EMAILS bootstrap on success. Null on any mismatch.
  */
 export async function verifyCredentials(email: string, password: string): Promise<User | null> {
-  const user = await findUserByEmail(email);
-  if (!user) return null;
-  if (!(await bcrypt.compare(password, user.passwordHash))) return null;
-  const role = await ensureAdminRole(user);
-  return { ...user, role };
+  // Legacy rows may differ only in case (`Bob@x` and `bob@x`): the password
+  // decides which of them is signing in.
+  for (const user of await findUsersByEmail(email)) {
+    if (!(await bcrypt.compare(password, user.passwordHash))) continue;
+    const role = await ensureAdminRole(user);
+    return { ...user, role };
+  }
+  return null;
 }
