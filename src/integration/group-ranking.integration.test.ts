@@ -16,7 +16,8 @@ import { pairKey } from "@/lib/domain/comparisons";
 // Phase 18 group ranking against the real schema: a screen is a batch of rows,
 // undo removes the whole screen, and the group size may change mid-run.
 
-const DB_URL = `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
+// vitest.config sets DATABASE_URL (TEST_DATABASE_URL or prisma/dev.db): same DB as the services.
+const DB_URL = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
 const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
 const EMAIL = "integration-groups@test.local";
 

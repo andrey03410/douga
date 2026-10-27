@@ -11,7 +11,8 @@ import { buildVideoPlan } from "@/lib/domain/video-plan";
 // the dev database and cleans up after itself. Pure ffmpeg/Remotion steps are not
 // exercised here (covered by domain unit tests).
 
-const DB_URL = `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
+// vitest.config sets DATABASE_URL (TEST_DATABASE_URL or prisma/dev.db): same DB as the services.
+const DB_URL = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
 const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
 const TEST_EMAIL = "integration-flow@test.local";
 
