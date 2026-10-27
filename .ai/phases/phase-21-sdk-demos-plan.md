@@ -23,14 +23,14 @@
 ## Task1: Safe paint styles
 **Files:** src/video/types.ts, src/video/schema.ts, src/remotion/studio-paint.ts, src/remotion/StudioVideo.tsx; tests src/video/paint.test.ts and src/integration/studio-paint-render.test.ts.
 **Interfaces:** gradientToCss(gradient) and shadowToCss(shadow); optional gradient/shadow on CardStyle.
-- [ ] Write schema/compile/preset and actual render assertions; observe RED.
-- [ ] Implement bounded strict paint schemas and types; use helpers in shared renderer, preserve default answer glow.
-- [ ] Run focused tests/tsc, commit; full suite and fresh build after demo completion before final handoff.
+- [x] Write schema/compile/preset and actual render assertions; observe RED.
+- [x] Implement bounded strict paint schemas and types; use helpers in shared renderer, preserve default answer glow.
+- [x] Run focused tests/tsc, commit; full suite and fresh build after demo completion before final handoff.
 
 ## Task2: Three real demos and final verification
 **Files:** ignored storage/sdk-demos-20261027 scripts/documents/media/proofs; permanent contract26 plus SDK contract22 updates and evidence doc.
-- [ ] Discover/import real Shikimori media through MCP, synthesize three original sound designs and import them.
-- [ ] Author three documents with structural assertions; create/validate through MCP.
-- [ ] Render all three through real scoped workers; inspect early/middle/final frames and decoded audio; correct any defects.
-- [ ] Build and check live site, download/playback demo results; keep user-facing tabs.
-- [ ] Run npm test/tsc/build, fresh review of a64e98b..newhead, address material findings, commit evidence and leave branch for manual review.
+- [x] Discover/import real Shikimori media through MCP, synthesize three original sound designs and import them.
+- [x] Author three documents with structural assertions; create/validate through MCP.
+- [x] Render all three through real scoped workers; inspect early/middle/final frames and decoded audio; correct any defects.
+- [x] Build and check live site, download/playback demo results; keep user-facing tabs.
+- [x] Run npm test/tsc/build, fresh review of a64e98b..newhead, address material findings, commit evidence and leave branch for manual review.

@@ -192,3 +192,8 @@ node scripts/verify-studio.mjs --actor you@example.com \
 965/965 тестов (71 файл), TypeScript и production build прошли, существенные
 замечания финального ревью закрыты. Прежний рецепт проверки находится в
 [`.claude/skills/verify/`](.claude/skills/verify/SKILL.md).
+
+Продолжение 27 октября — структурные `CardStyle.gradient`/`shadow`, явный `null`
+сбрасывает наследование. Не подменяйте их произвольным CSS/URL. Осмотр Art.kind=image
+не делает input seek даже к нулю: крупные JPEG могут потерять единственный кадр.
+Демо и итоговые 978/978 проверок: [фаза 21](.ai/phases/phase-21-verification.md).
