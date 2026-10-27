@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Player } from "@remotion/player";
 import { PickerVideo } from "@/remotion/PickerVideo";
-import type { PickerPlan } from "@/lib/domain/picker-plan";
+import { roundIsRenderable, type PickerPlan } from "@/lib/domain/picker-plan";
 import type { ArtCrop, FitMode } from "@/lib/domain/art-crop";
 import { artCropStyle } from "@/lib/domain/art-crop";
 import { effectiveOrientation, type TileOrientation } from "@/lib/domain/picker-layout";
@@ -110,6 +110,13 @@ const BLOCK_LETTERS = ["А", "Б", "В"];
 /** Total number of cards in the blocks of a group round. */
 const groupCards = (round: RoundDto) =>
   round.groups.reduce((sum, g) => sum + g.tiles.length, 0);
+
+/** Warning about the rounds the render refuses (the preview skips them too). */
+function invalidRoundsWarning(rounds: number[]): string {
+  return rounds.length === 1
+    ? `Раунд ${rounds[0]}: нужно минимум 2 блока — он не попадёт в видео и блокирует рендер.`
+    : `Раунды ${rounds.join(", ")}: нужно минимум 2 блока — они не попадут в видео и блокируют рендер.`;
+}
 
 function fmtDur(sec: number): string {
   const s = Math.round(sec);
@@ -461,8 +468,7 @@ export function PickerConstructor({
         )}
         {project.invalidRounds.length > 0 ? (
           <div className="error" style={{ marginTop: 8 }}>
-            Раунды {project.invalidRounds.join(", ")}: нужно минимум 2 блока — они
-            не попадут в видео и блокируют рендер.
+            {invalidRoundsWarning(project.invalidRounds)}
           </div>
         ) : null}
       </div>
@@ -661,15 +667,13 @@ export function PickerConstructor({
           <div className="row" style={{ justifyContent: "space-between" }}>
             <h2 style={{ margin: 0 }}>
               Раунд {ri + 1}
-              {round.mode === "groups" ? (
-                round.groups.length < 2 || round.groups.some((g) => g.tiles.length === 0) ? (
-                  <span className="muted" style={{ fontSize: 14 }}>
-                    {" "}· нужно минимум 2 блока, и в каждом хотя бы одна карточка
-                  </span>
-                ) : null
-              ) : round.tiles.length < 2 ? (
+              {roundIsRenderable(round) ? null : round.mode === "groups" ? (
+                <span className="muted" style={{ fontSize: 14 }}>
+                  {" "}· нужно минимум 2 блока, и в каждом хотя бы одна карточка
+                </span>
+              ) : (
                 <span className="muted" style={{ fontSize: 14 }}> · добавьте минимум 2 блока</span>
-              ) : null}
+              )}
             </h2>
             <div className="row" style={{ gap: 6 }}>
               <button className="btn ghost" title="Выше" onClick={() => void moveRound(round.id, -1)}>↑</button>
@@ -946,6 +950,11 @@ export function PickerConstructor({
               : "🎬 Рендерить видео"}
           </button>
         )}
+        {canRender && project.invalidRounds.length > 0 ? (
+          <div className="error" style={{ marginTop: 8 }}>
+            {invalidRoundsWarning(project.invalidRounds)}
+          </div>
+        ) : null}
         {job ? (
           <div style={{ marginTop: 16 }}>
             <div className="progressbar">

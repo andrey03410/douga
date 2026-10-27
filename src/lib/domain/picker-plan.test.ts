@@ -10,6 +10,8 @@ import {
   ROUND_GAP_SEC,
   GROUP_STAGGER_SEC,
   groupName,
+  roundIsRenderable,
+  unrenderableRounds,
   type PickerDefaults,
   type PlanRoundInput,
   type PlanTileInput,
@@ -533,5 +535,89 @@ describe("buildPickerPlan group rounds", () => {
     expect(plan.rounds[1].mode).toBe("single");
     expect(plan.rounds[1].startSec).toBeCloseTo(plan.rounds[0].endSec, 10);
     expect(plan.durationSec).toBeCloseTo(plan.rounds[1].endSec, 10);
+  });
+});
+
+// ---- Task 23 (T06): one renderability rule for preview, render and UI ----
+
+describe("roundIsRenderable", () => {
+  it("a plain round needs at least two tiles", () => {
+    expect(roundIsRenderable(round([]))).toBe(false);
+    expect(roundIsRenderable(round([imageTile()]))).toBe(false);
+    expect(roundIsRenderable(round([imageTile(), imageTile()]))).toBe(true);
+  });
+
+  it("a group round needs two blocks with a card in each", () => {
+    expect(roundIsRenderable(groupRound([[imageTile(), imageTile()]]))).toBe(false);
+    expect(roundIsRenderable(groupRound([[imageTile()], []]))).toBe(false);
+    expect(roundIsRenderable(groupRound([[imageTile()], [imageTile()]]))).toBe(true);
+  });
+
+  it("takes DB rows too: mode is a plain string, cards hang off the round", () => {
+    const row = (mode: string, tiles: number, blocks: number[]) => ({
+      mode,
+      tiles: Array.from({ length: tiles }, (_, i) => ({ id: `t${i}` })),
+      groups: blocks.map((n) => ({ tiles: Array.from({ length: n }, () => ({ id: "c" })) })),
+    });
+    expect(roundIsRenderable(row("single", 1, []))).toBe(false);
+    expect(roundIsRenderable(row("single", 2, []))).toBe(true);
+    expect(roundIsRenderable(row("groups", 3, [3, 0]))).toBe(false);
+    expect(roundIsRenderable(row("groups", 3, [2, 1]))).toBe(true);
+  });
+});
+
+describe("unrenderableRounds", () => {
+  it("lists 1-based numbers of rounds that have cards but cannot render", () => {
+    expect(
+      unrenderableRounds([
+        round([imageTile(), imageTile()]),
+        round([imageTile()]),
+        groupRound([[imageTile()], []]),
+        groupRound([[imageTile()], [imageTile()]]),
+      ]),
+    ).toEqual([2, 3]);
+  });
+
+  it("leaves out empty rounds: preview and render both skip them silently", () => {
+    expect(unrenderableRounds([round([]), groupRound([[], []]), round([imageTile(), imageTile()])]))
+      .toEqual([]);
+  });
+});
+
+describe("buildPickerPlan drops exactly the rounds the render rejects", () => {
+  it("skips a one-tile round and keeps the timeline continuous", () => {
+    const plan = buildPickerPlan(DEFAULTS, [
+      round([imageTile()]),
+      round([imageTile(), imageTile()]),
+    ]);
+    expect(plan.rounds).toHaveLength(1);
+    expect(plan.rounds[0].index).toBe(1);
+    expect(plan.rounds[0].startSec).toBe(0);
+  });
+
+  it("a one-tile round alone earns no bookends", () => {
+    const plan = buildPickerPlan(DEFAULTS, [round([imageTile()])], [], {
+      intro: { text: "Топ" },
+      outro: { text: "Пока" },
+    });
+    expect(plan.rounds).toEqual([]);
+    expect(plan.intro).toBeNull();
+    expect(plan.outro).toBeNull();
+  });
+
+  it("the plan keeps a round iff roundIsRenderable says so", () => {
+    const rounds = [
+      round([]),
+      round([imageTile()]),
+      round([imageTile(), imageTile()]),
+      groupRound([[imageTile(), imageTile()]]),
+      groupRound([[imageTile()], []]),
+      groupRound([[imageTile()], [imageTile()]]),
+    ];
+    const kept = buildPickerPlan(DEFAULTS, rounds).rounds.map((r) => r.index);
+    expect(kept).toEqual(
+      rounds.map((r, i) => (roundIsRenderable(r) ? i : -1)).filter((i) => i >= 0),
+    );
+    expect(kept).toEqual([2, 5]);
   });
 });

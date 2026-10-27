@@ -2,7 +2,7 @@ import "server-only";
 import path from "node:path";
 import { mkdir, copyFile, stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
-import { absPath, renderOutputPath, STORAGE_ROOT } from "@/lib/storage";
+import { absPath, removePath, renderOutputPath, STORAGE_ROOT } from "@/lib/storage";
 import {
   clipAudio,
   clipVideo,
@@ -323,7 +323,29 @@ async function setProgress(jobId: string, progress: number) {
     .catch(() => {});
 }
 
-async function runRender(jobId: string): Promise<void> {
+/** Storage-relative scratch dir of a render job (Remotion's publicDir lives inside). */
+export function renderTmpDir(jobId: string): string {
+  return path.join("renders", "tmp", jobId);
+}
+
+/**
+ * Run a render and always drop its scratch dir afterwards, on success and on
+ * failure; the finished MP4 lives outside it (renderOutputPath). Cleanup is
+ * best effort, so it never fails a finished job nor masks the render's error.
+ */
+export async function withRenderTmp(jobId: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } finally {
+    await removePath(renderTmpDir(jobId)).catch(() => {});
+  }
+}
+
+function runRender(jobId: string): Promise<void> {
+  return withRenderTmp(jobId, () => renderTop(jobId));
+}
+
+async function renderTop(jobId: string): Promise<void> {
   const job = await prisma.renderJob.findUnique({ where: { id: jobId } });
   if (!job) return;
   await prisma.renderJob.update({
@@ -340,7 +362,7 @@ async function runRender(jobId: string): Promise<void> {
   if (!config) throw new Error("NO_CONFIG");
 
   // 1) Prepare assets in a per-job public dir for Remotion's staticFile().
-  const publicDir = absPath(path.join("renders", "tmp", jobId, "public"));
+  const publicDir = absPath(path.join(renderTmpDir(jobId), "public"));
   await mkdir(publicDir, { recursive: true });
 
   const assembleItems: AssembleItem[] = [];

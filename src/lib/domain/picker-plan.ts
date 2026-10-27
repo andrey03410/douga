@@ -7,6 +7,7 @@ import {
   pickerLayout,
   groupLayout,
   MIN_GROUPS,
+  MIN_TILES,
   type TileRect,
   type TileOrientation,
 } from "./picker-layout";
@@ -296,16 +297,44 @@ function roundGroups(round: PlanRoundInput): PlanGroupInput[] {
 }
 
 /**
- * Can this round appear in the video at all? A plain round needs a tile; a
- * group round needs at least two blocks with a card in each (while it is being
- * assembled the constructor shows a hint instead).
+ * The bare round shape the renderability rule reads: a plan input, a loaded DB
+ * round (where `tiles` also lists the cards of its blocks) or a constructor DTO.
  */
-export function planRoundRenderable(round: PlanRoundInput): boolean {
+export interface RenderableRound {
+  mode?: string | null;
+  tiles: readonly unknown[];
+  groups?: readonly { tiles: readonly unknown[] }[] | null;
+}
+
+/**
+ * Can this round appear in the video at all? A plain round needs at least
+ * MIN_TILES (2) tiles; a group round needs at least two blocks with a card in
+ * each. The one rule behind the preview plan, the render guard and the
+ * constructor hints, so the preview never shows a round the render rejects.
+ */
+export function roundIsRenderable(round: RenderableRound): boolean {
   if (round.mode === "groups") {
-    const groups = roundGroups(round);
+    const groups = round.groups ?? [];
     return groups.length >= MIN_GROUPS && groups.every((g) => g.tiles.length > 0);
   }
-  return round.tiles.length > 0;
+  return round.tiles.length >= MIN_TILES;
+}
+
+/** Does the round hold any card at all (a plain tile or a card in a block)? */
+function roundHasCards(round: RenderableRound): boolean {
+  return round.tiles.length > 0 || (round.groups ?? []).some((g) => g.tiles.length > 0);
+}
+
+/**
+ * 1-based numbers of rounds that hold cards yet are not renderable: exactly the
+ * rounds that make the render refuse (ROUND_TOO_SMALL). Empty rounds are not
+ * listed — the preview and the render both skip them silently.
+ */
+export function unrenderableRounds(rounds: readonly RenderableRound[]): number[] {
+  return rounds
+    .map((round, i) => ({ n: i + 1, bad: roundHasCards(round) && !roundIsRenderable(round) }))
+    .filter((r) => r.bad)
+    .map((r) => r.n);
 }
 
 /** Cascade step inside a block: 0.15 s, squeezed to fit a short reveal window. */
@@ -322,7 +351,7 @@ export function buildPickerPlan(
 ): PickerPlan {
   // Bookends only make sense around real content: a project with no renderable
   // round stays an empty timeline (the constructor shows a hint instead).
-  const hasContent = rounds.some(planRoundRenderable);
+  const hasContent = rounds.some(roundIsRenderable);
   const introSec = hasContent && bookends.intro ? BOOKEND_SEC : 0;
   const outroSec = hasContent && bookends.outro ? BOOKEND_SEC : 0;
 
@@ -330,7 +359,7 @@ export function buildPickerPlan(
   const planRounds: PlanRound[] = [];
 
   rounds.forEach((round, index) => {
-    if (!planRoundRenderable(round)) return; // nothing to show — skipped entirely
+    if (!roundIsRenderable(round)) return; // nothing to show — skipped entirely
 
     const mode: RoundMode = round.mode === "groups" ? "groups" : "single";
     const revealSec = round.revealSec ?? defaults.revealSec;

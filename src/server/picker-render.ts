@@ -6,13 +6,11 @@ import { prisma } from "@/lib/db";
 import { absPath, renderOutputPath } from "@/lib/storage";
 import { clipAudio, clipVideo, writeTick } from "@/lib/audio";
 import { cropFromColumns, type FitMode } from "@/lib/domain/art-crop";
-import {
-  effectiveOrientation,
-  MIN_GROUPS,
-  type TileOrientation,
-} from "@/lib/domain/picker-layout";
+import { effectiveOrientation, type TileOrientation } from "@/lib/domain/picker-layout";
 import {
   buildPickerPlan,
+  roundIsRenderable,
+  unrenderableRounds,
   type BookendsInput,
   type LabelsMode,
   type PickerDefaults,
@@ -21,7 +19,7 @@ import {
   type PlanGroupInput,
   type RoundMode,
 } from "@/lib/domain/picker-plan";
-import { describeRenderError } from "@/server/render";
+import { describeRenderError, renderTmpDir, withRenderTmp } from "@/server/render";
 import { effectivePlaylist, OUTRO_FALLBACK, type LoadedProject } from "@/server/projects";
 
 // Picker preview plan + headless render pipeline (mirrors render.ts for tops).
@@ -148,25 +146,12 @@ export function buildPickerPreviewPlan(project: LoadedProject) {
 }
 
 /**
- * A round is renderable when it has 2..9 tiles, or — in group mode — at least
- * two blocks with at least one card each. Returns 1-based indexes of the rest.
+ * 1-based numbers of the rounds that hold cards but cannot be rendered (the
+ * constructor warns about them; the render refuses with ROUND_TOO_SMALL). The
+ * rule itself is `roundIsRenderable` in the domain, shared with the preview.
  */
-export function roundIsRenderable(round: {
-  mode: string;
-  tiles: { id: string }[];
-  groups: { tiles: { id: string }[] }[];
-}): boolean {
-  if (round.mode === "groups") {
-    return round.groups.length >= MIN_GROUPS && round.groups.every((g) => g.tiles.length > 0);
-  }
-  return round.tiles.length >= 2;
-}
-
 export function invalidRounds(project: LoadedProject): number[] {
-  return project.rounds
-    .map((round, i) => ({ n: i + 1, ok: roundIsRenderable(round) }))
-    .filter((r) => !r.ok)
-    .map((r) => r.n);
+  return unrenderableRounds(project.rounds);
 }
 
 export async function startPickerRenderJob(userId: string, projectId: string) {
@@ -177,11 +162,9 @@ export async function startPickerRenderJob(userId: string, projectId: string) {
   if (!project) throw new Error("NOT_FOUND");
   if (project.rounds.length === 0 || project.rounds.every((r) => r.tiles.length === 0))
     throw new Error("EMPTY_PROJECT");
-  // Non-empty rounds must be renderable: 2+ tiles, or 2+ non-empty blocks.
-  if (
-    project.rounds.some((r) => r.tiles.length > 0 && !roundIsRenderable(r))
-  )
-    throw new Error("ROUND_TOO_SMALL");
+  // Rounds with cards must be renderable (2+ tiles, or 2+ non-empty blocks);
+  // the preview skips exactly these rounds, so the video never differs from it.
+  if (unrenderableRounds(project.rounds).length > 0) throw new Error("ROUND_TOO_SMALL");
 
   const job = await prisma.renderJob.create({
     data: { projectId, status: "queued", progress: 0 },
@@ -203,7 +186,11 @@ async function setProgress(jobId: string, progress: number) {
     .catch(() => {});
 }
 
-async function runPickerRender(jobId: string): Promise<void> {
+function runPickerRender(jobId: string): Promise<void> {
+  return withRenderTmp(jobId, () => renderPicker(jobId));
+}
+
+async function renderPicker(jobId: string): Promise<void> {
   const job = await prisma.renderJob.findUnique({ where: { id: jobId } });
   if (!job?.projectId) return;
   await prisma.renderJob.update({
@@ -233,7 +220,7 @@ async function runPickerRender(jobId: string): Promise<void> {
   });
   if (!project) throw new Error("NOT_FOUND");
 
-  const publicDir = absPath(path.join("renders", "tmp", jobId, "public"));
+  const publicDir = absPath(path.join(renderTmpDir(jobId), "public"));
   await mkdir(publicDir, { recursive: true });
 
   // Tick sample
@@ -242,14 +229,16 @@ async function runPickerRender(jobId: string): Promise<void> {
 
   // Pre-render the plan once over original media to learn each tile's exact
   // footage/sound windows, then cut assets and rebuild the plan over basenames.
-  const roundsWithTiles = project.rounds.filter((r) => r.tiles.length > 0);
-  const total = roundsWithTiles.reduce((s, r) => s + r.tiles.length, 0) || 1;
+  // Same rule as the preview: a round that is not renderable is skipped (the
+  // start guard already refused such rounds; this covers edits made since).
+  const shownRounds = project.rounds.filter(roundIsRenderable);
+  const total = shownRounds.reduce((s, r) => s + r.tiles.length, 0) || 1;
   let done = 0;
 
   const roundInputs: PlanRoundInput[] = [];
   for (let ri = 0; ri < project.rounds.length; ri++) {
     const round = project.rounds[ri];
-    if (round.tiles.length === 0) continue;
+    if (!roundIsRenderable(round)) continue;
     const revealSec = round.revealSec ?? project.revealSec;
     const { bgArt, bgMusicArt } = roundArts(project as LoadedProject, round);
 

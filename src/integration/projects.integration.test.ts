@@ -30,7 +30,11 @@ import {
   deleteTopItem,
   reorderTopItems,
 } from "@/server/projects";
-import { buildPickerPreviewPlan, invalidRounds } from "@/server/picker-render";
+import {
+  buildPickerPreviewPlan,
+  invalidRounds,
+  startPickerRenderJob,
+} from "@/server/picker-render";
 import { BOOKEND_SEC } from "@/lib/domain/picker-plan";
 import { effectivePlaylist, setPlaylist } from "@/server/projects";
 import { buildPreviewPlan, getProjectRenderConfig } from "@/server/render";
@@ -252,7 +256,8 @@ describe("picker preview plan", () => {
     await addRound(userId, p.id); // stays empty -> skipped
 
     const loaded = await getProject(userId, p.id);
-    expect(invalidRounds(loaded!)).toEqual([2]);
+    // an empty round drops out silently: it does not block the render
+    expect(invalidRounds(loaded!)).toEqual([]);
     const plan = buildPickerPreviewPlan(loaded!);
     expect(plan.rounds).toHaveLength(1);
     const r = plan.rounds[0];
@@ -263,6 +268,40 @@ describe("picker preview plan", () => {
     expect(r.tiles[0].visual.path).toBe(`/api/arts/${videoArtId}`);
     expect(r.bgMusic!.ref).toBe(`/api/arts/${audioArtId}`);
     expect(r.bgMusic!.duckWindows).toHaveLength(1);
+    await deleteProject(userId, p.id);
+  });
+});
+
+describe("picker round renderability: preview and render agree", () => {
+  it("a one-tile round is skipped by the preview and rejected by the render", async () => {
+    const p = await createProject(userId, "Одна плитка", "picker");
+    const first = (await getProject(userId, p.id))!.rounds[0];
+    await addTile(userId, first.id, imageArtId);
+    await addTile(userId, first.id, imageArtId);
+    const second = await addRound(userId, p.id);
+    await addTile(userId, second.id, imageArtId); // one tile only
+
+    const loaded = await getProject(userId, p.id);
+    expect(invalidRounds(loaded!)).toEqual([2]);
+    const plan = buildPickerPreviewPlan(loaded!);
+    expect(plan.rounds.map((r) => r.index)).toEqual([0]);
+    await expect(startPickerRenderJob(userId, p.id)).rejects.toThrow("ROUND_TOO_SMALL");
+    expect(await prisma.renderJob.count({ where: { projectId: p.id } })).toBe(0);
+    await deleteProject(userId, p.id);
+  });
+
+  it("a group round with an empty block is rejected too; a lone empty round is EMPTY_PROJECT", async () => {
+    const p = await createProject(userId, "Пустой блок", "picker");
+    const round = (await getProject(userId, p.id))!.rounds[0];
+    await expect(startPickerRenderJob(userId, p.id)).rejects.toThrow("EMPTY_PROJECT");
+
+    await addTile(userId, round.id, imageArtId);
+    await addTile(userId, round.id, imageArtId);
+    await setRoundMode(userId, round.id, "groups"); // 2 cards in block 1, block 2 empty
+    const loaded = await getProject(userId, p.id);
+    expect(invalidRounds(loaded!)).toEqual([1]);
+    expect(buildPickerPreviewPlan(loaded!).rounds).toEqual([]);
+    await expect(startPickerRenderJob(userId, p.id)).rejects.toThrow("ROUND_TOO_SMALL");
     await deleteProject(userId, p.id);
   });
 });
