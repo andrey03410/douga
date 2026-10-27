@@ -63,11 +63,11 @@
 - Тесты импорта (`downloads`, `studio-imports`) требуют настоящий `storage/bin/yt-dlp` и сами его не скачивают. На свежем клоне положи бинарник в `storage/bin/yt-dlp`. Туда же его скачивает `ensureYtDlp`, если `YTDLP_PATH` не задан.
 - Перезапуск dev-сервера обрывает идущие `DownloadJob`. Задание, которое не обновлялось дольше 10 минут, показывается как failed.
 - Уже запущенная сессия Claude Code не подхватывает [`.mcp.json`](../../.mcp.json) (сервер `douga` → `npm run --silent mcp`). Перезапусти клиент или гоняй сервер stdio-драйвером.
-- `e2e-setup.mjs` удаляет `e2e@test.local` со всеми данными и создаёт заново с ролью admin. `e2e-run` и `e2e-render` по умолчанию обращаются к порту 3100, `e2e-verify` — к 3300, поэтому задавай `BASE`.
+- `e2e-setup.mjs` удаляет `e2e@test.local` со всеми данными и создаёт заново с ролью admin. `e2e-run` и `e2e-render` по умолчанию обращаются к `http://localhost:3000`, другой адрес задаётся через `BASE`.
 
 ## Как проверить
 - Тесты: `npm test`, точечно `npx vitest run src/lib/prisma-client.test.ts src/lib/domain/prisma-drift.test.ts`. Затем `npm run build` и `npx tsc --noEmit`.
-- Живой сайт: по [verify-скиллу](../../.claude/skills/verify/SKILL.md). Тестовый аккаунт: `node scripts/e2e-setup.mjs`. `scripts/e2e-run.mjs` устарел: он ждёт `next.pair`, а API теперь отдаёт `question` ([tournament.md](tournament.md)).
+- Живой сайт: по [verify-скиллу](../../.claude/skills/verify/SKILL.md). Тестовый аккаунт: `node scripts/e2e-setup.mjs`. Турнир по HTTP проходит `scripts/e2e-run.mjs` ([tournament.md](tournament.md)).
 - SDK: `node scripts/verify-studio.mjs --actor <email> --project ID --kind clip --seconds 3 --output storage/studio-verification/<run>`. Код выхода 2 означает, что результат больше 12 MiB и скачивать его нужно на сайте.
 
 ## История
