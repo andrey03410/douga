@@ -47,7 +47,10 @@ export const startStudioImportSchema = z
         } catch {
           return false;
         }
-      }, "HTTP(S) URL without credentials required"),
+      }, "HTTP(S) URL without credentials required")
+      // Pass on exactly the URL the SSRF guard judges: yt-dlp (Python urlparse)
+      // reads e.g. `http://a.com\\@127.0.0.1/` as host 127.0.0.1, WHATWG as a.com.
+      .transform((value) => new URL(value).href),
     mode: z.enum(["audio", "video"]),
     quality: z
       .union([z.literal(480), z.literal(720), z.literal(1080)])

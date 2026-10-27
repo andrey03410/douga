@@ -295,7 +295,8 @@ fail after attempt 3; no automatic yt-dlp self-update mutates a shared binary.
 budget/permission failures are terminal. Child error text does not expose
 URLs, credentials, local paths or upstream stderr to callers.
 `BLOCKED_HOST` (task 23, SSRF): a loopback/LAN/link-local host, or a name that
-resolves to one, is refused at enqueue (HTTP 400, no job row) and again in the
+resolves to one, is refused at enqueue (no job row; the URL is normalized to
+its WHATWG `href` first, so yt-dlp fetches exactly what was checked) and again in the
 attempt right before yt-dlp, where it is terminal. `MEDIA_URL_ALLOW_PRIVATE=1`
 lifts it. A host that does not resolve is enqueued; in the attempt it is an
 ordinary transient `IMPORT_FAILED`.
