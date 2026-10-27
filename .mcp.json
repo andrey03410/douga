@@ -1,9 +1,8 @@
 {
   "mcpServers": {
-    "tournament-bracket-video": {
+    "douga": {
       "command": "npm",
-      "args": ["run", "--silent", "mcp"],
-      "cwd": "/Users/gel/my_projects/tournament-bracket-video"
+      "args": ["run", "--silent", "mcp"]
     }
   }
 }

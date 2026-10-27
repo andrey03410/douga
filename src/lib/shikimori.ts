@@ -37,7 +37,7 @@ export function shikimoriBase(): string {
 }
 
 function userAgent(): string {
-  return process.env.SHIKIMORI_USER_AGENT?.trim() || "tournament-bracket-video";
+  return process.env.SHIKIMORI_USER_AGENT?.trim() || "douga";
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

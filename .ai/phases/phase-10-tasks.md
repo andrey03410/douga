@@ -1172,7 +1172,7 @@ async function main() {
   const canUpload = can(actor.role, "media:upload");
   const uid = actor.userId;
 
-  const server = new McpServer({ name: "tournament-bracket-video", version: "0.1.0" });
+  const server = new McpServer({ name: "douga", version: "0.1.0" });
 
   // ---- Discovery (Shikimori, read-only) ----
   server.registerTool(
@@ -1383,10 +1383,10 @@ npm run mcp
 ```json
 {
   "mcpServers": {
-    "tournament-bracket-video": {
+    "douga": {
       "command": "npm",
       "args": ["run", "-s", "mcp"],
-      "cwd": "/абсолютный/путь/к/tournament-bracket-video",
+      "cwd": "/абсолютный/путь/к/douga",
       "env": { "MCP_ACTOR_EMAIL": "you@example.com" }
     }
   }

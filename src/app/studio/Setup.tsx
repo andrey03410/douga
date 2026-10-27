@@ -15,10 +15,10 @@ export function StudioSetup({ email }: { email: string }) {
         {JSON.stringify(
           {
             mcpServers: {
-              video: {
+              douga: {
                 command: "npm",
-                args: ["run", "mcp"],
-                cwd: "/absolute/path/to/tournament-bracket-video",
+                args: ["run", "--silent", "mcp"],
+                cwd: "/absolute/path/to/douga",
                 env: { MCP_ACTOR_EMAIL: email },
               },
             },

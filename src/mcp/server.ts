@@ -49,7 +49,7 @@ async function main() {
       .then(ok).catch((e) => fail((e as Error)?.message ?? String(e)));
   }
 
-  const server = new McpServer({ name: "tournament-bracket-video", version: "0.1.0" });
+  const server = new McpServer({ name: "douga", version: "0.1.0" });
   registerStudioTools(server, actor);
 
   server.registerTool(

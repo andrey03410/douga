@@ -22,7 +22,7 @@ Next.js-сервер ходит в Shikimori REST v1 (базовый URL и User
 - Внешние запросы — **только с сервера** (`server-only` модули); браузер не
   ходит в Shikimori напрямую (кроме `<img>`-превью по абсолютному URL).
 - Базовый URL: `process.env.SHIKIMORI_BASE_URL` || `https://shikimori.io`.
-- User-Agent: `process.env.SHIKIMORI_USER_AGENT` || `tournament-bracket-video`.
+- User-Agent: `process.env.SHIKIMORI_USER_AGENT` || `douga`.
 - Пермишен на оба роута: `media:upload`; квота пула из
   `quotasFor(role).maxPoolBytes`.
 - SSRF-защита: сервер скачивает постер **только** по пути, прошедшему
@@ -264,7 +264,7 @@ Expected: PASS (all cases).
 # (.one → .io → …) — при переезде поменяйте только этот URL и перезапустите.
 SHIKIMORI_BASE_URL="https://shikimori.io"
 # Осмысленный User-Agent требуется этикетом API Shikimori.
-SHIKIMORI_USER_AGENT="tournament-bracket-video"
+SHIKIMORI_USER_AGENT="douga"
 ```
 
 - [ ] **Step 6: Commit**
@@ -441,7 +441,7 @@ export function shikimoriBase(): string {
 }
 
 function userAgent(): string {
-  return process.env.SHIKIMORI_USER_AGENT?.trim() || "tournament-bracket-video";
+  return process.env.SHIKIMORI_USER_AGENT?.trim() || "douga";
 }
 
 async function getJson(pathAndQuery: string): Promise<unknown> {
