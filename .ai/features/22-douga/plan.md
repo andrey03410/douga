@@ -22,7 +22,7 @@
 - [x] **7. Совместимость.** Симлинк `.agents/skills`, раздел про скиллы в `AGENTS.md`.
 - [x] **8. QG.** `npm test`, `npx tsc --noEmit`, `npm run build`, MCP-сервер `douga`
   отвечает, на живом сайте видны логотип и фавикон, все ссылки в `.ai/` и `AGENTS.md` живые.
-- [ ] **9. GitHub.** Переименовать репозиторий в `douga`, обновить `origin`, push, PR.
+- [x] **9. GitHub.** Переименовать репозиторий в `douga`, обновить `origin`, push, PR.
 - [ ] **10. После вливания.** Переименовать папку в `~/my_projects/douga`, перенести память
   Claude, поправить пути в локальном `.env` (`MCP_LOCAL_MEDIA_DIRS`).
 
