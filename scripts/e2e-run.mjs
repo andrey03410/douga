@@ -2,7 +2,7 @@
 // -> render config. Uses a manual cookie jar over global fetch.
 import { readFile } from "node:fs/promises";
 
-const BASE = process.env.BASE ?? "http://localhost:3100";
+const BASE = process.env.BASE ?? "http://localhost:3000";
 const EMAIL = "e2e@test.local";
 const PASSWORD = "password123";
 const jar = new Map();
@@ -61,21 +61,28 @@ async function createTournament() {
   return data.id;
 }
 
+// One screen = `question`, a group of 2..k tracks. The answer ranks them
+// best-first: `ranked` beats everything after it, `rest` would be "about equal".
+// Ranking the screen in the order shown is the old "left wins" for any k.
 async function runComparisons(id) {
   let steps = 0;
   while (true) {
     const next = await (await jfetch(`/api/tournaments/${id}/next`)).json();
     if (next.isComplete) break;
-    assert(next.pair?.a?.audioUrl?.includes("/audio"), `pair offered (step ${steps + 1})`);
+    const question = next.question ?? [];
+    assert(
+      question.length >= 2 && question.every((t) => t.audioUrl?.includes("/audio")),
+      `group of ${question.length} offered (step ${steps + 1})`,
+    );
     // verify audio actually streams
     if (steps === 0) {
-      const audio = await jfetch(next.pair.a.audioUrl);
+      const audio = await jfetch(question[0].audioUrl);
       assert(audio.status === 200, "audio streams (200)");
     }
     const r = await jfetch(`/api/tournaments/${id}/compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ a: next.pair.a.id, b: next.pair.b.id, result: "a" }),
+      body: JSON.stringify({ ranked: question.map((t) => t.id), rest: [] }),
     });
     const rj = await r.json();
     assert(r.status === 200 && rj.ok, `comparison ${steps + 1} recorded`);

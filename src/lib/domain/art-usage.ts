@@ -6,7 +6,12 @@
 
 export interface ArtRelationCounts {
   studioReferences?: number;
+  /**
+   * Top positions that show this media as their picture. The caller leaves out
+   * positions that also sound with it: those are counted in `audioRenderItems`.
+   */
   renderItems: number;
+  /** Manual-top positions whose sound is this media (`RenderItem.audioArtId`). */
   audioRenderItems: number;
   pickerTiles: number;
   playlistItems: number;
@@ -18,8 +23,13 @@ export interface ArtRelationCounts {
 
 export interface UsageBreakdown {
   studio?: number;
-  /** Positions of a top (the media itself or its sound). */
+  /** Top positions that show the media as their picture — deletion frees them. */
   positions: number;
+  /**
+   * Manual-top positions that sound with the media. RenderItem.audioArtId
+   * cascades, so deletion removes these positions entirely.
+   */
+  audioPositions: number;
   /** Cards inside picker rounds. */
   cards: number;
   /** Entries of a background-music playlist. */
@@ -30,13 +40,22 @@ export interface UsageBreakdown {
 }
 
 export function usageBreakdown(counts: ArtRelationCounts): UsageBreakdown {
-  const positions = counts.renderItems + counts.audioRenderItems;
+  const positions = counts.renderItems;
+  const audioPositions = counts.audioRenderItems;
   const cards = counts.pickerTiles;
   const playlist = counts.playlistItems;
   const backgrounds =
     counts.projectBgs + counts.projectMusics + counts.roundBgs + counts.roundMusics;
   const studio = counts.studioReferences ?? 0;
-  return { positions, cards, playlist, backgrounds, ...(studio ? {studio} : {}), total: positions + cards + playlist + backgrounds + studio };
+  return {
+    positions,
+    audioPositions,
+    cards,
+    playlist,
+    backgrounds,
+    ...(studio ? { studio } : {}),
+    total: positions + audioPositions + cards + playlist + backgrounds + studio,
+  };
 }
 
 /** Sum the breakdowns of a selection (bulk delete warns about the whole batch). */
@@ -44,13 +63,14 @@ export function sumUsage(list: UsageBreakdown[]): UsageBreakdown {
   return list.reduce<UsageBreakdown>(
     (acc, u) => ({
       positions: acc.positions + u.positions,
+      audioPositions: acc.audioPositions + u.audioPositions,
       cards: acc.cards + u.cards,
       playlist: acc.playlist + u.playlist,
       backgrounds: acc.backgrounds + u.backgrounds,
       ...((acc.studio || u.studio) ? {studio:(acc.studio??0)+(u.studio??0)} : {}),
       total: acc.total + u.total,
     }),
-    { positions: 0, cards: 0, playlist: 0, backgrounds: 0, total: 0 },
+    { positions: 0, audioPositions: 0, cards: 0, playlist: 0, backgrounds: 0, total: 0 },
   );
 }
 
@@ -77,10 +97,10 @@ export function describeUsage(u: UsageBreakdown): string {
         isOne(u.cards) ? "в раунде" : "в раундах"
       }`,
     );
-  if (u.positions)
-    parts.push(
-      `${u.positions} ${pluralRu(u.positions, ["позиция", "позиции", "позиций"])} топа`,
-    );
+  // Picture and sound uses are distinct positions (see ArtRelationCounts).
+  const positions = u.positions + u.audioPositions;
+  if (positions)
+    parts.push(`${positions} ${pluralRu(positions, ["позиция", "позиции", "позиций"])} топа`);
   if (u.playlist)
     parts.push(
       `${u.playlist} ${pluralRu(u.playlist, ["трек", "трека", "треков"])} ${
@@ -92,7 +112,10 @@ export function describeUsage(u: UsageBreakdown): string {
   return parts.join(", ");
 }
 
-/** What deletion will actually do — cards go away, positions only lose their media. */
+/**
+ * What deletion will actually do: cards and manual-top positions that sound
+ * with the media go away, other positions only lose their picture.
+ */
 export function describeDeletion(u: UsageBreakdown): string {
   if(u.studio) return "Удаление недоступно: медиа используется в черновиках или версиях Studio";
   if (!u.total) return "";
@@ -102,6 +125,11 @@ export function describeDeletion(u: UsageBreakdown): string {
       `${u.cards} ${pluralRu(u.cards, ["карточка", "карточки", "карточек"])} ${
         isOne(u.cards) ? "в раунде будет удалена" : "в раундах будут удалены"
       }`,
+    );
+  if (u.audioPositions)
+    parts.push(
+      `${u.audioPositions} ${pluralRu(u.audioPositions, ["позиция", "позиции", "позиций"])} ` +
+        `ручного топа ${isOne(u.audioPositions) ? "будет удалена" : "будут удалены"}`,
     );
   if (u.playlist)
     parts.push(

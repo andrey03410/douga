@@ -253,6 +253,7 @@ describe("art usage breakdown", () => {
     // two cards + one position + project background + round background
     expect(posterRow?.usage).toEqual({
       positions: 1,
+      audioPositions: 0,
       cards: 2,
       playlist: 0,
       backgrounds: 2,
@@ -261,6 +262,7 @@ describe("art usage breakdown", () => {
     expect(posterRow?.usageCount).toBe(5);
     expect(musicRow?.usage).toEqual({
       positions: 0,
+      audioPositions: 0,
       cards: 0,
       playlist: 1,
       backgrounds: 1,
@@ -279,11 +281,54 @@ describe("art usage breakdown", () => {
     await prisma.art.delete({ where: { id: music.id } });
   });
 
+  // T02: RenderItem.audioArtId cascades, so a manual-top position that sounds
+  // with the media is deleted with it, while a picture-only position is freed.
+  it("tells positions that sound with the media from those that only show it", async () => {
+    const mkMedia = (label: string, kind: string) =>
+      prisma.art.create({
+        data: { userId, filePath: `fake/${label}`, label, kind, sizeBytes: 10, hasAudio: kind !== "image" },
+      });
+    const song = await mkMedia("usage-audio-song", "audio");
+    const clip = await mkMedia("usage-audio-clip", "video");
+    const cover = await mkMedia("usage-audio-cover", "image");
+    const project = await prisma.videoProject.create({
+      data: { userId, title: "Usage audio IT", kind: "top" },
+    });
+    const config = await prisma.renderConfig.create({
+      data: {
+        projectId: project.id,
+        items: {
+          create: [
+            { rank: 1, audioArtId: song.id, artId: cover.id },
+            // one video as both the sound and the picture of the same position
+            { rank: 2, audioArtId: clip.id, artId: clip.id },
+          ],
+        },
+      },
+    });
+
+    const listed = await listArts(userId, { q: "usage-audio-" });
+    const usage = (id: string) => listed.arts.find((a) => a.id === id)?.usage;
+    expect(usage(song.id)).toMatchObject({ positions: 0, audioPositions: 1, total: 1 });
+    expect(usage(cover.id)).toMatchObject({ positions: 1, audioPositions: 0, total: 1 });
+    // the position goes away with the clip, so it is not "freed" as well
+    expect(usage(clip.id)).toMatchObject({ positions: 0, audioPositions: 1, total: 1 });
+
+    await deleteArt(userId, clip.id);
+    await deleteArt(userId, song.id);
+    // both positions sounded with deleted media and went away (cascade)
+    expect(await prisma.renderItem.count({ where: { renderConfigId: config.id } })).toBe(0);
+
+    await prisma.videoProject.delete({ where: { id: project.id } });
+    await deleteArt(userId, cover.id);
+  });
+
   it("reports zeros for media nothing points at", async () => {
     const lonely = await createArt(userId, { fileName: "usage-lonely.png", data: PNG });
     const listed = await listArts(userId, { q: "usage-lonely" });
     expect(listed.arts[0]?.usage).toEqual({
       positions: 0,
+      audioPositions: 0,
       cards: 0,
       playlist: 0,
       backgrounds: 0,

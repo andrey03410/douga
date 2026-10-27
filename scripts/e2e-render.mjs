@@ -1,7 +1,7 @@
 // Extends the E2E flow with an actual Remotion render + download.
 import { readFile, writeFile } from "node:fs/promises";
 
-const BASE = process.env.BASE ?? "http://localhost:3100";
+const BASE = process.env.BASE ?? "http://localhost:3000";
 const EMAIL = "e2e@test.local";
 const PASSWORD = "password123";
 const jar = new Map();
@@ -42,14 +42,17 @@ async function fullFlow() {
   form.append("file", new Blob([buf]), "ost.zip");
   const id = (await (await jfetch("/api/tournaments", { method: "POST", body: form })).json()).id;
 
-  while (true) {
+  // Each screen is ranked in the order shown (`question` -> `{ranked, rest}`).
+  for (let steps = 0; ; steps++) {
     const next = await (await jfetch(`/api/tournaments/${id}/next`)).json();
     if (next.isComplete) break;
-    await jfetch(`/api/tournaments/${id}/compare`, {
+    if (!next.question?.length || steps > 100) throw new Error("comparison loop stuck");
+    const res = await jfetch(`/api/tournaments/${id}/compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ a: next.pair.a.id, b: next.pair.b.id, result: "a" }),
+      body: JSON.stringify({ ranked: next.question.map((t) => t.id), rest: [] }),
     });
+    if (!res.ok) throw new Error(`compare failed: ${res.status} ${await res.text()}`);
   }
   await jfetch(`/api/tournaments/${id}/finalize`, {
     method: "POST",

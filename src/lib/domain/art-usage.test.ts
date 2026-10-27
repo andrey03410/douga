@@ -32,12 +32,20 @@ describe("usageBreakdown", () => {
         roundBgs: 2,
         roundMusics: 1,
       }),
-    ).toEqual({ positions: 3, cards: 3, playlist: 4, backgrounds: 5, total: 15 });
+    ).toEqual({
+      positions: 2,
+      audioPositions: 1,
+      cards: 3,
+      playlist: 4,
+      backgrounds: 5,
+      total: 15,
+    });
   });
 
   it("is all zeros for unused media", () => {
     expect(usageBreakdown(counts)).toEqual({
       positions: 0,
+      audioPositions: 0,
       cards: 0,
       playlist: 0,
       backgrounds: 0,
@@ -61,6 +69,13 @@ describe("describeUsage", () => {
     );
     expect(describeUsage(usageBreakdown({ ...counts, renderItems: 1 }))).toBe("1 позиция топа");
     expect(describeUsage(usageBreakdown({ ...counts, renderItems: 2 }))).toBe("2 позиции топа");
+    // a manual-top position that sounds with this media is still a top position
+    expect(describeUsage(usageBreakdown({ ...counts, audioRenderItems: 1 }))).toBe(
+      "1 позиция топа",
+    );
+    expect(
+      describeUsage(usageBreakdown({ ...counts, renderItems: 3, audioRenderItems: 2 })),
+    ).toBe("5 позиций топа");
     expect(describeUsage(usageBreakdown({ ...counts, playlistItems: 7 }))).toBe(
       "7 треков в плейлистах",
     );
@@ -94,6 +109,33 @@ describe("describeDeletion", () => {
     ).toBe("1 карточка в раунде будет удалена, 2 позиции топа освободятся, 1 фон сбросится");
   });
 
+  it("says a manual-top position goes away with the media it sounds with", () => {
+    // RenderItem.audioArtId cascades: the position itself is deleted, not freed
+    expect(describeDeletion(usageBreakdown({ ...counts, audioRenderItems: 1 }))).toBe(
+      "1 позиция ручного топа будет удалена",
+    );
+    expect(describeDeletion(usageBreakdown({ ...counts, audioRenderItems: 3 }))).toBe(
+      "3 позиции ручного топа будут удалены",
+    );
+    expect(describeDeletion(usageBreakdown({ ...counts, audioRenderItems: 11 }))).toBe(
+      "11 позиций ручного топа будут удалены",
+    );
+    expect(describeDeletion(usageBreakdown({ ...counts, audioRenderItems: 21 }))).toBe(
+      "21 позиция ручного топа будет удалена",
+    );
+  });
+
+  it("keeps freed and deleted positions apart", () => {
+    expect(
+      describeDeletion(
+        usageBreakdown({ ...counts, pickerTiles: 2, renderItems: 1, audioRenderItems: 2 }),
+      ),
+    ).toBe(
+      "2 карточки в раундах будут удалены, 2 позиции ручного топа будут удалены, " +
+        "1 позиция топа освободится",
+    );
+  });
+
   it("is empty when there is nothing to warn about", () => {
     expect(describeDeletion(usageBreakdown(counts))).toBe("");
   });
@@ -102,19 +144,25 @@ describe("describeDeletion", () => {
 describe("sumUsage", () => {
   it("adds up the breakdowns of a selection", () => {
     const a = usageBreakdown({ ...counts, pickerTiles: 2, renderItems: 1 });
-    const b = usageBreakdown({ ...counts, pickerTiles: 1, playlistItems: 3 });
+    const b = usageBreakdown({ ...counts, pickerTiles: 1, playlistItems: 3, audioRenderItems: 2 });
     expect(sumUsage([a, b])).toEqual({
       positions: 1,
+      audioPositions: 2,
       cards: 3,
       playlist: 3,
       backgrounds: 0,
-      total: 7,
+      total: 9,
     });
+    expect(describeDeletion(sumUsage([a, b]))).toBe(
+      "3 карточки в раундах будут удалены, 2 позиции ручного топа будут удалены, " +
+        "3 трека выпадут из плейлистов, 1 позиция топа освободится",
+    );
   });
 
   it("is all zeros for an empty selection", () => {
     expect(sumUsage([])).toEqual({
       positions: 0,
+      audioPositions: 0,
       cards: 0,
       playlist: 0,
       backgrounds: 0,

@@ -1,5 +1,6 @@
 import "server-only";
 import path from "node:path";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { saveFile, removePath, artPath, absPath } from "@/lib/storage";
 import { probeMediaInfo, extractPoster } from "@/lib/audio";
@@ -37,13 +38,23 @@ export interface ArtRow {
   createdAt: Date;
 }
 
+// Positions that only show the media. One whose sound is this same media is
+// deleted with it (audioArtId cascades), so it counts once, under
+// audioRenderItems, and is not reported as "freed".
+const PICTURE_ONLY_POSITIONS: Prisma.RenderItemWhereInput = {
+  OR: [
+    { audioArtId: null },
+    { NOT: { audioArtId: { equals: prisma.renderItem.fields.artId } } },
+  ],
+};
+
 // Every relation that points at an Art: a poster standing as a card in a picker
 // round is just as "used" as one assigned to a top position.
 const ART_INCLUDE = {
   _count: {
     select: {
       studioReferences: true,
-      renderItems: true,
+      renderItems: { where: PICTURE_ONLY_POSITIONS },
       audioRenderItems: true,
       pickerTiles: true,
       playlistItems: true,

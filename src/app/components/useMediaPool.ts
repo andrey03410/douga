@@ -143,8 +143,9 @@ export function useMediaPool({
 
   const remove = useCallback(
     async (art: PoolArt) => {
-      // Say what deletion actually does: cards and playlist entries go with the
-      // media (cascade), top positions are only freed.
+      // Say what deletion actually does: cards, playlist entries and manual-top
+      // positions that sound with the media go with it (cascade), other top
+      // positions are only freed.
       const consequences = describeDeletion(art.usage);
       if (
         !confirm(
