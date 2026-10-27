@@ -25,6 +25,41 @@ const color = z
     "Use a CSS color, never a URL or arbitrary CSS",
   );
 const opt = <T extends z.ZodTypeAny>(s: T) => s.optional();
+const gradientStops = z
+  .array(z.object({ color, at: n.min(0).max(1) }).strict())
+  .min(2)
+  .max(12)
+  .refine(
+    (stops) => stops.every((stop, i) => i === 0 || stop.at >= stops[i - 1].at),
+    "Gradient stops must be ordered by position",
+  );
+export const backgroundGradientSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("linear"),
+      angle: opt(n.min(-360).max(360)),
+      stops: gradientStops,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("radial"),
+      center: opt(
+        z.object({ x: n.min(0).max(1), y: n.min(0).max(1) }).strict(),
+      ),
+      stops: gradientStops,
+    })
+    .strict(),
+]);
+export const shadowStyleSchema = z
+  .object({
+    color,
+    x: opt(n.min(-500).max(500)),
+    y: opt(n.min(-500).max(500)),
+    blur: opt(n.min(0).max(200)),
+    spread: opt(n.min(-200).max(200)),
+  })
+  .strict();
 export const timeSchema = z.union([
   z.object({ sec: nonnegative }).strict(),
   z.object({ frame: nonnegative.int() }).strict(),
@@ -46,6 +81,8 @@ export const cardStyleSchema = z
     volume: opt(nonnegative.max(4)),
     borderRadius: opt(nonnegative),
     background: opt(color),
+    gradient: opt(backgroundGradientSchema.nullable()),
+    shadow: opt(shadowStyleSchema.nullable()),
     color: opt(color),
     borderColor: opt(color),
     borderWidth: opt(nonnegative),

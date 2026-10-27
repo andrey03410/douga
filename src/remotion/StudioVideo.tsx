@@ -31,6 +31,7 @@ import {
   playerMediaSync,
   transitionAt,
 } from "./studio-frame";
+import { gradientToCss, shadowToCss } from "./studio-paint";
 
 export interface StudioVideoProps {
   plan: CompiledVideo;
@@ -243,8 +244,15 @@ export const StudioSceneFrame: React.FC<{
             background:
               style.background ??
               (card ? "#19243a" : group ? "rgba(255,255,255,0.06)" : undefined),
+            backgroundImage: gradientToCss(style.gradient),
             border: `${state.answer ? Math.max(5, style.borderWidth ?? 0) : (style.borderWidth ?? (framed ? 2 : 0))}px solid ${state.answer ? GOLD : (style.borderColor ?? "#596b8c")}`,
-            boxShadow: state.answer ? `0 0 30px ${GOLD}80` : undefined,
+            boxShadow:
+              [
+                state.answer ? `0 0 30px ${GOLD}80` : undefined,
+                shadowToCss(style.shadow),
+              ]
+                .filter(Boolean)
+                .join(", ") || undefined,
           }}
         >
           {node.type === "shape" ? <Shape node={node} /> : null}

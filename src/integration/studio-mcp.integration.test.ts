@@ -982,3 +982,84 @@ it("returns real image/audio inspection and scoped preview jobs; neutral status 
   );
   await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
 }, 240_000);
+
+it("inspects real JPEG posters without seeking past their sole image frame", async () => {
+  const path = `arts/${owner}/poster.jpg`;
+  execFileSync(ffmpeg!, [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=red:s=96x144",
+    "-frames:v",
+    "1",
+    absPath(path),
+  ]);
+  // Real web posters can exceed the decoder input buffer. A legal JPEG
+  // comment reproduces the zero-seek failure without storing third-party art.
+  const original = await readFile(absPath(path));
+  const comment = Buffer.alloc(55004, 0x78);
+  comment[0] = 0xff;
+  comment[1] = 0xfe;
+  comment.writeUInt16BE(55002, 2);
+  await writeFile(
+    absPath(path),
+    Buffer.concat([original.subarray(0, 2), comment, original.subarray(2)]),
+  );
+  const jpeg = await prisma.art.create({
+    data: {
+      userId: owner,
+      kind: "image",
+      filePath: path,
+      label: "JPEG poster",
+      sizeBytes: (await readFile(absPath(path))).length,
+    },
+  });
+  const result = await raw("video_asset_inspect", {
+    assetId: jpeg.id,
+    content: true,
+    mode: "image",
+  });
+  expect(result.isError).not.toBe(true);
+  const image = (result.content as { type: string; data: string }[]).find(
+    (c) => c.type === "image",
+  );
+  expect(image).toBeDefined();
+  const resource = await client.readResource({
+    uri: `video://asset/${jpeg.id}`,
+  });
+  for (const data of [
+    image!.data,
+    (resource.contents[0] as { blob: string }).blob,
+  ]) {
+    const bytes = Buffer.from(data, "base64");
+    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    const rgb = execFileSync(
+      ffmpeg!,
+      [
+        "-v",
+        "error",
+        "-i",
+        "pipe:0",
+        "-vf",
+        "scale=1:1",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "pipe:1",
+      ],
+      { input: bytes },
+    );
+    expect(rgb[0]).toBeGreaterThan(235);
+    expect(rgb[1]).toBeLessThan(25);
+    expect(rgb[2]).toBeLessThan(25);
+  }
+  await error(
+    "video_asset_inspect",
+    { assetId: jpeg.id, content: true, mode: "image", fromSec: 0.01 },
+    "ASSET_RANGE_INVALID",
+  );
+});

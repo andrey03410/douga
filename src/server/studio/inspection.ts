@@ -163,8 +163,9 @@ async function inspect(
       [
         "-v",
         "error",
-        "-ss",
-        String(input.fromSec),
+        // Static JPEGs have one frame; input seeking, even to zero, can
+        // discard that frame for larger images. Their range is already 0.
+        ...(art.kind === "image" ? [] : ["-ss", String(input.fromSec)]),
         "-i",
         path,
         ...args,
@@ -176,6 +177,7 @@ async function inspect(
         timeout: studioInspectionLimits.timeoutMs,
       },
     );
+    if (result.stdout.length === 0) throw new StudioError("INSPECTION_FAILED");
     await actor(userId);
     if (
       !(await prisma.art.findFirst({

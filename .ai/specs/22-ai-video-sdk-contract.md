@@ -758,3 +758,30 @@ Probe failures in original inspection also have structured codes:
 200 ms if required and awaits process closure before returning an error. The
 same bounds apply before metadata-only responses and resource reads; native
 capabilities publish the exact probe limits separately from encoder budgets.
+
+## Declarative paint extension (2026-10-27)
+
+`CardStyle` additionally accepts `gradient` and `shadow` for the CSS background
+and box of cards, containers and other nodes. SVG `fill` remains a separate
+solid paint. Both fields are optional; omission inherits as usual and explicit
+`null` disables inherited gradient/shadow. Existing documents remain unchanged.
+
+```ts
+gradient?: {
+  type: 'linear'; angle?: number; // degrees, -360..360; default180
+  stops: {color:string;at:number}[];
+} | {
+  type: 'radial'; center?: {x:number;y:number}; // normalized0..1; default.5,.5
+  stops: {color:string;at:number}[];
+} | null;
+shadow?: {color:string;x?:number;y?:number;blur?:number;spread?:number} | null;
+```
+
+Stops:2..12, positions0..1 in ascending order; equal positions create a hard
+edge. Colors use the existing strict CSS-color grammar, never URL/expression/
+arbitrary CSS. Radial paint is an ellipse extending to the farthest side.
+Shadow defaults x0/y8/blur24/spread0px; x/y are bounded±500, blur0..200,
+spread±200. Gradient is above the optional solid background; answer glow is
+composed with the authored shadow. Both properties survive compilation and
+media-free preset extraction/application. Player and encoded results share
+`studio-paint.ts`; no script or CSS supplied by the document is executed.

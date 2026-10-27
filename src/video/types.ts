@@ -17,6 +17,19 @@ export type TextValue =
       prefix?: string;
       suffix?: string;
     };
+export type BackgroundGradient = {
+  stops: { color: string; at: number }[];
+} & (
+  | { type: "linear"; angle?: number }
+  | { type: "radial"; center?: { x: number; y: number } }
+);
+export interface ShadowStyle {
+  color: string;
+  x?: number;
+  y?: number;
+  blur?: number;
+  spread?: number;
+}
 export interface CardStyle {
   fit?: "cover" | "contain" | "fill";
   crop?: Crop;
@@ -26,6 +39,9 @@ export interface CardStyle {
   volume?: number;
   borderRadius?: number;
   background?: string;
+  /** null explicitly disables inherited paint. */
+  gradient?: BackgroundGradient | null;
+  shadow?: ShadowStyle | null;
   color?: string;
   borderColor?: string;
   borderWidth?: number;
