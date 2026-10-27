@@ -11,6 +11,7 @@
 - [`src/lib/audio.ts`](../../src/lib/audio.ts) — обёртки ffmpeg-static: `clipAudio`, `clipVideo`, `writeSilence`, `writeTick`, `findActiveSnippet`, `probeDurationSec`
 - [`src/lib/domain/rms.ts`](../../src/lib/domain/rms.ts) — активный сниппет: окно с максимальной RMS-энергией (префикс-суммы, O(n))
 - [`src/lib/domain/render-jobs.ts`](../../src/lib/domain/render-jobs.ts) — DTO задания, `downloadUrl`, `isActiveRenderJob`
+- [`src/server/render-jobs.ts`](../../src/server/render-jobs.ts) — `failStaleRenderJobs`: задания, оборванные перезапуском, переходят в failed
 - [`src/app/components/FragmentPreview.tsx`](../../src/app/components/FragmentPreview.tsx) — «Старт отсюда» и «▶ Фрагмент»
 - API: `POST /api/tournaments/[id]/render` и [`POST /api/projects/[id]/render`](../../src/app/api/projects/[id]/render/route.ts) (запуск; `GET` — список заданий), [`render-jobs/[id]`](../../src/app/api/render-jobs/[id]/route.ts) (статус, `DELETE`), [`render-jobs/[id]/download`](../../src/app/api/render-jobs/[id]/download/route.ts)
 - Студия: [`src/server/studio/render.ts`](../../src/server/studio/render.ts) и [`engine.ts`](../../src/server/studio/engine.ts) — тот же Remotion, но своя очередь
@@ -18,7 +19,7 @@
 
 ## Данные
 - Модели Prisma ([schema](../../prisma/schema.prisma)): `RenderJob` (`tournamentId` ИЛИ `projectId`, `status` queued/running/done/failed, `progress`, `outputPath`, `outputBytes`, `error`), `RenderItem.resolvedStartSec` (кэш RMS). У студии свой `StudioJob`.
-- Диск: `storage/renders/<jobId>.mp4`. Ассеты задания лежат в `storage/renders/tmp/<jobId>/public`, тик — в `storage/assets/tick.wav`.
+- Диск: `storage/renders/<jobId>.mp4`. Ассеты задания лежат в `storage/renders/tmp/<jobId>/public` (`renderTmpDir`), тик — в `storage/assets/tick.wav`. `runRender` и `runPickerRender` идут через `withRenderTmp`: после любого рендера, удачного или нет, каталог `tmp/<jobId>` удаляется. Удаление best effort, MP4 остаётся.
 
 ## Как устроено
 - Один план, два режима. API отдаёт превью-план (`assetMode: "url"`), Player в конструкторе рисует ту же композицию. Рендер пересобирает план поверх нарезанных файлов (`"static"`).
@@ -36,16 +37,16 @@
 - В превью звук сырой, поэтому огибающую сегмента топа композиция считает только при `assetMode === "url"`. В рендере фейды уже в AAC — не задваивайте.
 - Осмотр `Art.kind=image` через ffmpeg — без input seek (`-ss`), даже к нулю: крупный JPEG теряет единственный кадр ([`studio/inspection.ts`](../../src/server/studio/inspection.ts)).
 - Браузер: без `REMOTION_BROWSER_EXECUTABLE` Remotion пытается скачать chrome-headless-shell, офлайн это падает. По заметке, системный Chrome ≥ 132 работает только в режиме `chrome-for-testing` ([README](../../README.md), раздел «Браузер для рендера»; [заметка](../research/remotion-headless-render.md)). Ошибку со словами browser/chrome `describeRenderError` дополняет подсказкой.
-- Рендер классики живёт в процессе Next. Перезапуск `npm run dev` оставляет `RenderJob` в `running` навсегда: восстановления, как у `DownloadJob`, нет, а `DELETE` такого задания отвечает «Дождитесь завершения рендера».
+- Рендер классики живёт в процессе Next, и перезапуск сервера обрывает его. `failStaleRenderJobs` ([`src/server/render-jobs.ts`](../../src/server/render-jobs.ts)) помечает failed задания `queued`/`running`, которые не обновлялись 10 минут. Пока рендер жив, прогресс пишется каждые несколько секунд. Функцию вызывают все чтения и удаление: список конструктора, `GET /api/render-jobs/<id>`, список кабинета и `deleteRenderJob`. Правило то же, что у `DownloadJob`. Реестр в памяти не годится: после HMR живое задание выглядело бы мёртвым.
 - `src/remotion` общий: правка `TopVideo`/`PickerVideo` меняет `engineId` студии, и первое студийное задание пересобирает бандл.
 - Владение заданием проверяй только так: `OR: [{tournament: {userId}}, {project: {userId}}]` — задания турниров и проектов лежат в одной таблице.
-- `storage/renders/tmp/<jobId>` после рендера не чистится — только при удалении задания или проекта.
-- Скачивание читает MP4 целиком в память. Имя файла — `top-${tournamentId}.mp4`, у проектов получается `top-null.mp4`.
+- Скачивание читает MP4 целиком в память. Имя файла — название турнира или проекта: `filename*=UTF-8''<название>.mp4` по RFC 6266/5987, ASCII-фолбэк `douga-<ownerId>.mp4`. Запрещённые символы вычищаются, основа обрезается до 100 символов (`renderDownloadDisposition` в [`render-jobs.ts`](../../src/lib/domain/render-jobs.ts)).
+- Каталоги `storage/renders/tmp/` от рендеров до задачи 23 остались на диске. Это данные владельца: код их не трогает.
 - Финальный рендер только для админа, и в классике, и в студии. У роли user кнопка скрыта, `POST` отвечает 403.
 
 ## Как проверить
 - Юниты: `npx vitest run src/lib/domain/rms.test.ts src/lib/domain/render-jobs.test.ts src/lib/render-assemble.test.ts src/lib/audio-probe.test.ts src/lib/domain/video-plan.test.ts src/lib/domain/picker-plan.test.ts`
-- Интеграция (пишет в `prisma/dev.db`): `npx vitest run src/integration/render-jobs.integration.test.ts src/integration/video.integration.test.ts`. Классический headless-рендер `npm test` не запускает — нужен живой прогон.
+- Интеграция (пишет в `prisma/dev.db`): `npx vitest run src/integration/render-jobs.integration.test.ts src/integration/render-files.integration.test.ts src/integration/video.integration.test.ts`. `render-files` подменяет Remotion моками и проверяет чистку tmp и имя файла. Настоящий headless-рендер `npm test` не запускает — нужен живой прогон.
 - Живой рендер: `node scripts/e2e-setup.mjs` создаёт админа `e2e@test.local`. Под ним открой `/projects/<id>` или `/tournaments/<id>/render` и нажми «🎬 Рендерить видео»; файл — `storage/renders/<jobId>.mp4`. [`scripts/e2e-render.mjs`](../../scripts/e2e-render.mjs) устарел (по коду; не запускался): турнир он проходит через `next.pair` и `{a, b, result}`, а API отдаёт `question` и ждёт `{ranked, rest}`. Его `render(id)` (POST → опрос → скачивание) годится как образец; дефолтный `BASE` — `:3100`.
 - Кадры: `node_modules/ffmpeg-static/ffmpeg -ss <t> -i out.mp4 -frames:v 1 f.png` (системных ffmpeg/ffprobe может не быть). Бери середины фаз плана: стык интро → сегмент чёрный из-за фейда. Смотри глазами.
 - Звук: `… -ss <t> -t <dur> -i out.mp4 -af volumedetect -f null -`. Середина сегмента должна быть громче хвоста на ≥ 8 дБ. Длительность MP4 сходится с `previewPlan.durationSec`. Рецепты — [verify](../../.claude/skills/verify/SKILL.md).

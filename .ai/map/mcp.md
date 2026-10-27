@@ -28,7 +28,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
   - студия: `StudioProject`, `StudioRevision`, `StudioPreset`, `StudioMutation`, `StudioJob`.
 
 ## Как устроено
-- Актор: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL`. Совпадение точное, регистр важен. Email должен совпадать с веб-аккаунтом. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1.
+- Актор: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL` через `findUserByEmail` ([roles.md](roles.md)), регистр не важен. Email должен совпадать с веб-аккаунтом. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1.
 - Права: каждый вызов заново читает роль из БД (`actor()` в [`studio/shared.ts`](../../src/server/studio/shared.ts), нужен `media:upload`). Квоты пула берутся из `quotasFor(role)` ([permissions](../../src/lib/domain/permissions.ts)). Владение проверяет сам сервис: чужой id даёт `NOT_FOUND`. Ни актор, ни квоты, ни пути вне allowlist клиент не передаёт.
 - Рендер:
   - прежние проекты: MCP-инструмента рендера нет, финал рендерят в UI `/projects/<id>` (`render:run`, только админ);

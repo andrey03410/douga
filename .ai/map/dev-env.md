@@ -51,7 +51,7 @@
 - Node 22: флаг `--env-file-if-exists` есть не во всех версиях Node. Команды SDK проверены на 22.23.2.
 - Тесты, настройки в [`vitest.config.ts`](../../vitest.config.ts):
   - файлы `src/**/*.test.ts`, среда node, `fileParallelism: false`, `server-only` заменён стабом;
-  - `DATABASE_URL` жёстко указывает на `prisma/dev.db`, то есть тесты пишут в ту же базу, что и dev-сайт;
+  - `DATABASE_URL` указывает на `prisma/dev.db`, то есть тесты пишут в ту же базу, что и dev-сайт. `TEST_DATABASE_URL=file:/abs/copy.db` направляет прогон в копию базы: так несколько агентов гоняют свои файлы параллельно. Итоговый QG идёт на `dev.db`;
   - юниты лежат рядом с кодом, интеграционные — в [`src/integration/`](../../src/integration/), хелперы — в [`src/test/`](../../src/test/).
 - Обязательная тройка после последних правок, в этом порядке: `npm test` → `npm run build` → `npx tsc --noEmit`. Для правок только в доках её не гоняют. Подробнее — в [verify](../../.claude/skills/verify/SKILL.md).
 

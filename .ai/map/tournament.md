@@ -17,7 +17,7 @@
 
 ## Данные
 - Модели Prisma ([schema](../../prisma/schema.prisma)):
-  - `Tournament` — `scheme`, `blindMode`, `status` (`draft`|`in_progress`|`completed`), `topSize`, `groupSize` (по умолчанию 2), `bonusOpponents`. Поле `engineState` в коде не используется
+  - `Tournament` — `scheme`, `blindMode`, `status` (`draft`|`in_progress`|`completed`), `topSize`, `groupSize` (по умолчанию 2), `bonusOpponents`. Неиспользуемая колонка `engineState` удалена в задаче 23
   - `Track` — `kind` (`audio`|`video`); `order` = порядок загрузки, по нему разрешаются ничьи
   - `ComparisonBatch` — один экран: `size`, `itemIds` (JSON в порядке показа)
   - `Comparison` — `trackAId`, `trackBId`, `result`; `batchId` пуст у рядов до фазы 18

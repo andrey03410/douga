@@ -48,6 +48,7 @@
 - `CardStyle.gradient`/`shadow` структурные: отсутствие поля наследует, явный `null` сбрасывает наследованный эффект. Не подменяйте их произвольным CSS/URL (цвет проходит regex, URL запрещены).
 - Осмотр `Art.kind=image` (`inspection.ts`) не делает input seek даже к нулю: крупный JPEG теряет единственный кадр, и ffmpeg отдаёт 0 байт.
 - Финальный `render` требует `render:run` (admin). Это проверяется при постановке и повторно в воркере. Превью доступны с `media:upload`. Лимиты ([`job-types.ts`](../../src/server/studio/job-types.ts) `studioJobLimits`): не больше 4 активных заданий на аккаунт; не-админу — не больше 512 МиБ результатов суммарно (`JOB_QUOTA_EXCEEDED`).
+- Удаление аккаунта (`deleteUser`, [roles.md](roles.md)) блокирует только активное задание: `queued`/`running` или с живой арендой. Это `JOB_IN_USE`, 409. Завершённые задания уходят вместе с аккаунтом, файлы `studio-jobs/<userId>` тоже, общие движки остаются.
 - Тесты гоняются на той же `prisma/dev.db` (env в `vitest.config.ts`, `fileParallelism: false`) и делят тяжёлый слот. Общий `npm run studio:worker` перехватит задания интеграционных тестов — останавливайте его. Для одного задания: `npm run studio:worker -- --once --job JOB_ID`.
 - Правка в `src/remotion`, `src/video`, `src/lib` или `package-lock.json` меняет `engineId`: первое задание пересобирает бандл (таймаут 120 с) в `storage/studio-engines/`.
 - `src/server/studio` не должен импортировать клиентский `remotion` (`server-boundary.test.ts`).
