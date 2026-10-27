@@ -2,7 +2,7 @@
 id: 23
 title: Хвосты после переименования — SSRF yt-dlp, рендер, роли, мёртвый код
 track: tech
-stage: plan
+stage: build
 branch: fix/23-followups
 pr:
 started: 2026-10-27
@@ -23,7 +23,7 @@ merged:
 
 - [x] Бриф — [brief.md](brief.md)
 - [x] Техника — [tech.md](tech.md)
-- [ ] План — [plan.md](plan.md)
+- [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем (автономный режим: гейт снят владельцем)
 - [ ] Влито
