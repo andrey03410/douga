@@ -51,6 +51,38 @@ a:hover {
   font-size: 18px;
   color: var(--text);
 }
+.topbar .brand:hover {
+  text-decoration: none;
+}
+.topbar .brand {
+  flex: none;
+}
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+.logo-mark {
+  flex: none;
+  display: block;
+}
+.logo-word {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, #ffb0d2, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.logo-kanji {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  align-self: flex-start;
+  margin-top: 1px;
+}
 
 .panel {
   background: var(--panel);

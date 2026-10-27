@@ -2,10 +2,11 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { currentUser, signOut } from "@/auth";
 import { can } from "@/lib/domain/permissions";
+import { Logo } from "./components/Logo";
 
 export const metadata: Metadata = {
-  title: "OST Top Builder",
-  description: "Турнирные топы саундтреков и рендер видео",
+  title: "Douga",
+  description: "Генератор аниме-видео: топы, турниры и пикеры",
 };
 
 export default async function RootLayout({
@@ -19,8 +20,8 @@ export default async function RootLayout({
       <body>
         <div className="topbar">
           <div className="row" style={{ gap: 18 }}>
-            <a className="brand" href="/">
-              🎵 OST Top Builder
+            <a className="brand" href="/" aria-label="Douga — на главную">
+              <Logo />
             </a>
             {user ? (
               <nav className="row" style={{ gap: 14 }}>
