@@ -20,7 +20,7 @@
 | Сущности (v1)     | Аниме **и** персонажи (переключатель типа в блоке)                  |
 | Источник данных   | REST API v1 Shikimori: `/api/animes?search=`, `/api/characters/search?search=`, постеры `/system/...` |
 | Базовый URL       | env `SHIKIMORI_BASE_URL` (дефолт `https://shikimori.io`); смена домена = одна строка в `.env` |
-| User-Agent        | env `SHIKIMORI_USER_AGENT` (дефолт `tournament-bracket-video`) — этикет API |
+| User-Agent        | env `SHIKIMORI_USER_AGENT` (дефолт `douga`) — этикет API |
 | Архитектура       | Все внешние запросы **через наш бэкенд** (CORS, UA, троттлинг, квота на входе); браузер ходит только в `/api/shikimori/*` |
 | Превью            | Мини-постер (preview) + имя (ru, иначе en) + факты: аниме — год · тип · ★оценка; персонаж — имя ru/en. Синопсис **не** тянем (экономия запросов) |
 | Импорт            | **Синхронный** (постер ~50–100 КБ): бэкенд качает картинку и создаёт `Art` за один запрос; очередь `DownloadJob` не используется |

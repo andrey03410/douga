@@ -22,7 +22,7 @@ import { createArtFromFile } from "@/server/arts";
 export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
-const USER_AGENT = "tournament-bracket-video/1.0 (+media import)";
+const USER_AGENT = "douga/1.0 (+media import)";
 
 export interface ImportImageInput {
   url: string;

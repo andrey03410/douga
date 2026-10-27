@@ -1,4 +1,4 @@
-// Prisma schema — tournament-bracket-video
+// Prisma schema — Douga
 // MVP uses SQLite for zero-dependency local runs. Production target is Postgres:
 // switch `provider` to "postgresql" and set DATABASE_URL accordingly — the models
 // below are provider-agnostic.

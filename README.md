@@ -1,4 +1,7 @@
-# OST Top Builder — генератор видео
+# Douga — генератор аниме-видео
+
+> 動画 (douga) — «видео» по-японски; в аниме-производстве ещё и промежуточные
+> фазы анимации.
 
 Веб-приложение — генератор шаблонных видео. Три режима:
 
@@ -21,7 +24,9 @@
 9 карточек не переносятся на SDK. Старые проекты доступны отдельно.
 См. [работу с SDK](#ai-video-sdk).
 
-Спецификации и план — в [`.ai/`](.ai/). Видение: [`.ai/specs/00-vision.md`](.ai/specs/00-vision.md).
+Для разработки (и для ИИ-агентов) вход — [`AGENTS.md`](AGENTS.md): карта зон
+кода в [`.ai/map/`](.ai/map/), стадии задач в [`.ai/features/`](.ai/features/),
+история фаз — [`.ai/history.md`](.ai/history.md).
 
 ## Стек
 
@@ -38,7 +43,7 @@
 
 | Что                         | Зачем                                   | Как проверить            |
 |-----------------------------|------------------------------------------|--------------------------|
-| **Node.js ≥ 18.17** (лучше 20 LTS) | Next.js 14 и весь бэкенд          | `node -v`                |
+| **Node.js 22** (проверено на 22.23.2) | Next.js 14, бэкенд; `mcp` и `studio:worker` требуют `--env-file-if-exists` | `node -v`                |
 | **npm** (идёт с Node)       | установка зависимостей                   | `npm -v`                 |
 | **Google Chrome / Chromium** | только для **рендера MP4** (Remotion)   | `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version` |
 
@@ -427,10 +432,10 @@ npm run mcp
 ```json
 {
   "mcpServers": {
-    "tournament-bracket-video": {
+    "douga": {
       "command": "npm",
       "args": ["run", "-s", "mcp"],
-      "cwd": "/абсолютный/путь/к/tournament-bracket-video",
+      "cwd": "/абсолютный/путь/к/douga",
       "env": { "MCP_ACTOR_EMAIL": "you@example.com" }
     }
   }
@@ -634,15 +639,19 @@ npm test
 
 ```
 src/
-  lib/domain/        # чистая доменная логика (движки, ранжирование, RMS, план видео) + тесты
-  lib/               # upload (zip/id3), audio (ffmpeg), storage, render-assemble, db, api
-  server/            # сервисы (tournaments, render) — серверные, используют Prisma
-  remotion/          # Remotion-композиция (TopVideo) — рендер и предпросмотр
   app/               # Next.js App Router: страницы + API-роуты
-  integration/       # интеграционный тест на БД
-prisma/schema.prisma # модель данных (обе фазы)
-scripts/             # вспомогательные скрипты (e2e, очистка тестовых данных)
+  lib/domain/        # чистая доменная логика (движки, ранжирование, раскладки, планы) + тесты
+  lib/               # upload, audio/ffmpeg, storage, Shikimori, yt-dlp, db, api
+  server/            # серверные сервисы на Prisma; server/studio — студия SDK
+  video/             # AI Video SDK: схема, builders, компилятор, пресеты
+  remotion/          # композиции TopVideo, PickerVideo, StudioVideo
+  mcp/               # MCP-сервер (stdio)
+  integration/       # интеграционные тесты на БД
+prisma/schema.prisma # модель данных
+scripts/             # воркер студии, e2e и проверочные драйверы
 ```
+
+Подробная карта по зонам — [`.ai/map/`](.ai/map/).
 
 ## Рендер видео
 
