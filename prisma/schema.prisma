@@ -48,8 +48,6 @@ model Tournament {
   // Opponents per track bought beyond the plan via "one more round". Stored in
   // opponents, not rounds, so changing groupSize does not move what was bought.
   bonusOpponents Int @default(0)
-  // Serialized resumable engine state (JSON string). Lets a paused tournament resume.
-  engineState String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

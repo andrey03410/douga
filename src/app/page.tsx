@@ -36,7 +36,7 @@ const FEATURES = [
 
 export default async function Home() {
   const session = await auth();
-  if (session?.user) redirect("/tournaments");
+  if (session?.user) redirect("/projects");
 
   return (
     <div className="container">

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "@/lib/db";
 import { createProject } from "@/server/projects";
 import { listRenderJobs } from "@/server/render";
+import { STALE_RENDER_JOB_ERROR } from "@/server/render-jobs";
+import { deleteRenderJob, listRenderRows } from "@/server/users";
 
 // Integration tests: listing render jobs for the constructor UIs — the list
 // the client uses to restore an in-flight/finished render after a reload.
@@ -74,5 +76,57 @@ describe("listRenderJobs", () => {
   it("чужому пользователю джобы не видны", async () => {
     expect(await listRenderJobs(otherUserId, { projectId })).toEqual([]);
     expect(await listRenderJobs(otherUserId, { tournamentId })).toEqual([]);
+  });
+});
+
+describe("зависшие задания после перезапуска сервера", () => {
+  const stale = () => new Date(Date.now() - 11 * 60 * 1000);
+
+  it("список конструктора помечает failed задание без обновлений дольше 10 минут", async () => {
+    const dead = await prisma.renderJob.create({
+      data: { projectId, status: "running", progress: 0.3, updatedAt: stale() },
+    });
+    const queued = await prisma.renderJob.create({
+      data: { projectId, status: "queued", updatedAt: stale() },
+    });
+    const live = await prisma.renderJob.create({
+      data: { projectId, status: "running", progress: 0.5 },
+    });
+
+    const jobs = await listRenderJobs(userId, { projectId });
+    const byId = new Map(jobs.map((j) => [j.id, j]));
+    expect(byId.get(dead.id)).toMatchObject({ status: "failed", error: STALE_RENDER_JOB_ERROR });
+    expect(byId.get(queued.id)).toMatchObject({ status: "failed" });
+    expect(byId.get(live.id)).toMatchObject({ status: "running", error: null });
+  });
+
+  it("чужие зависшие задания не трогает", async () => {
+    const otherProject = (await createProject(otherUserId, "Чужой", "picker")).id;
+    const foreign = await prisma.renderJob.create({
+      data: { projectId: otherProject, status: "running", updatedAt: stale() },
+    });
+    await listRenderJobs(userId, { projectId });
+    expect((await prisma.renderJob.findUnique({ where: { id: foreign.id } }))?.status).toBe(
+      "running",
+    );
+  });
+
+  it("кабинет показывает его failed, и его можно удалить", async () => {
+    const dead = await prisma.renderJob.create({
+      data: { tournamentId, status: "running", updatedAt: stale() },
+    });
+    const { rows } = await listRenderRows(userId, { limit: 100 });
+    expect(rows.find((r) => r.id === dead.id)?.status).toBe("failed");
+
+    const again = await prisma.renderJob.create({
+      data: { tournamentId, status: "running", updatedAt: stale() },
+    });
+    await deleteRenderJob(userId, again.id);
+    expect(await prisma.renderJob.findUnique({ where: { id: again.id } })).toBeNull();
+  });
+
+  it("живое задание удалить нельзя", async () => {
+    const live = await prisma.renderJob.create({ data: { projectId, status: "running" } });
+    await expect(deleteRenderJob(userId, live.id)).rejects.toThrow("JOB_ACTIVE");
   });
 });

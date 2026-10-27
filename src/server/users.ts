@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { can, isAssignableRole, quotasFor } from "@/lib/domain/permissions";
+import { failStaleRenderJobs } from "@/server/render-jobs";
 
 // Personal-cabinet usage overview + admin user management. Framework-free
 // (thin routes on top), covered by integration tests against the real schema.
@@ -211,6 +212,7 @@ export async function listRenderRows(
   opts: { cursor?: string; limit?: number } = {},
 ): Promise<{ rows: RenderRow[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(1, opts.limit ?? RENDER_PAGE), 100);
+  await failStaleRenderJobs(userId);
   const jobs = await prisma.renderJob.findMany({
     where: { OR: [{ tournament: { userId } }, { project: { userId } }] },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -246,6 +248,7 @@ export async function listRenderRows(
 
 /** Delete a finished render job the user owns, including its MP4. */
 export async function deleteRenderJob(userId: string, jobId: string) {
+  await failStaleRenderJobs(userId);
   const job = await prisma.renderJob.findFirst({
     where: { id: jobId, OR: [{ tournament: { userId } }, { project: { userId } }] },
   });

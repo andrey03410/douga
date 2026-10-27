@@ -25,6 +25,7 @@ import {
   type PoolMediaInfo,
 } from "@/lib/domain/position-media";
 import { renderJobDto, type RenderJobDto } from "@/lib/domain/render-jobs";
+import { failStaleRenderJobs } from "@/server/render-jobs";
 
 /**
  * Render jobs of one tournament or project (newest first), as UI DTOs.
@@ -35,6 +36,7 @@ export async function listRenderJobs(
   owner: { tournamentId: string } | { projectId: string },
   take = 20,
 ): Promise<RenderJobDto[]> {
+  await failStaleRenderJobs(userId);
   const jobs = await prisma.renderJob.findMany({
     where:
       "tournamentId" in owner

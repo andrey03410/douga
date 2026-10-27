@@ -16,8 +16,11 @@ export default defineConfig({
     fileParallelism: false,
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // TEST_DATABASE_URL points a run at a copy of the DB, so parallel runs
+    // (several agents at once) do not trip over each other's rows.
     env: {
-      DATABASE_URL: `file:${resolve(__dirname, "prisma", "dev.db")}`,
+      DATABASE_URL:
+        process.env.TEST_DATABASE_URL ?? `file:${resolve(__dirname, "prisma", "dev.db")}`,
     },
   },
 });

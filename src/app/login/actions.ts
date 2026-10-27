@@ -21,7 +21,7 @@ export async function loginAction(
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   try {
-    await signIn("credentials", { email, password, redirectTo: "/tournaments" });
+    await signIn("credentials", { email, password, redirectTo: "/projects" });
   } catch (error) {
     if (error instanceof AuthError) return { error: "Неверный email или пароль" };
     throw error; // redirect on success
@@ -50,7 +50,7 @@ export async function registerAction(
   await ensureAdminRole(user);
 
   try {
-    await signIn("credentials", { email, password, redirectTo: "/tournaments" });
+    await signIn("credentials", { email, password, redirectTo: "/projects" });
   } catch (error) {
     if (error instanceof AuthError) return { error: "Не удалось войти после регистрации" };
     throw error;
