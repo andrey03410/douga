@@ -2,11 +2,11 @@
 id: 22
 title: Douga — переименование, ребрендинг и AI-слой проекта
 track: tech
-stage: review
+stage: merged
 branch: chore/22-douga
 pr: https://github.com/andrey03410/douga/pull/3
 started: 2026-10-27
-merged:
+merged: 2026-10-27
 ---
 
 # 22. Douga — переименование, ребрендинг и AI-слой проекта
@@ -22,8 +22,8 @@ Douga (сайт, логотип, репозиторий), карта знани�
 - [x] Техника — [tech.md](tech.md) (решения приняты в обсуждении 2026-10-27)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
-- [ ] Проверка владельцем
-- [ ] Влито
+- [x] Проверка владельцем
+- [x] Влито
 
 ## Хвосты
 
