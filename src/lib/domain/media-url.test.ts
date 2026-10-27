@@ -125,6 +125,45 @@ describe("isBlockedAddress", () => {
     expect(isBlockedAddress("2606:4700::1111")).toBe(false);
     expect(isBlockedAddress("example.com")).toBe(false);
   });
+
+  // WHATWG URL rewrites an embedded IPv4 into hex groups: http://[::ffff:127.0.0.1]/
+  // has the hostname [::ffff:7f00:1]. The guard must judge the hostname that the
+  // fetcher actually sees, not only the dotted spelling.
+  it("blocks IPv6 forms that embed a private IPv4, as new URL spells them", () => {
+    for (const literal of [
+      "[::ffff:127.0.0.1]", // IPv4-mapped
+      "[::ffff:169.254.169.254]", // mapped cloud metadata
+      "[::ffff:10.0.0.1]",
+      "[::127.0.0.1]", // IPv4-compatible
+      "[64:ff9b::7f00:1]", // NAT64 well-known prefix
+      "[64:ff9b:1::a00:1]", // NAT64 local-use prefix
+      "[2002:7f00:1::]", // 6to4 of 127.0.0.1
+      "[0:0:0:0:0:ffff:7f00:1]",
+    ]) {
+      const host = new URL(`http://${literal}/`).hostname;
+      expect(isBlockedHostname(host), `${literal} -> ${host}`).toBe(true);
+      expect(isBlockedAddress(host), `${literal} -> ${host}`).toBe(true);
+    }
+  });
+
+  it("blocks other special-purpose IPv6 ranges", () => {
+    for (const ip of ["ff02::1", "fec0::1", "2001:db8::1", "100::1"]) {
+      expect(isBlockedAddress(ip), ip).toBe(true);
+    }
+  });
+
+  it("allows public addresses behind the same IPv6 prefixes", () => {
+    for (const literal of ["[::ffff:8.8.8.8]", "[64:ff9b::808:808]", "[2002:808:808::]"]) {
+      const host = new URL(`http://${literal}/`).hostname;
+      expect(isBlockedHostname(host), `${literal} -> ${host}`).toBe(false);
+    }
+  });
+
+  it("normalizes decimal and hex IPv4 spellings before judging them", () => {
+    for (const raw of ["http://2130706433/", "http://0x7f.1/", "http://0177.0.0.1/", "http://127.1/"]) {
+      expect(isBlockedHostname(new URL(raw).hostname), raw).toBe(true);
+    }
+  });
 });
 
 describe("urlLabel", () => {

@@ -17,7 +17,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
 - [`src/mcp/actor.ts`](../../src/mcp/actor.ts) — `resolveActor()` по `MCP_ACTOR_EMAIL`.
 - [`src/mcp/compose.ts`](../../src/mcp/compose.ts) — `addTileFromShikimori`: импорт постера и карточка одним вызовом.
 - [`src/mcp/youtube.ts`](../../src/mcp/youtube.ts) — `import_youtube_audio`: запускает `DownloadJob` (yt-dlp, только звук) и опрашивает его до 180 с.
-- [`src/mcp/project-summary.ts`](../../src/mcp/project-summary.ts) — ответ `get_project` для пикера: раунды, блоки, фон, `playlistSec`, плановый `durationSec`.
+- [`src/mcp/project-summary.ts`](../../src/mcp/project-summary.ts) — ответ `get_project` для пикера: раунды, блоки, фон, `playlistSec`, плановый `durationSec` и `invalidRounds`. Это раунды с карточками, на которых рендер откажет (`ROUND_TOO_SMALL`); `durationSec` их не считает. Поля нет, если все раунды годны.
 - [`src/mcp/top-summary.ts`](../../src/mcp/top-summary.ts) — ответ `get_project` для ручного топа: фрагменты, таймлайн, `readyToRender`, `warnings`.
 - Логика лежит в сервисах: [`projects.ts`](../../src/server/projects.ts), [`manual-top.ts`](../../src/server/manual-top.ts), [`local-media.ts`](../../src/server/local-media.ts), [`downloads.ts`](../../src/server/downloads.ts), [`src/server/studio/`](../../src/server/studio/).
 - Запуск: `npm run mcp`, то есть `tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json src/mcp/server.ts`. Сервер для Claude Code прописан в [`.mcp.json`](../../.mcp.json) (`npm run --silent mcp`), конфиг для Claude Desktop — в [README](../../README.md), раздел «MCP-сервер».
@@ -28,7 +28,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
   - студия: `StudioProject`, `StudioRevision`, `StudioPreset`, `StudioMutation`, `StudioJob`.
 
 ## Как устроено
-- Актор: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL`. Совпадение точное, регистр важен. Email должен совпадать с веб-аккаунтом. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1.
+- Актор: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL` через `findUserByEmail` ([roles.md](roles.md)), регистр не важен. Email должен совпадать с веб-аккаунтом. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1.
 - Права: каждый вызов заново читает роль из БД (`actor()` в [`studio/shared.ts`](../../src/server/studio/shared.ts), нужен `media:upload`). Квоты пула берутся из `quotasFor(role)` ([permissions](../../src/lib/domain/permissions.ts)). Владение проверяет сам сервис: чужой id даёт `NOT_FOUND`. Ни актор, ни квоты, ни пути вне allowlist клиент не передаёт.
 - Рендер:
   - прежние проекты: MCP-инструмента рендера нет, финал рендерят в UI `/projects/<id>` (`render:run`, только админ);
@@ -50,7 +50,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
 - `set_round` с `mode` пересобирает раунд:
   - в `groups` плитки нарезаются по 5 и теряют `isAnswer`;
   - обратно в `single` блоки удаляются вместе с названиями и ответом.
-- `add_tile_from_shikimori` не атомарен. Если карточка не встала (`TOO_MANY_TILES`: 9 в обычном раунде, 5 в блоке), постер всё равно остаётся в пуле и занимает квоту.
+- `add_tile_from_shikimori` атомарен ([`compose.ts`](../../src/mcp/compose.ts)). Если карточка не встала (`TOO_MANY_TILES`: 9 в обычном раунде, 5 в блоке; `NOT_FOUND`, `NOT_SINGLE`/`NOT_GROUPS`, сбой патча label/isAnswer), только что импортированный постер удаляется через `deleteArt` вместе с файлом, а наружу уходит исходная ошибка. У `importPoster` нет дедупа, поэтому откат срабатывает всегда. `fitMode` патчится в `server.ts` после compose и откатом не покрыт.
 - В групповом раунде ответ ставится на блок через `set_group({isAnswer})`, а не на карточку.
 - `import_youtube_audio` качает внутри процесса MCP. На аккаунт допускается не больше двух активных загрузок (`TOO_MANY_ACTIVE`).
 - Первый `get_project` ручного топа рассчитывает активные фрагменты по RMS, это может занять минуты.

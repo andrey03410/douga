@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { findUserByEmail } from "@/server/accounts";
 
 // The MCP server acts on behalf of exactly one account, identified by
 // MCP_ACTOR_EMAIL. All tool calls run with this user's id, role and quotas.
@@ -15,10 +15,8 @@ export async function resolveActor(): Promise<Actor> {
       "MCP_ACTOR_EMAIL не задан — укажите email аккаунта, от имени которого работает MCP-сервер",
     );
   }
-  const user = await prisma.user.findFirst({
-    where: { email },
-    select: { id: true, email: true, role: true },
-  });
+  // Same case-insensitive lookup as the web login.
+  const user = await findUserByEmail(email);
   if (!user) {
     throw new Error(`Аккаунт для MCP_ACTOR_EMAIL="${email}" не найден — сначала зарегистрируйте его в приложении`);
   }

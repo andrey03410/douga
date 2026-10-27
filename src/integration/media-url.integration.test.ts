@@ -165,6 +165,10 @@ describe("importImageFromUrl", () => {
       await expect(
         importImageFromUrl(userId, { url: "http://169.254.169.254/latest/meta-data/" }),
       ).rejects.toThrow("BLOCKED_HOST");
+      // the shared guard says HOST_UNRESOLVED; this API keeps FETCH_FAILED
+      await expect(
+        importImageFromUrl(userId, { url: "http://nothing-here.invalid/p.png" }),
+      ).rejects.toThrow("FETCH_FAILED");
     } finally {
       process.env.MEDIA_URL_ALLOW_PRIVATE = "1";
     }

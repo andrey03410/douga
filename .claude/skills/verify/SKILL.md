@@ -140,7 +140,7 @@ Prisma-клиент в памяти и падает 500 «Unknown argument <но
 
 ```bash
 node scripts/e2e-setup.mjs      # пересоздаёт e2e@test.local / password123 + /tmp/e2e/ost.zip
-BASE=http://localhost:3000 node scripts/e2e-run.mjs   # УСТАРЕЛ: ждёт next.pair, API отдаёт question (фаза 18)
+node scripts/e2e-run.mjs        # турнир по HTTP: question → {ranked, rest}; BASE по умолчанию :3000
 # в конце печатает tournament=<id>; конструктор: /tournaments/<id>/render
 ```
 

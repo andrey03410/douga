@@ -22,11 +22,19 @@ import * as studio from "@/server/studio";
 import * as importsInternal from "@/server/studio/imports";
 import { createVideoDocument } from "@/video";
 import { deleteArt } from "@/server/arts";
+import { studioHttpError as importsHttpError } from "@/server/studio/http";
 import {
   nativeWorkMs,
   nativeTestMs,
   importCleanupMs,
 } from "@/test/native-import-budget";
+import { PRIVATE_NAME, UNRESOLVED_NAME } from "@/test/private-dns";
+
+vi.mock("node:dns/promises", async (importOriginal) =>
+  (await import("@/test/private-dns")).fakeDns(await importOriginal()),
+);
+// Only for studioHttpError's module graph; no request here is authenticated.
+vi.mock("@/auth", () => ({ requireUser: async () => ({ id: "" }) }));
 
 let owner: string, other: string, server: Server, url: string, bytes: Buffer;
 let requests = 0;
@@ -34,7 +42,11 @@ let onRequest: (() => void) | undefined;
 const fixture = `studio-import-fixture-${randomUUID()}`;
 const proxy = process.env.YTDLP_PROXY;
 const ytDlpPath = process.env.YTDLP_PATH;
+const allowPrivate = process.env.MEDIA_URL_ALLOW_PRIVATE;
 beforeAll(async () => {
+  // The fixture is on loopback: lift the SSRF guard for this process and its
+  // worker children; the guard tests below drop it again.
+  process.env.MEDIA_URL_ALLOW_PRIVATE = "1";
   process.env.YTDLP_PATH = absPath("bin/yt-dlp"); // Require the installed real binary, never fetch a test dependency.
   process.env.YTDLP_PROXY = ""; // ONLY this test process and its loopback worker children.
   await mkdir(absPath(fixture), { recursive: true });
@@ -87,6 +99,8 @@ beforeAll(async () => {
   ).id;
 }, 30_000);
 afterAll(async () => {
+  if (allowPrivate === undefined) delete process.env.MEDIA_URL_ALLOW_PRIVATE;
+  else process.env.MEDIA_URL_ALLOW_PRIVATE = allowPrivate;
   if (ytDlpPath === undefined) delete process.env.YTDLP_PATH;
   else process.env.YTDLP_PATH = ytDlpPath;
   if (proxy === undefined) delete process.env.YTDLP_PROXY;
@@ -543,5 +557,77 @@ describe("durable standalone imports", () => {
       }
     },
     nativeTestMs(2),
+  );
+});
+
+describe("ssrf guard", () => {
+  const PRIVATE_URLS = [
+    "http://127.0.0.1/a.mp4",
+    "http://10.0.0.5/a.mp4",
+    "http://localhost/a.mp4",
+    "http://[::1]/a.mp4",
+    `http://${PRIVATE_NAME}/a.mp4`,
+  ];
+  const jobCount = () => prisma.studioJob.count({ where: { userId: owner } });
+  const withoutAllowance = async <T>(fn: () => Promise<T>) => {
+    delete process.env.MEDIA_URL_ALLOW_PRIVATE;
+    try {
+      return await fn();
+    } finally {
+      process.env.MEDIA_URL_ALLOW_PRIVATE = "1";
+    }
+  };
+
+  it("refuses private targets at start with no job row", async () => {
+    await withoutAllowance(async () => {
+      const before = await jobCount();
+      for (const target of PRIVATE_URLS)
+        await expect(start({ url: target }), target).rejects.toMatchObject({
+          name: "StudioError",
+          code: "BLOCKED_HOST",
+        });
+      expect(await jobCount()).toBe(before);
+    });
+    const response = importsHttpError(new studio.StudioError("BLOCKED_HOST"));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "BLOCKED_HOST" });
+  });
+
+  it("leaves an unresolvable host to the worker's retries", async () => {
+    const j = await withoutAllowance(() =>
+      start({ url: `http://${UNRESOLVED_NAME}/a.mp4` }),
+    );
+    expect(j).toMatchObject({ status: "queued" });
+    await studio.cancelStudioJob(owner, j.id);
+    await studio.deleteStudioJob(owner, j.id);
+  });
+
+  it("MEDIA_URL_ALLOW_PRIVATE=1 enqueues the same targets", async () => {
+    for (const target of PRIVATE_URLS) {
+      const j = await start({ url: target });
+      expect(j, target).toMatchObject({ status: "queued" });
+      await studio.cancelStudioJob(owner, j.id);
+      await studio.deleteStudioJob(owner, j.id);
+    }
+  });
+
+  it(
+    "the worker re-checks right before yt-dlp and fails terminally",
+    async () => {
+      const j = await start(); // accepted while the allowance is on
+      const worker = managedWorker(j.id);
+      const before = requests;
+      const result = await withoutAllowance(() => worker.run());
+      expect(result).toMatchObject({
+        status: "failed",
+        attempts: 1,
+        error: "BLOCKED_HOST",
+        result: null,
+      });
+      expect(requests).toBe(before);
+      expect(await prisma.art.count({ where: { userId: owner } })).toBe(0);
+      await studio.deleteStudioJob(owner, j.id);
+    },
+    nativeTestMs(1),
   );
 });

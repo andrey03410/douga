@@ -288,25 +288,6 @@ export async function extendPlan(t: LoadedTournament) {
   return bonusOpponents;
 }
 
-export async function recordComparison(
-  t: LoadedTournament,
-  aId: string,
-  bId: string,
-  result: ComparisonResult,
-) {
-  const ids = new Set(t.tracks.map((tr) => tr.id));
-  if (!ids.has(aId) || !ids.has(bId) || aId === bId) {
-    throw new Error("INVALID_PAIR");
-  }
-  await prisma.comparison.create({
-    data: { tournamentId: t.id, trackAId: aId, trackBId: bId, result },
-  });
-  await prisma.tournament.update({
-    where: { id: t.id },
-    data: { updatedAt: new Date() },
-  });
-}
-
 /**
  * Finalize a completed tournament. The first call computes the ranking from the
  * comparison log and persists it. Subsequent calls only adjust top-N and DO NOT

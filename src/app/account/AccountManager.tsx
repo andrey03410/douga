@@ -43,6 +43,15 @@ interface UsageDto {
   archiveBytes: number;
   poolBytes: number;
   renderBytes: number;
+  /** AI Video SDK: projects with their revision media, and queue jobs with results. */
+  studio: {
+    projects: number;
+    revisions: number;
+    snapshots: number;
+    bytes: number;
+    jobs: number;
+    resultBytes: number;
+  };
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -200,6 +209,15 @@ export function AccountManager() {
     data.pool.byKind.video.count
   } · аудио ${data.pool.byKind.audio.count}`;
 
+  const { studio } = data;
+  const studioSummary = `${studio.projects} ${pluralRu(studio.projects, [
+    "проект",
+    "проекта",
+    "проектов",
+  ])} · ${studio.jobs} ${pluralRu(studio.jobs, ["задание", "задания", "заданий"])} · ${fmtBytes(
+    studio.resultBytes,
+  )}`;
+
   return (
     <>
       <div className="panel">
@@ -332,6 +350,29 @@ export function AccountManager() {
             )}
           </div>
         ) : null}
+      </div>
+
+      <div className="panel">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <h2 style={{ margin: 0 }}>Студия</h2>
+          <div className="row" style={{ gap: 10, alignItems: "baseline" }}>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {studioSummary}
+            </span>
+            <a className="btn ghost" href="/projects">
+              Открыть проекты
+            </a>
+          </div>
+        </div>
+        {studio.projects === 0 && studio.jobs === 0 ? (
+          <p className="muted" style={{ marginBottom: 0 }}>Проектов студии нет.</p>
+        ) : (
+          <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
+            Проекты: {studio.projects}, ревизий {studio.revisions}, медиа ревизий{" "}
+            {fmtBytes(studio.bytes)}. Задания: {studio.jobs}, снимков {studio.snapshots},
+            результаты {fmtBytes(studio.resultBytes)}.
+          </p>
+        )}
       </div>
     </>
   );

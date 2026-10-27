@@ -40,17 +40,23 @@ function allowPrivate(): boolean {
   return process.env.MEDIA_URL_ALLOW_PRIVATE === "1";
 }
 
-/** Throws BLOCKED_HOST unless the host and every address it resolves to are public. */
-async function assertPublicHost(url: URL): Promise<void> {
+/**
+ * SSRF guard for every server-side visit of a user link: this picture import,
+ * yt-dlp downloads and Studio imports. Throws BLOCKED_HOST unless the host and
+ * every address it resolves to are public, HOST_UNRESOLVED when DNS has no
+ * answer. yt-dlp follows redirects itself, so for it only the first hop is
+ * checked; the picture import re-checks every hop.
+ */
+export async function assertPublicUrl(url: URL): Promise<void> {
   if (allowPrivate()) return;
   if (isBlockedHostname(url.hostname)) throw new Error("BLOCKED_HOST");
   let addresses: { address: string }[];
   try {
     addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ""), { all: true });
   } catch {
-    throw new Error("FETCH_FAILED");
+    throw new Error("HOST_UNRESOLVED");
   }
-  if (!addresses.length) throw new Error("FETCH_FAILED");
+  if (!addresses.length) throw new Error("HOST_UNRESOLVED");
   if (addresses.some((a) => isBlockedAddress(a.address))) throw new Error("BLOCKED_HOST");
 }
 
@@ -58,7 +64,10 @@ async function assertPublicHost(url: URL): Promise<void> {
 async function fetchImage(start: URL): Promise<Response> {
   let current = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertPublicHost(current);
+    await assertPublicUrl(current).catch((e: Error) => {
+      // the picture API reports DNS trouble as a failed download
+      throw e.message === "HOST_UNRESOLVED" ? new Error("FETCH_FAILED") : e;
+    });
     let res: Response;
     try {
       res = await fetch(current, {

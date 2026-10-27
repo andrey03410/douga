@@ -496,7 +496,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_import_start",
-    "Enqueue durable HTTP(S) media import to owned pool. No project or inline network work. Poll/cancel through video_job_*.",
+    "Enqueue durable HTTP(S) media import to owned pool. Loopback/LAN targets are refused (BLOCKED_HOST); the download itself runs in the worker. Poll/cancel through video_job_*.",
     studio.startStudioImportSchema,
     (input) => studio.startStudioImport(uid, input),
   );

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { startDownload } from "@/server/downloads";
+import { describeStartRefusal, startDownload } from "@/server/downloads";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
 const DEFAULT_INTERVAL_MS = 1_000;
@@ -38,6 +38,9 @@ export async function importYoutubeAudio(
     url: input.url,
     mode: "audio",
     maxPoolBytes: input.maxPoolBytes,
+  }).catch((e: Error) => {
+    // the MCP client sees the message as is: give it words, not a code
+    throw new Error(describeStartRefusal(e.message) ?? e.message);
   });
   return pollDownload(job.id, { timeoutMs: input.timeoutMs });
 }

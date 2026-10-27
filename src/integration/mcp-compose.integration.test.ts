@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
+import { readdir } from "node:fs/promises";
 import { prisma } from "@/lib/db";
-import { removePath } from "@/lib/storage";
+import { absPath, removePath } from "@/lib/storage";
+import { MAX_TILES } from "@/lib/domain/picker-layout";
 import { createProject, getProject } from "@/server/projects";
 import { addTileFromShikimori } from "@/mcp/compose";
 
@@ -70,5 +72,49 @@ describe("addTileFromShikimori", () => {
     expect(tile.label).toBe("Лайт");
     expect(tile.isAnswer).toBe(true);
     expect(tile.artId).toBe(artId);
+  });
+
+  // T12: the poster is imported before the tile is placed. When placing fails,
+  // the fresh art must not stay in the pool eating the quota.
+  async function poolSnapshot() {
+    const rows = await prisma.art.findMany({ where: { userId }, select: { id: true } });
+    const files = await readdir(absPath(`arts/${userId}`)).catch(() => [] as string[]);
+    return { ids: rows.map((r) => r.id).sort(), files: [...files].sort() };
+  }
+
+  it("rolls the imported poster back when the round is full", async () => {
+    const project = await createProject(userId, "Полный раунд", "picker");
+    const loaded = await getProject(userId, project.id);
+    const roundId = loaded!.rounds[0].id;
+    const filler = await prisma.art.create({
+      data: { userId, filePath: "fake/filler.jpg", label: "filler", kind: "image", sizeBytes: 1 },
+    });
+    await prisma.pickerTile.createMany({
+      data: Array.from({ length: MAX_TILES }, (_, order) => ({ roundId, artId: filler.id, order })),
+    });
+    const before = await poolSnapshot();
+
+    await expect(
+      addTileFromShikimori(userId, {
+        roundId, type: "anime", id: 21,
+        posterPath: "/system/animes/original/21.jpg",
+        label: "Лишний", maxPoolBytes: null,
+      }),
+    ).rejects.toThrow("TOO_MANY_TILES");
+
+    expect(await poolSnapshot()).toEqual(before);
+    expect(await prisma.pickerTile.count({ where: { roundId } })).toBe(MAX_TILES);
+  });
+
+  it("rolls the imported poster back when the block does not exist", async () => {
+    const before = await poolSnapshot();
+    await expect(
+      addTileFromShikimori(userId, {
+        groupId: "no-such-group", type: "character", id: 17,
+        posterPath: "/system/characters/original/17.jpg",
+        label: null, maxPoolBytes: null,
+      }),
+    ).rejects.toThrow("NOT_FOUND");
+    expect(await poolSnapshot()).toEqual(before);
   });
 });

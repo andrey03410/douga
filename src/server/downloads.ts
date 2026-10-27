@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { absPath } from "@/lib/storage";
 import { createArtFromFile, poolUsageBytes } from "@/server/arts";
 import { downloadMedia, probeUrl, updateYtDlp } from "@/lib/ytdlp";
+import { assertPublicUrl } from "@/server/media-url";
 import {
   describeDownloadError,
   isQuality,
@@ -23,6 +24,19 @@ const running = new Map<string, ChildProcess>();
 
 const tmpDir = (jobId: string) => absPath(path.join("downloads", "tmp", jobId));
 
+const START_REFUSALS: Record<string, string> = {
+  BAD_URL: "Вставьте корректную http(s)-ссылку на видео",
+  BAD_QUALITY: "Качество: 480, 720 или 1080",
+  BLOCKED_HOST: "По этому адресу ходить нельзя: локальные и внутренние адреса запрещены",
+  HOST_UNRESOLVED: "Сайт по ссылке не найден — проверьте адрес",
+  TOO_MANY_ACTIVE: "Не больше двух одновременных загрузок — дождитесь завершения",
+};
+
+/** Human text for a startDownload refusal code (HTTP and MCP), null for anything else. */
+export function describeStartRefusal(code: string): string | null {
+  return START_REFUSALS[code] ?? null;
+}
+
 export interface StartDownloadInput {
   url: string;
   mode: string;
@@ -31,6 +45,10 @@ export interface StartDownloadInput {
   maxPoolBytes: number | null;
 }
 
+/**
+ * Queue a yt-dlp import. Refusals before any job exists: BAD_URL, BAD_QUALITY,
+ * BLOCKED_HOST, HOST_UNRESOLVED, TOO_MANY_ACTIVE (see describeStartRefusal).
+ */
 export async function startDownload(userId: string, input: StartDownloadInput) {
   let url: URL;
   try {
@@ -42,6 +60,9 @@ export async function startDownload(userId: string, input: StartDownloadInput) {
   const mode: DownloadMode = input.mode === "audio" ? "audio" : "video";
   const quality = input.quality ?? DEFAULT_QUALITY;
   if (mode === "video" && !isQuality(quality)) throw new Error("BAD_QUALITY");
+  // SSRF: yt-dlp must not be pointed at loopback/LAN. Refuse before a job row
+  // exists, so a blocked or unresolvable link never shows up as a queued job.
+  await assertPublicUrl(url);
 
   const active = await prisma.downloadJob.count({
     where: { userId, status: { in: ["queued", "running"] } },

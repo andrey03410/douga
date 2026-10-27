@@ -17,7 +17,7 @@
 
 ## Данные
 - Модели Prisma ([schema](../../prisma/schema.prisma)):
-  - `Tournament` — `scheme`, `blindMode`, `status` (`draft`|`in_progress`|`completed`), `topSize`, `groupSize` (по умолчанию 2), `bonusOpponents`. Поле `engineState` в коде не используется
+  - `Tournament` — `scheme`, `blindMode`, `status` (`draft`|`in_progress`|`completed`), `topSize`, `groupSize` (по умолчанию 2), `bonusOpponents`. Неиспользуемая колонка `engineState` удалена в задаче 23
   - `Track` — `kind` (`audio`|`video`); `order` = порядок загрузки, по нему разрешаются ничьи
   - `ComparisonBatch` — один экран: `size`, `itemIds` (JSON в порядке показа)
   - `Comparison` — `trackAId`, `trackBId`, `result`; `batchId` пуст у рядов до фазы 18
@@ -47,10 +47,10 @@
   - ranking не пересчитывается, чтобы не стереть ручной порядок.
 - Транзитивный вывод не делаем. `orderCoverage` строит замыкание на битсетах. Ничья не задаёт порядок. Пары, достижимые в обе стороны, идут в `contradictory`, а не разрешаются. Живые предпочтения нетранзитивны.
 - Undo снимает экран целиком: `ComparisonBatch` удаляется вместе со своими `Comparison`. Если время совпадает, батч считается новее старого ряда.
-- `recordComparison` в сервисе — старый попарный путь, вызовов у него нет. Ответы пишет только `recordGroupAnswer`.
+- Ответы пишет только `recordGroupAnswer` (`POST compare {ranked, rest}`). Старый попарный `recordComparison` удалён в задаче 23.
 - Турнир, на который ссылается `StudioAssetReference`, не удаляется: ответ 409 `STUDIO_SOURCE_IN_USE`. Studio читает `Ranking` и `topSize` ([`sources.ts`](../../src/server/studio/sources.ts)). `reorderRanking` не обновляет `Tournament.updatedAt`.
 - ZIP целиком читается в память. Модули `src/server/*` с `import "server-only"` не грузятся вне Next. Проверки на реальной БД собирай из `src/lib/domain/*`.
-- [`scripts/e2e-run.mjs`](../../scripts/e2e-run.mjs) устарел (по коду; не запускался). Он ждёт `next.pair` и шлёт `{a, b, result}`. API отдаёт `question` и принимает `{ranked, rest}`.
+- [`scripts/e2e-run.mjs`](../../scripts/e2e-run.mjs) проходит турнир по HTTP: читает `next.question` и ранжирует экран в порядке показа (`{ranked: question.map(t => t.id), rest: []}`). `BASE` по умолчанию `http://localhost:3000`.
 
 ## Как проверить
 - Юниты: `npx vitest run src/lib/domain/engines src/lib/domain/comparisons.test.ts src/lib/domain/group-answer.test.ts src/lib/domain/order-coverage.test.ts`

@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { createVideoDocument } from "@/video";
 import * as studio from "@/server/studio";
-import { removePath } from "@/lib/storage";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { absPath, removePath } from "@/lib/storage";
 
 let owner: string, other: string;
 const document = () =>
@@ -365,6 +367,70 @@ it("accounts for results and guards account deletion before any file cleanup", a
   );
   await studio.deleteStudioJob(owner, j.id);
 });
+it("deletes an account whose Studio jobs are all finished, refusing only while one is active", async () => {
+  const { deleteUser } = await import("@/server/users");
+  const victim = (
+    await prisma.user.create({
+      data: { email: `jobs-victim-${randomUUID()}@test.local`, passwordHash: "x" },
+    })
+  ).id;
+  const { role: otherRole } = await prisma.user.findUniqueOrThrow({ where: { id: other } });
+  await prisma.user.update({ where: { id: other }, data: { role: "admin" } });
+  try {
+    const p = await studio.createStudioProject(victim, { document: document() });
+    const finished = await studio.startStudioJob(victim, p.id, { kind: "still", frame: 0 });
+    const canceled = await studio.startStudioJob(victim, p.id, { kind: "still", frame: 0 });
+    await prisma.studioJob.update({
+      where: { id: finished.id },
+      data: { status: "done", outputBytes: 3 },
+    });
+    await studio.cancelStudioJob(victim, canceled.id);
+    // a canceled attempt whose worker still holds the lease is active
+    await prisma.studioJob.update({
+      where: { id: canceled.id },
+      data: { leaseToken: randomUUID(), leaseUntil: new Date(Date.now() + 60_000) },
+    });
+    const resultDir = `studio-jobs/${victim}/${finished.id}`;
+    await mkdir(absPath(resultDir), { recursive: true });
+    await writeFile(absPath(`${resultDir}/frame.png`), Buffer.from([1, 2, 3]));
+    const engineDir = `studio-engines/${finished.engineId}`;
+    const engineExisted = existsSync(absPath(engineDir));
+
+    await expect(deleteUser(other, victim)).rejects.toThrow("JOB_IN_USE");
+    expect(await prisma.studioJob.count({ where: { userId: victim } })).toBe(2);
+    expect(existsSync(absPath(resultDir))).toBe(true);
+
+    // the lease expired: nothing is active any more
+    await prisma.studioJob.update({
+      where: { id: canceled.id },
+      data: { leaseUntil: new Date(Date.now() - 1_000) },
+    });
+    await deleteUser(other, victim);
+
+    expect(await prisma.user.findUnique({ where: { id: victim } })).toBeNull();
+    expect(await prisma.studioJob.count({ where: { userId: victim } })).toBe(0);
+    expect(await prisma.studioProject.count({ where: { userId: victim } })).toBe(0);
+    expect(
+      await prisma.studioSnapshot.count({
+        where: { id: { in: [finished.snapshotId!, canceled.snapshotId!] } },
+      }),
+    ).toBe(0);
+    expect(existsSync(absPath(`studio-jobs/${victim}`))).toBe(false);
+    expect(existsSync(absPath(`studio/${victim}`))).toBe(false);
+    // shared engines are never part of an account
+    expect(existsSync(absPath(engineDir))).toBe(engineExisted);
+  } finally {
+    await prisma.user.update({ where: { id: other }, data: { role: otherRole } });
+    if (await prisma.user.findUnique({ where: { id: victim } })) {
+      await prisma.studioJob.deleteMany({ where: { userId: victim } });
+      for (const project of await studio.listStudioProjects(victim))
+        await studio.deleteStudioProject(victim, project.id);
+      await prisma.user.delete({ where: { id: victim } });
+    }
+    await removePath(`studio/${victim}`);
+    await removePath(`studio-jobs/${victim}`);
+  }
+}, 60_000);
 it("replays identical concurrent enqueue of a valid draft with one committed revision", async () => {
   const p = await studio.createStudioProject(owner, { document: document() });
   const draft = await studio.saveStudioDraft(owner, p.id, {

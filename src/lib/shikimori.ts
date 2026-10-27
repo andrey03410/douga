@@ -73,7 +73,10 @@ function throttle(kind: "api" | "asset"): Promise<void> {
   return slot;
 }
 
-async function getOnce(pathAndQuery: string): Promise<Response> {
+/** A JSON body to POST (GraphQL); without it the request is a plain GET. */
+type ApiBody = Record<string, unknown> | undefined;
+
+async function requestOnce(pathAndQuery: string, body: ApiBody): Promise<Response> {
   // Waiting for the minute quota is not network time. Starting the timeout
   // before the gate aborts otherwise healthy requests in large discovery runs.
   await throttle("api");
@@ -81,7 +84,12 @@ async function getOnce(pathAndQuery: string): Promise<Response> {
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     return await fetch(`${shikimoriBase()}${pathAndQuery}`, {
-      headers: { "User-Agent": userAgent(), Accept: "application/json" },
+      ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+      headers: {
+        "User-Agent": userAgent(),
+        Accept: "application/json",
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       redirect: "follow",
       signal: ctrl.signal,
     });
@@ -90,10 +98,11 @@ async function getOnce(pathAndQuery: string): Promise<Response> {
   }
 }
 
-async function getJson(pathAndQuery: string): Promise<unknown> {
+/** Every API call, REST or GraphQL: one queue, one 429 retry policy. */
+async function requestJson(pathAndQuery: string, body?: ApiBody): Promise<unknown> {
   const schedule = retrySchedule();
   for (let attempt = 0; ; attempt++) {
-    const res = await getOnce(pathAndQuery);
+    const res = await requestOnce(pathAndQuery, body);
     if (res.status === 429) {
       // The server's window is exhausted; back off (honouring Retry-After).
       const wait = retryDelayMs(attempt, schedule, res.headers.get("retry-after"));
@@ -104,6 +113,10 @@ async function getJson(pathAndQuery: string): Promise<unknown> {
     if (!res.ok) throw new Error(`SHIKIMORI_HTTP_${res.status}`);
     return await res.json();
   }
+}
+
+function getJson(pathAndQuery: string): Promise<unknown> {
+  return requestJson(pathAndQuery);
 }
 
 export async function searchAnimesRaw(q: string, limit: number): Promise<unknown[]> {
@@ -221,28 +234,9 @@ export async function fetchPosterByUrl(url: string): Promise<FetchedImage> {
   return fetchImage(url);
 }
 
+/** GraphQL shares the REST queue and 429 retries (Retry-After, same budget). */
 export async function fetchGraphql(query: string): Promise<unknown> {
-  await throttle("api");
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${shikimoriBase()}/api/graphql`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": userAgent(),
-      },
-      body: JSON.stringify({ query }),
-      redirect: "follow",
-      signal: ctrl.signal,
-    });
-    if (res.status === 429) throw new Error("RATE_LIMITED");
-    if (!res.ok) throw new Error(`SHIKIMORI_HTTP_${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(t);
-  }
+  return requestJson("/api/graphql", { query });
 }
 
 /** Shikimori's GraphQL caps a page at 50 entries. */

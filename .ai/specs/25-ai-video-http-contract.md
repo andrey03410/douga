@@ -113,4 +113,5 @@ Legacy single media/tournament deletion maps Studio reference protection to
 an actionable HTTP 409. Bulk cleanup returns per-file protected reasons/messages
 with successful deletions retained; the shared pool UI applies the partial
 success and retains failed selection. Account deletion maps `JOB_IN_USE` to 409
-with cancellation/worker-stop/job-deletion guidance.
+with cancellation/worker-stop guidance; finished jobs are deleted with the
+account (task 23).

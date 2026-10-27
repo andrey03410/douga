@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { absPath, removePath, saveFile } from "@/lib/storage";
 import { createArt } from "@/server/arts";
 import { usageSummary, listArchiveRows, listRenderRows } from "@/server/users";
+import { createStudioProject, deleteStudioProject } from "@/server/studio";
+import { createVideoDocument } from "@/video";
 
 // Phase 17: the cabinet used to load every art row and stat() every render file
 // on each visit. The summary is now pure aggregates and the lists are paged.
@@ -114,6 +116,56 @@ describe("usageSummary", () => {
 
     await prisma.track.delete({ where: { id: legacy.id } });
     await removePath(rel);
+  });
+});
+
+describe("usageSummary.studio (T10)", () => {
+  it("is all zeros for an account without Studio data", async () => {
+    const other = await prisma.user.create({ data: { email: EMAIL_OTHER, passwordHash: "x" } });
+    try {
+      expect((await usageSummary(other.id)).studio).toEqual({
+        projects: 0,
+        revisions: 0,
+        snapshots: 0,
+        bytes: 0,
+        jobs: 0,
+        resultBytes: 0,
+      });
+    } finally {
+      await prisma.user.delete({ where: { id: other.id } });
+    }
+  });
+
+  it("counts the account's projects, jobs and result bytes", async () => {
+    const project = await createStudioProject(userId, {
+      document: createVideoDocument({ kind: "top", participants: [{ id: "a", label: "A" }] }),
+    });
+    const jobs = await Promise.all(
+      [1000, 234].map((outputBytes) =>
+        prisma.studioJob.create({
+          data: {
+            userId,
+            projectId: project.id,
+            kind: "still",
+            engineId: "account-test",
+            inputJson: "{}",
+            status: "done",
+            outputBytes,
+          },
+        }),
+      ),
+    );
+    try {
+      const { studio } = await usageSummary(userId);
+      expect(studio).toMatchObject({ projects: 1, revisions: 1, jobs: 2, resultBytes: 1234 });
+      expect(Object.keys(studio).sort()).toEqual(
+        ["bytes", "jobs", "projects", "resultBytes", "revisions", "snapshots"],
+      );
+    } finally {
+      await prisma.studioJob.deleteMany({ where: { id: { in: jobs.map((j) => j.id) } } });
+      await deleteStudioProject(userId, project.id);
+      await removePath(`studio/${userId}`);
+    }
   });
 });
 

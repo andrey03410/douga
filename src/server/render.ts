@@ -2,7 +2,7 @@ import "server-only";
 import path from "node:path";
 import { mkdir, copyFile, stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
-import { absPath, renderOutputPath, STORAGE_ROOT } from "@/lib/storage";
+import { absPath, removePath, renderOutputPath, STORAGE_ROOT } from "@/lib/storage";
 import {
   clipAudio,
   clipVideo,
@@ -25,6 +25,13 @@ import {
   type PoolMediaInfo,
 } from "@/lib/domain/position-media";
 import { renderJobDto, type RenderJobDto } from "@/lib/domain/render-jobs";
+import {
+  completeRenderJob,
+  failRenderJob,
+  failStaleRenderJobs,
+  RENDER_HEARTBEAT_MS,
+  touchRenderJob,
+} from "@/server/render-jobs";
 
 /**
  * Render jobs of one tournament or project (newest first), as UI DTOs.
@@ -35,6 +42,7 @@ export async function listRenderJobs(
   owner: { tournamentId: string } | { projectId: string },
   take = 20,
 ): Promise<RenderJobDto[]> {
+  await failStaleRenderJobs(userId);
   const jobs = await prisma.renderJob.findMany({
     where:
       "tournamentId" in owner
@@ -304,12 +312,7 @@ async function queueTopRender(owner: { tournamentId?: string; projectId?: string
     data: { ...owner, status: "queued", progress: 0 },
   });
   // Fire-and-forget: render in the background, report progress via the job row.
-  void runRender(job.id).catch(async (err) => {
-    await prisma.renderJob.update({
-      where: { id: job.id },
-      data: { status: "failed", error: describeRenderError(err) },
-    });
-  });
+  void runRender(job.id).catch((err) => failRenderJob(job.id, describeRenderError(err)));
   return job.id;
 }
 
@@ -321,7 +324,37 @@ async function setProgress(jobId: string, progress: number) {
     .catch(() => {});
 }
 
-async function runRender(jobId: string): Promise<void> {
+/** Storage-relative scratch dir of a render job (Remotion's publicDir lives inside). */
+export function renderTmpDir(jobId: string): string {
+  return path.join("renders", "tmp", jobId);
+}
+
+/**
+ * Supervise a render job: a heartbeat keeps the row fresh through phases that
+ * write no progress (so failStaleRenderJobs never takes a live render for an
+ * orphan), and the scratch dir is dropped afterwards, on success and on
+ * failure; the finished MP4 lives outside it (renderOutputPath). Cleanup is
+ * best effort, so it never fails a finished job nor masks the render's error.
+ */
+export async function withRenderJob(
+  jobId: string,
+  run: () => Promise<void>,
+  heartbeatMs = RENDER_HEARTBEAT_MS,
+): Promise<void> {
+  const heartbeat = setInterval(() => void touchRenderJob(jobId), heartbeatMs);
+  try {
+    await run();
+  } finally {
+    clearInterval(heartbeat);
+    await removePath(renderTmpDir(jobId)).catch(() => {});
+  }
+}
+
+function runRender(jobId: string): Promise<void> {
+  return withRenderJob(jobId, () => renderTop(jobId));
+}
+
+async function renderTop(jobId: string): Promise<void> {
   const job = await prisma.renderJob.findUnique({ where: { id: jobId } });
   if (!job) return;
   await prisma.renderJob.update({
@@ -338,7 +371,7 @@ async function runRender(jobId: string): Promise<void> {
   if (!config) throw new Error("NO_CONFIG");
 
   // 1) Prepare assets in a per-job public dir for Remotion's staticFile().
-  const publicDir = absPath(path.join("renders", "tmp", jobId, "public"));
+  const publicDir = absPath(path.join(renderTmpDir(jobId), "public"));
   await mkdir(publicDir, { recursive: true });
 
   const assembleItems: AssembleItem[] = [];
@@ -523,10 +556,7 @@ async function runRender(jobId: string): Promise<void> {
   });
 
   const { size } = await stat(outputLocation);
-  await prisma.renderJob.update({
-    where: { id: jobId },
-    data: { status: "done", progress: 1, outputPath: outputRel, outputBytes: size },
-  });
+  await completeRenderJob(jobId, { outputPath: outputRel, outputBytes: size });
 }
 
 export { STORAGE_ROOT };

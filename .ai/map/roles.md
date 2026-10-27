@@ -6,7 +6,8 @@
 - [`src/lib/domain/permissions.ts`](../../src/lib/domain/permissions.ts) — матрица `ROLES` (права и квоты), функции `can`, `quotasFor`, `canCreateTournament`, `fitsPoolQuota`, список `ASSIGNABLE_ROLES`. Это единственное место, где сравниваются имена ролей.
 - [`src/auth.ts`](../../src/auth.ts) — Auth.js v5 с Credentials (email и пароль через bcrypt). JWT хранит только `id`, а `requireUser` и `currentUser` читают `{id, email, role}` из БД.
 - [`src/app/login/actions.ts`](../../src/app/login/actions.ts) — `loginAction` и `registerAction`: регистрация открытая, пароль от 6 символов, новый аккаунт получает роль `user`.
-- [`src/server/roles.ts`](../../src/server/roles.ts) — `adminEmails()` и `ensureAdminRole()`, бутстрап админа из `ADMIN_EMAILS`.
+- [`src/server/roles.ts`](../../src/server/roles.ts) — `adminEmails()`, `isBootstrapAdmin()` и `ensureAdminRole()`, бутстрап админа из `ADMIN_EMAILS`.
+- [`src/server/accounts.ts`](../../src/server/accounts.ts) — `findUserByEmail` (единственный поиск по email), `registerAccount`, `verifyCredentials`.
 - [`src/lib/api.ts`](../../src/lib/api.ts) — `userOr401`, `permissionOr403(perm, msg)` и готовые ответы 403/413/404.
 - [`src/server/users.ts`](../../src/server/users.ts):
   - кабинет: `usageSummary` (агрегаты плюс бэкфилл размеров), `listArchiveRows`, `listRenderRows` (с курсором), `deleteRenderJob`;
@@ -43,23 +44,24 @@
   - в студии `jobActor` требует `render:run` для `kind: "render"` при постановке задания и ещё раз, когда воркер его берёт;
   - превью still/clip/audio доступны любому автору: не больше 4 активных заданий, а у ролей без `render:run` все результаты вместе не больше 512 MiB.
 - Страницы:
-  - гость на `/` видит приветственный экран, пользователя с сессией `/` перенаправляет на `/tournaments`;
+  - гость на `/` видит приветственный экран, пользователя с сессией `/` и вход перенаправляют на `/projects` («Мои видео»);
   - остальные страницы без сессии перенаправляют на `/` (студия — на `/login`), API отвечает 401;
   - `/admin` без права отдаёт 404, а не 403.
 - Кабинет:
   - `usageSummary` считает всё агрегатами (`groupBy`, `aggregate`), а списки загружаются только по «Показать все»;
   - при каждом заходе `backfillSizes` дописывает `sizeBytes` и `outputBytes` в старые строки;
-  - API отдаёт ещё и сводку `studio`, но интерфейс её не показывает.
+  - блок «Студия» показывает сводку `usageSummary().studio`: проекты, ревизии, медиа ревизий, задания, снимки, объём результатов.
 - Админка:
   - менять роль или удалять самого себя нельзя: `SELF_CHANGE` даёт 403;
-  - `deleteUser` сначала в транзакции удаляет строки БД, потом файлы: `tournaments/<id>`, рендеры, `arts/<userId>`, `studio/<userId>`, `studio-jobs/<userId>`.
-- MCP: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL` с точным совпадением. Пароль не нужен, email должен совпадать с веб-аккаунтом. Каждый вызов заново читает роль по id и требует `media:upload`, подробнее в [mcp.md](mcp.md).
+  - `deleteUser` сначала в транзакции удаляет строки БД, потом файлы: `tournaments/<id>`, рендеры, `arts/<userId>`, `studio/<userId>`, `studio-jobs/<userId>`. Общие движки `studio-engines` не трогаются;
+  - активное SDK-задание блокирует удаление с `JOB_IN_USE` (409). Активное — по правилу `deleteStudioJob`: `queued`/`running` или `leaseUntil > now`. Завершённые задания транзакция удаляет сама, раньше снимков и проектов, потому что у них `onDelete: Restrict`;
+  - email из `ADMIN_EMAILS` понизить нельзя: `setUserRole` бросает `ADMIN_BOOTSTRAP` → 409 с советом убрать email из `.env`. `listUsers` отдаёт флаг `bootstrapAdmin`, а админка показывает метку «из ADMIN_EMAILS» и не предлагает понижение.
+- Email: новые аккаунты хранят его обрезанным и в нижнем регистре, старые строки не переписываются. Любой поиск по email — вход (`authorize` → `verifyCredentials`), проверка дубля при регистрации, MCP `resolveActor` — идёт через `findUserByEmail`. Поиск — `lower(email) = ? OR email = ?` сырым SQL. Кандидаты упорядочены: сначала набранный точно, потом канонический в нижнем регистре, потом старые варианты регистра от старых к новым. `verifyCredentials` перебирает их, и вход решает пароль, так что старый `Bob@x` входит, даже если рядом живёт `bob@x`. `Foo@x` при живом `foo@x` не зарегистрировать. SQLite `lower()` сворачивает только ASCII: старый адрес с не-ASCII заглавной находится лишь при точном наборе.
+- MCP: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL` через `findUserByEmail`, регистр не важен. Пароль не нужен, email должен совпадать с веб-аккаунтом. Каждый вызов заново читает роль по id и требует `media:upload`, подробнее в [mcp.md](mcp.md).
 
 ## Грабли
 - Новые проверки пиши только через `can()`, `quotasFor()` и `permissionOr403()`, имя роли напрямую не сравнивай. Новая роль добавляется одной записью в `ROLES`.
-- `ADMIN_EMAILS` срабатывает только при входе и регистрации. Добавленный email при живой сессии станет админом только после перелогина. Если такого админа понизить в админке, при следующем входе он снова станет админом.
-- Регистрация не приводит email к нижнему регистру, а вход и `resolveActor` ищут точное совпадение. `User@x` и `user@x` — это разные аккаунты.
-- `deleteUser` отказывает с `JOB_IN_USE` (409), если у аккаунта есть хоть одно SDK-задание в любом статусе.
+- `ADMIN_EMAILS` срабатывает только при входе и регистрации. Добавленный email при живой сессии станет админом только после перелогина. Чтобы понизить такого админа, сначала убери его email из `ADMIN_EMAILS`.
 - Спека 05 и комментарий в `src/app/api/tournaments/route.ts` называют лимит архива админа 2 ГБ, а в матрице 10 ГБ. Верь коду.
 - `RenderJob` общий для турниров и проектов, поэтому фильтр владения прежних рендеров пишется как `OR: [{tournament:{userId}}, {project:{userId}}]`.
 - Смена роли не трогает уже загруженные файлы. Новые загрузки блокируются, пока занятое место не станет меньше лимита или равно ему.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { userOr401, permissionOr403, badRequest } from "@/lib/api";
 import { quotasFor } from "@/lib/domain/permissions";
-import { listDownloads, startDownload } from "@/server/downloads";
+import { describeStartRefusal, listDownloads, startDownload } from "@/server/downloads";
 
 function serialize(j: {
   id: string;
@@ -53,11 +53,8 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: job.id });
   } catch (e) {
-    const msg = (e as Error).message;
-    if (msg === "BAD_URL") return badRequest("Вставьте корректную http(s)-ссылку на видео");
-    if (msg === "BAD_QUALITY") return badRequest("Качество: 480, 720 или 1080");
-    if (msg === "TOO_MANY_ACTIVE")
-      return badRequest("Не больше двух одновременных загрузок — дождитесь завершения");
+    const refusal = describeStartRefusal((e as Error).message);
+    if (refusal) return badRequest(refusal);
     throw e;
   }
 }

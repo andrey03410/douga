@@ -19,7 +19,8 @@ export async function POST(req: Request) {
   );
   if ("response" in auth) return auth.response;
 
-  // Archive ceiling depends on the role (100 MB for users, 2 GB for admins).
+  // Archive ceiling depends on the role: ROLES[role].quotas.maxArchiveBytes in
+  // lib/domain/permissions.ts (no numbers here, so this can't drift).
   // Checked twice: Content-Length up front (cheap), then the actual body size
   // below — a understated header must not bypass the quota.
   const maxArchiveBytes = quotasFor(auth.user.role).maxArchiveBytes;

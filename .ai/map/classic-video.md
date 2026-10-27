@@ -7,8 +7,8 @@
 - [`src/server/manual-top.ts`](../../src/server/manual-top.ts) — `setTopItems`: атомарная замена всего ручного топа. Вызывает только MCP `set_top_items`
 - [`src/server/render-items.ts`](../../src/server/render-items.ts) — `patchRenderItem`: арт позиции, кроп, `audioSource`, `mediaStartSec`, сброс RMS-кэша. Общий для турнира и ручного топа
 - [`src/server/render-config-dto.ts`](../../src/server/render-config-dto.ts) — DTO конфига для `RenderConstructor` (одна форма для обоих топов)
-- [`src/server/picker-render.ts`](../../src/server/picker-render.ts) — `buildPickerPreviewPlan`, `bookends`, `roundIsRenderable`/`invalidRounds`, рендер пикера
-- [`src/lib/domain/video-plan.ts`](../../src/lib/domain/video-plan.ts), [`picker-plan.ts`](../../src/lib/domain/picker-plan.ts) — чистые таймлайны топа и пикера; одни и те же для Player и рендера
+- [`src/server/picker-render.ts`](../../src/server/picker-render.ts) — `buildPickerPreviewPlan`, `bookends`, `invalidRounds`, рендер пикера
+- [`src/lib/domain/video-plan.ts`](../../src/lib/domain/video-plan.ts), [`picker-plan.ts`](../../src/lib/domain/picker-plan.ts) — чистые таймлайны топа и пикера; одни и те же для Player и рендера. В `picker-plan.ts` живёт `roundIsRenderable` — единое правило пригодности раунда
 - [`src/lib/domain/picker-layout.ts`](../../src/lib/domain/picker-layout.ts) — `pickerLayout` (2–9 плиток, «Ростер» 2:3), `groupLayout`, `effectiveOrientation`
 - [`src/lib/domain/position-media.ts`](../../src/lib/domain/position-media.ts) — что показывает и чем звучит позиция, `resolveFootage` (луп короткого видео); [`art-crop.ts`](../../src/lib/domain/art-crop.ts) — кроп и `fitMode`
 - Композиции: [`TopVideo.tsx`](../../src/remotion/TopVideo.tsx), [`PickerVideo.tsx`](../../src/remotion/PickerVideo.tsx) (таймер-кольцо, VS, подсветка ответа, плейлист), [`TitleCard.tsx`](../../src/remotion/TitleCard.tsx) (интро/аутро обоих)
@@ -35,7 +35,8 @@
 ## Грабли
 - Лимиты есть только у классики: плиток 2–9, блоков 2–3, карточек в блоке 1–5 (≤ 15), раундов ≤ 50, треков плейлиста ≤ 50, `revealSec`/`timerSec` 1–60, текст титров ≤ 120, позиций `set_top_items` 1–200. В SDK (`src/video`) их не переносить.
 - Смена эффективной ориентации (у проекта или раунда) сбрасывает кропы плиток затронутых раундов.
-- Превью и рендер расходятся на неполных раундах. Раунд с одной плиткой виден в превью, а рендер отвечает `ROUND_TOO_SMALL`. Групповой раунд с пустым блоком из превью пропадает, рендер тоже откажет. Пустые раунды выпадают молча. Подсказка UI — `invalidRounds` в `GET /api/projects/[id]`.
+- Пригодность раунда задаёт одно правило `roundIsRenderable` из `picker-plan.ts`: раунду `single` нужно не меньше двух плиток, групповому — не меньше двух блоков, и ни один не пустой. По нему работают превью, проверка `ROUND_TOO_SMALL` при старте рендера, цикл рендера и подсказки конструктора. Превью пропускает ровно те раунды, на которых рендер откажет.
+- `invalidRounds` (доменная `unrenderableRounds`) перечисляет раунды с карточками, которые блокируют рендер. Пустые раунды в него не входят: они выпадают молча. Конструктор показывает предупреждение в панели превью и под кнопкой «🎬 Рендерить видео». MCP `get_project` считает `durationSec` по тому же правилу.
 - `round.tiles` включает и карточки блоков (`roundId` есть у всех). «Плоские» плитки — `!groupId`.
 - `RenderConstructor` лежит в зоне турнира, но обслуживает и ручной топ: правка задевает оба.
 - `GET …/render/config` и `get_project` топа запускают RMS-анализ позиций без кэша; первый вызов может идти минуты.

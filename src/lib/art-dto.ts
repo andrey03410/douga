@@ -29,7 +29,14 @@ export function artDto(a: ArtDtoInput) {
     sizeBytes: a.sizeBytes ?? null,
     usage:
       a.usage ??
-      { positions: 0, cards: 0, playlist: 0, backgrounds: 0, total: a.usageCount ?? 0 },
+      {
+        positions: 0,
+        audioPositions: 0,
+        cards: 0,
+        playlist: 0,
+        backgrounds: 0,
+        total: a.usageCount ?? 0,
+      },
     usageCount: a.usageCount ?? 0,
     lastUsedAt: a.lastUsedAt ?? null,
     createdAt: a.createdAt ?? null,

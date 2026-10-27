@@ -3,11 +3,13 @@ import { userOr401, notFound, badRequest } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { deleteRenderJob } from "@/server/users";
 import { renderJobDto } from "@/lib/domain/render-jobs";
+import { failStaleRenderJobs } from "@/server/render-jobs";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await userOr401();
   if ("response" in auth) return auth.response;
 
+  await failStaleRenderJobs(auth.userId);
   const job = await prisma.renderJob.findFirst({
     where: {
       id: params.id,

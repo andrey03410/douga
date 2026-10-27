@@ -125,6 +125,7 @@ const terminalErrors = new Set([
   "POOL_QUOTA",
   "IMPORT_DURATION_EXCEEDED",
   "IMPORT_MEDIA_INVALID",
+  "BLOCKED_HOST",
 ]);
 export async function runStudioWorkerOnce(
   options: { jobId?: string; workerId?: string } = {},

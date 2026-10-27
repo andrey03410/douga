@@ -1,11 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { absPath, removePath, saveFile } from "@/lib/storage";
 import { createTournament, deleteTournament } from "@/server/tournaments";
 import { createArt, poolUsageBytes } from "@/server/arts";
 import { ensureAdminRole } from "@/server/roles";
+import {
+  findUserByEmail,
+  normalizeEmail,
+  registerAccount,
+  verifyCredentials,
+} from "@/server/accounts";
 import {
   usageSummary,
   listArchiveRows,
@@ -22,7 +29,38 @@ import type { ExtractedTrack } from "@/lib/upload";
 const EMAIL_USER = "integration-roles-user@test.local";
 const EMAIL_ADMIN = "integration-roles-admin@test.local";
 const EMAIL_VICTIM = "integration-roles-victim@test.local";
-const ALL_EMAILS = [EMAIL_USER, EMAIL_ADMIN, EMAIL_VICTIM];
+// T08: registration stores lowercase; legacy rows may still be mixed-case.
+const EMAIL_NEW = "integration-roles-new@test.local";
+const EMAIL_LEGACY = "Integration-Roles-Legacy@Test.Local";
+const EMAIL_TWIN_A = "Integration-Roles-Twin@test.local";
+const EMAIL_TWIN_B = "INTEGRATION-ROLES-TWIN@test.local";
+const ALL_EMAILS = [
+  EMAIL_USER,
+  EMAIL_ADMIN,
+  EMAIL_VICTIM,
+  EMAIL_NEW,
+  EMAIL_LEGACY,
+  EMAIL_TWIN_A,
+  EMAIL_TWIN_B,
+];
+
+// The admin route resolves the actor through @/auth; tests pick the session.
+const session = vi.hoisted(() => ({ id: "" }));
+vi.mock("@/auth", async () => {
+  const { prisma } = await import("@/lib/db");
+  return {
+    requireUser: async () => {
+      const user = session.id
+        ? await prisma.user.findUnique({
+            where: { id: session.id },
+            select: { id: true, email: true, role: true },
+          })
+        : null;
+      if (!user) throw new Error("UNAUTHENTICATED");
+      return user;
+    },
+  };
+});
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -331,5 +369,161 @@ describe("admin user management", () => {
     expect(existsSync(absPath(path.join("tournaments", t.id)))).toBe(false);
     expect(existsSync(absPath(path.join("arts", victim.id)))).toBe(false);
     expect(existsSync(absPath(outRel))).toBe(false);
+  });
+});
+
+describe("ADMIN_EMAILS vs. demotion (T07)", () => {
+  const prev = process.env.ADMIN_EMAILS;
+  afterEach(async () => {
+    process.env.ADMIN_EMAILS = prev;
+    await prisma.user.update({ where: { id: userId }, data: { role: "user" } });
+  });
+
+  it("refuses to demote an email listed in ADMIN_EMAILS and flags it in listUsers", async () => {
+    await prisma.user.update({ where: { id: userId }, data: { role: "admin" } });
+    process.env.ADMIN_EMAILS = ` other@x.y , ${EMAIL_USER.toUpperCase()} `;
+
+    await expect(setUserRole(adminId, userId, "user")).rejects.toThrow("ADMIN_BOOTSTRAP");
+    const kept = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(kept.role).toBe("admin");
+    // keeping the admin role is not a demotion
+    expect((await setUserRole(adminId, userId, "admin")).role).toBe("admin");
+
+    const rows = await listUsers();
+    expect(rows.find((r) => r.id === userId)?.bootstrapAdmin).toBe(true);
+    expect(rows.find((r) => r.id === adminId)?.bootstrapAdmin).toBe(false);
+
+    // once the email leaves ADMIN_EMAILS the demotion goes through
+    process.env.ADMIN_EMAILS = "other@x.y";
+    expect((await setUserRole(adminId, userId, "user")).role).toBe("user");
+    expect((await listUsers()).find((r) => r.id === userId)?.bootstrapAdmin).toBe(false);
+  });
+
+  it("the admin API answers 409 ADMIN_BOOTSTRAP with a hint to edit .env", async () => {
+    const { PATCH } = await import("@/app/api/admin/users/[id]/route");
+    await prisma.user.update({ where: { id: userId }, data: { role: "admin" } });
+    process.env.ADMIN_EMAILS = EMAIL_USER;
+    session.id = adminId;
+    try {
+      const res = await PATCH(
+        new Request("http://localhost", {
+          method: "PATCH",
+          body: JSON.stringify({ role: "user" }),
+        }),
+        { params: { id: userId } },
+      );
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.code).toBe("ADMIN_BOOTSTRAP");
+      expect(body.error).toContain("ADMIN_EMAILS");
+      expect(body.error).toContain(".env");
+      const kept = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(kept.role).toBe("admin");
+    } finally {
+      session.id = "";
+    }
+  });
+});
+
+describe("email case (T08)", () => {
+  afterEach(async () => {
+    await prisma.user.deleteMany({
+      where: { email: { in: [EMAIL_NEW, EMAIL_LEGACY, EMAIL_TWIN_A, EMAIL_TWIN_B] } },
+    });
+  });
+
+  it("normalizeEmail trims and lowercases", () => {
+    expect(normalizeEmail("  Foo.Bar@Example.COM ")).toBe("foo.bar@example.com");
+  });
+
+  it("registration stores the email lowercased and refuses a case-only duplicate", async () => {
+    const created = await registerAccount(`  ${EMAIL_NEW.toUpperCase()} `, "secret1");
+    expect(created.email).toBe(EMAIL_NEW);
+    expect(created.role).toBe("user");
+    expect(await bcrypt.compare("secret1", created.passwordHash)).toBe(true);
+
+    await expect(registerAccount(EMAIL_NEW, "secret2")).rejects.toThrow("EMAIL_TAKEN");
+    await expect(
+      registerAccount("Integration-Roles-NEW@test.local", "secret2"),
+    ).rejects.toThrow("EMAIL_TAKEN");
+    expect(
+      await prisma.user.count({ where: { email: { in: [EMAIL_NEW] } } }),
+    ).toBe(1);
+
+    // login with any case finds the lowercased row
+    const user = await verifyCredentials(EMAIL_NEW.toUpperCase(), "secret1");
+    expect(user?.id).toBe(created.id);
+    expect(await verifyCredentials(EMAIL_NEW, "wrong-pass")).toBeNull();
+  });
+
+  it("registration elevates an ADMIN_EMAILS address regardless of case", async () => {
+    const prev = process.env.ADMIN_EMAILS;
+    process.env.ADMIN_EMAILS = EMAIL_NEW.toUpperCase();
+    try {
+      const created = await registerAccount(EMAIL_NEW, "secret1");
+      expect(created.role).toBe("admin");
+      const stored = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+      expect(stored.role).toBe("admin");
+    } finally {
+      process.env.ADMIN_EMAILS = prev;
+    }
+  });
+
+  it("a legacy mixed-case row still signs in and blocks a lowercase re-registration", async () => {
+    const legacy = await prisma.user.create({
+      data: { email: EMAIL_LEGACY, passwordHash: await bcrypt.hash("legacy1", 4) },
+    });
+
+    expect((await findUserByEmail(EMAIL_LEGACY.toLowerCase()))?.id).toBe(legacy.id);
+    expect((await findUserByEmail(EMAIL_LEGACY.toUpperCase()))?.id).toBe(legacy.id);
+    expect((await findUserByEmail(` ${EMAIL_LEGACY} `))?.id).toBe(legacy.id);
+    expect(await findUserByEmail("integration-roles-nobody@test.local")).toBeNull();
+
+    expect((await verifyCredentials(EMAIL_LEGACY.toLowerCase(), "legacy1"))?.id).toBe(
+      legacy.id,
+    );
+    expect(await verifyCredentials(EMAIL_LEGACY.toLowerCase(), "nope")).toBeNull();
+
+    await expect(
+      registerAccount(EMAIL_LEGACY.toLowerCase(), "secret1"),
+    ).rejects.toThrow("EMAIL_TAKEN");
+    // the existing row is not rewritten
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(stored.email).toBe(EMAIL_LEGACY);
+  });
+
+  it("two legacy rows differing only in case: the exactly typed one wins", async () => {
+    const a = await prisma.user.create({ data: { email: EMAIL_TWIN_A, passwordHash: "x" } });
+    const b = await prisma.user.create({ data: { email: EMAIL_TWIN_B, passwordHash: "x" } });
+    expect((await findUserByEmail(EMAIL_TWIN_A))?.id).toBe(a.id);
+    expect((await findUserByEmail(EMAIL_TWIN_B))?.id).toBe(b.id);
+    // no exact hit: deterministic, the oldest account
+    expect((await findUserByEmail("integration-roles-twin@TEST.local"))?.id).toBe(a.id);
+  });
+
+  it("a legacy mixed-case account signs in although a lowercase twin exists", async () => {
+    const legacy = await prisma.user.create({
+      data: { email: "Integration-Roles-Bob@Test.Local", passwordHash: await bcrypt.hash("bob-old", 4) },
+    });
+    const twin = await prisma.user.create({
+      data: { email: "integration-roles-bob@test.local", passwordHash: await bcrypt.hash("bob-new", 4) },
+    });
+    try {
+      // typed exactly: that row wins
+      expect((await findUserByEmail("Integration-Roles-Bob@Test.Local"))?.id).toBe(legacy.id);
+      // typed in another case: each owner still gets in with their own password
+      expect((await verifyCredentials("INTEGRATION-ROLES-BOB@test.local", "bob-old"))?.id).toBe(
+        legacy.id,
+      );
+      expect((await verifyCredentials("integration-roles-bob@test.local", "bob-old"))?.id).toBe(
+        legacy.id,
+      );
+      expect((await verifyCredentials("integration-roles-bob@test.local", "bob-new"))?.id).toBe(
+        twin.id,
+      );
+      expect(await verifyCredentials("integration-roles-bob@test.local", "wrong")).toBeNull();
+    } finally {
+      await prisma.user.deleteMany({ where: { id: { in: [legacy.id, twin.id] } } });
+    }
   });
 });
