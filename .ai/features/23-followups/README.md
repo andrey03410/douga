@@ -2,11 +2,11 @@
 id: 23
 title: Хвосты после переименования — SSRF yt-dlp, рендер, роли, мёртвый код
 track: tech
-stage: review
+stage: merged
 branch: fix/23-followups
-pr:
+pr: https://github.com/andrey03410/douga/pull/4
 started: 2026-10-27
-merged:
+merged: 2026-10-27
 ---
 
 # 23. Хвосты после переименования
@@ -25,8 +25,8 @@ merged:
 - [x] Техника — [tech.md](tech.md)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
-- [ ] Проверка владельцем (автономный режим: гейт снят владельцем)
-- [ ] Влито
+- [x] Проверка владельцем (автономный режим: гейт снят владельцем)
+- [x] Влито
 
 ## Хвосты
 
