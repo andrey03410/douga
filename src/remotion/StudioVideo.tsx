@@ -28,6 +28,7 @@ import {
   mediaFrameAt,
   mediaLayout,
   nativePlaybackAt,
+  playerAudioSync,
   playerMediaSync,
   transitionAt,
 } from "./studio-frame";
@@ -378,14 +379,13 @@ const AudioCue: React.FC<{ cue: CompiledAudio; mode: AssetMode }> = ({
   mode,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
   const audio = (
     <Audio
       src={resolveAsset(cue.asset.src, mode)}
       startFrom={cue.offsetFrames}
       endAt={cue.offsetFrames + (cue.loopFrames ?? cue.durationInFrames)}
       volume={() => audioVolumeAt(cue, cue.from + frame)}
-      {...playerMediaSync(fps)}
+      {...playerAudioSync()}
     />
   );
   // The envelope closes over cue-local time outside Loop: it never resets with
