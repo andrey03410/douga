@@ -6,6 +6,7 @@ import { absPath, removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video";
 import { createArt, deleteArt } from "@/server/arts";
 import { studioJobLimits } from "@/server/studio/job-types";
+import { exportCommitGate } from "@/server/studio/export-slice";
 import * as studio from "@/server/studio";
 
 let owner: string;
@@ -153,5 +154,104 @@ describe("html export", () => {
     await studio.deleteStudioProject(owner, created.id, { idempotencyKey: randomUUID() });
     expect(await prisma.studioExportCache.count({ where: { projectId: created.id } })).toBe(0);
     await expect(readFile(absPath(soundCache!.relativePath))).rejects.toThrow();
+  });
+
+  it("lets only one of two simultaneous exports pass a tight quota", async () => {
+    const image = await createArt(owner, { fileName: "race.png", data: png });
+    const make = async (title: string) => {
+      const document = createVideoDocument({
+        kind: "top",
+        title,
+        participants: [{ id: "object", label: "Стул" }],
+      });
+      document.bindings.image = { kind: "pool", assetId: image.id };
+      document.source.participants[0].media = { visual: "image" };
+      document.settings.top = { ...document.settings.top, durationSec: 0.4 };
+      return studio.createStudioProject(owner, {
+        document,
+        idempotencyKey: randomUUID(),
+      });
+    };
+    const probe = await make("Проба");
+    await studio.estimateStudioExport(owner, probe.id);
+    const learned =
+      (
+        await prisma.studioExportCache.aggregate({
+          where: { projectId: probe.id },
+          _sum: { bytes: true },
+        })
+      )._sum.bytes ?? 0;
+    expect(learned).toBeGreaterThan(0);
+    await studio.deleteStudioProject(owner, probe.id, {
+      idempotencyKey: randomUUID(),
+    });
+    const used =
+      (
+        await prisma.studioExportCache.aggregate({
+          where: { userId: owner },
+          _sum: { bytes: true },
+        })
+      )._sum.bytes ?? 0;
+    const holder = await make("Держатель");
+    const revision = await prisma.studioRevision.findFirstOrThrow({
+      where: { projectId: holder.id },
+    });
+    await prisma.studioExportCache.create({
+      data: {
+        userId: owner,
+        projectId: holder.id,
+        revisionId: revision.id,
+        key: `race-${randomUUID()}`,
+        bytes: studioJobLimits.maxResultBytesPerAccount - used - learned,
+        relativePath: `studio-exports/${owner}/race-marker`,
+      },
+    });
+    const left = await make("Левый");
+    const right = await make("Правый");
+    let releaseFirst: (() => void) | null = null;
+    let entered = 0;
+    const firstInside = new Promise<void>((resolve) => {
+      exportCommitGate.wait = async () => {
+        entered += 1;
+        if (entered === 1) {
+          resolve();
+          await new Promise<void>((done) => {
+            releaseFirst = done;
+          });
+        }
+      };
+    });
+    try {
+      const pending = Promise.allSettled([
+        studio.estimateStudioExport(owner, left.id),
+        studio.estimateStudioExport(owner, right.id),
+      ]);
+      await Promise.race([
+        firstInside,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("export lock was not taken")), 20000),
+        ),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(entered).toBe(1);
+      releaseFirst?.();
+      const settled = await pending;
+      const denied = settled.filter((item) => item.status === "rejected");
+      expect(denied).toHaveLength(1);
+      expect(String((denied[0] as PromiseRejectedResult).reason)).toContain(
+        "EXPORT_QUOTA_EXCEEDED",
+      );
+      const total =
+        (
+          await prisma.studioExportCache.aggregate({
+            where: { userId: owner },
+            _sum: { bytes: true },
+          })
+        )._sum.bytes ?? 0;
+      expect(total).toBeLessThanOrEqual(studioJobLimits.maxResultBytesPerAccount);
+    } finally {
+      exportCommitGate.wait = null;
+      releaseFirst?.();
+    }
   });
 });

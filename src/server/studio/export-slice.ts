@@ -44,6 +44,11 @@ function fileFor(files: Record<string, StudioFile>, digest: string) {
   return Object.values(files).find((file) => file.hash === digest) ?? null;
 }
 
+/** Test seam. While set, an export transaction waits here after taking the quota lock. */
+export const exportCommitGate: { wait: null | (() => Promise<void>) } = {
+  wait: null,
+};
+
 async function assertExportRoom(userId: string, additional: number, db: Db = prisma) {
   if (additional <= 0) return;
   const user = await actor(userId, db);
@@ -180,19 +185,31 @@ export async function materializeSlices(input: {
       if (placed.fresh) pending.push(placed);
       else assets.push(placed);
     }
-    await assertExportRoom(
-      input.userId,
-      pending.reduce((sum, item) => sum + item.bytes, 0),
-    );
-    for (const item of pending) {
-      try {
-        await rename(absPath(item.partial), absPath(item.relative));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-      let row;
-      try {
-        row = await prisma.studioExportCache.create({
+    if (pending.length) await prisma.$transaction(async (db) => {
+      // A write lock makes a second export wait until this quota check commits.
+      const locked = await db.$executeRaw`
+        UPDATE "User" SET "id" = "id" WHERE "id" = ${input.userId}
+      `;
+      if (locked !== 1) throw new StudioError("NOT_FOUND");
+      const existing = await db.studioExportCache.findMany({
+        where: { key: { in: pending.map((item) => item.key) } },
+      });
+      const have = new Map(existing.map((row) => [row.key, row]));
+      const fresh = pending.filter((item) => !have.has(item.key));
+      await assertExportRoom(
+        input.userId,
+        fresh.reduce((sum, item) => sum + item.bytes, 0),
+        db,
+      );
+      if (exportCommitGate.wait) await exportCommitGate.wait();
+      const stored = new Map(have);
+      for (const item of fresh) {
+        try {
+          await rename(absPath(item.partial), absPath(item.relative));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        const row = await db.studioExportCache.create({
           data: {
             userId: input.userId,
             projectId: input.projectId,
@@ -202,20 +219,23 @@ export async function materializeSlices(input: {
             relativePath: item.relative,
           },
         });
-      } catch (error) {
-        if ((error as { code?: string }).code !== "P2002") throw error;
-        row = await prisma.studioExportCache.findUniqueOrThrow({
-          where: { key: item.key },
+        stored.set(item.key, row);
+      }
+      for (const item of pending) {
+        const row = stored.get(item.key);
+        if (!row) throw new StudioError("ASSET_FILE_MISSING");
+        await safeFile(row.relativePath);
+        assets.push({
+          id: item.id,
+          mime: studioMimeType(row.relativePath),
+          relativePath: row.relativePath,
+          bytes: row.bytes,
         });
       }
-      await safeFile(row.relativePath);
-      assets.push({
-        id: item.id,
-        mime: studioMimeType(row.relativePath),
-        relativePath: row.relativePath,
-        bytes: row.bytes,
-      });
-    }
+    });
+    await Promise.all(
+      pending.map((item) => rm(absPath(item.partial), { force: true })),
+    );
     const offline = applySlices(input.plan);
     const dumped = JSON.stringify(offline);
     if (/https?:\/\//.test(dumped) || dumped.includes("/api/"))
@@ -223,7 +243,13 @@ export async function materializeSlices(input: {
     return { plan: offline, assets };
   } catch (error) {
     await Promise.all(
-      pending.map((item) => rm(absPath(item.partial), { force: true })),
+      pending.map(async (item) => {
+        await rm(absPath(item.partial), { force: true });
+        const row = await prisma.studioExportCache.findUnique({
+          where: { key: item.key },
+        });
+        if (!row) await rm(absPath(item.relative), { force: true });
+      }),
     );
     throw error;
   }

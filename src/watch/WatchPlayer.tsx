@@ -233,6 +233,7 @@ function WatchChrome({
       className={idle ? "watch-stage is-idle" : "watch-stage"}
       style={{ ["--aspect" as string]: String(plan.width / plan.height) }}
       onPointerMove={wake}
+      onPointerDown={wake}
       tabIndex={0}
     >
       <div className="watch-canvas">

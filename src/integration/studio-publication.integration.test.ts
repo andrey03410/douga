@@ -5,6 +5,7 @@ import { removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video";
 import { deleteUser } from "@/server/users";
 import * as studio from "@/server/studio";
+import { publishTestHooks } from "@/server/studio/publication";
 
 let owner: string;
 let other: string;
@@ -231,6 +232,34 @@ describe("studio publication", () => {
         (row) => row.projectId === created.id,
       ),
     ).toBe(false);
+  });
+
+  it("retries the same publish key after the publication write fails", async () => {
+    const created = await project();
+    const key = randomUUID();
+    let failed = false;
+    publishTestHooks.beforeWrite = async () => {
+      if (failed) return;
+      failed = true;
+      throw new Error("forced-publish-failure");
+    };
+    try {
+      await expect(
+        studio.publishStudioProject(owner, created.id, { idempotencyKey: key }),
+      ).rejects.toThrow("forced-publish-failure");
+      const published = await studio.publishStudioProject(owner, created.id, {
+        idempotencyKey: key,
+      });
+      expect(published.token).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(published.revision).toBe(created.revision);
+      expect(
+        await prisma.studioSnapshot.findUnique({
+          where: { id: published.snapshotId },
+        }),
+      ).not.toBeNull();
+    } finally {
+      publishTestHooks.beforeWrite = null;
+    }
   });
 
   it("deletes an account that still has a publication", async () => {

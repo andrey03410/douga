@@ -10,6 +10,11 @@ import type { StudioFrozenRevision } from "./types";
 import { publishStudioProjectSchema, type PublishStudioProjectInput } from "./types";
 import { unpublishStudioProjectSchema, type UnpublishStudioProjectInput } from "./types";
 
+/** Test seam. Runs inside the publication transaction, before the row is written. */
+export const publishTestHooks: { beforeWrite: null | (() => Promise<void>) } = {
+  beforeWrite: null,
+};
+
 export interface StudioPublicationView {
   projectId: string;
   userId: string;
@@ -135,12 +140,13 @@ export async function publishStudioProject(
     });
     return same;
   }
+  const internalKey = input.idempotencyKey
+    ? `publish-freeze:${hash(`${userId}:${input.idempotencyKey}:${project.revision}`)}`
+    : undefined;
   const frozen = await freezeStudioProject(userId, projectId, {
     expectedVersion: project.version,
     revision: project.revision,
-    idempotencyKey: input.idempotencyKey
-      ? `publish-freeze:${hash(`${userId}:${input.idempotencyKey}:${project.revision}`)}`
-      : undefined,
+    idempotencyKey: internalKey,
   });
   try {
     return await prisma.$transaction(async (db) => {
@@ -158,6 +164,7 @@ export async function publishStudioProject(
       let row;
       let updated = false;
       let previousSnapshot: string | null = null;
+      if (publishTestHooks.beforeWrite) await publishTestHooks.beforeWrite();
       if (current) {
         previousSnapshot = current.snapshotId;
         row = await db.studioPublication.update({
@@ -183,7 +190,6 @@ export async function publishStudioProject(
       return result;
     });
   } catch (error) {
-    await releaseSnapshotIfFree(frozen.snapshotId);
     const again = await replay<StudioPublicationView>(
       prisma,
       userId,
@@ -192,6 +198,16 @@ export async function publishStudioProject(
     );
     if (again) return again;
     throw error;
+  } finally {
+    // The freeze receipt must die with an unclaimed snapshot, or a retry of the
+    // same key replays a snapshot id that no longer exists.
+    await prisma.$transaction(async (db) => {
+      const released = await releaseSnapshotIfFree(frozen.snapshotId, db);
+      if (released && internalKey)
+        await db.studioMutation.deleteMany({
+          where: { userId, key: internalKey },
+        });
+    });
   }
 }
 
