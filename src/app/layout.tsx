@@ -1,7 +1,9 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { currentUser, signOut } from "@/auth";
 import { can } from "@/lib/domain/permissions";
+import { WATCH_CHROME } from "@/watch/chrome";
 import { Logo } from "./components/Logo";
 
 export const metadata: Metadata = {
@@ -14,11 +16,12 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await currentUser();
+  const bare = headers().get(WATCH_CHROME) === "bare";
+  const user = bare ? null : await currentUser();
   return (
     <html lang="ru">
       <body>
-        <div className="topbar">
+        {bare ? null : <div className="topbar">
           <div className="row" style={{ gap: 18 }}>
             <a className="brand" href="/" aria-label="Douga — на главную">
               <Logo />
@@ -51,7 +54,7 @@ export default async function RootLayout({
               Войти
             </a>
           )}
-        </div>
+        </div>}
         {children}
       </body>
     </html>

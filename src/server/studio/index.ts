@@ -21,6 +21,7 @@ export {
   findPublicationByToken,
   getStudioPublication,
 } from "./publication";
+export { loadPublicWatch, publicWatchMedia } from "./watch-public";
 
 export * from "./job-types";
 export {

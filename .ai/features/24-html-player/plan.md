@@ -47,7 +47,7 @@
   внешнего ключа, строка публикации исчезает; проект с заданием по-прежнему
   отвечает `JOB_IN_USE`. Готово, когда этот файл тестов зелёный.
 
-- [ ] **3. Публичная страница и медиа.** Файлы: `src/middleware.ts`,
+- [x] **3. Публичная страница и медиа.** Файлы: `src/middleware.ts`,
   `src/app/layout.tsx`, `src/app/watch/[token]/page.tsx`,
   `src/app/api/watch/[token]/media/[file]/route.ts`,
   `src/server/studio/watch-public.ts`, при необходимости общий mime из
