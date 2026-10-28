@@ -84,7 +84,7 @@ async function placeSlice(input: {
       mime: studioMimeType(existing.relativePath),
       relativePath: existing.relativePath,
       bytes: existing.bytes,
-      fresh: false,
+      fresh: false as const,
     };
   }
   await mkdir(path.dirname(absPath(relative)), { recursive: true });
