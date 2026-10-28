@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { loadPublicWatch } from "@/server/studio/watch-public";
-import { WatchPlayer } from "@/watch/WatchPlayer";
+import { WatchPlayer, WatchShell } from "@/watch/WatchPlayer";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -16,14 +16,14 @@ export default async function WatchPage({
   const watch = await loadPublicWatch(params.token);
   if (!watch.ok) {
     return (
-      <main className="watch-page">
+      <WatchShell>
         <p>Ролик снят с публикации</p>
-      </main>
+      </WatchShell>
     );
   }
   return (
-    <main className="watch-page">
+    <WatchShell>
       <WatchPlayer plan={watch.plan} title={watch.title} />
-    </main>
+    </WatchShell>
   );
 }

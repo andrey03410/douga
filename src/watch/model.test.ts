@@ -11,6 +11,7 @@ import {
   nextChapterFrame,
   previousChapterFrame,
   rewritePlanMedia,
+  chapterAt,
   seekBySeconds,
   sharedAudioTagCount,
   upcomingMedia,
@@ -157,6 +158,15 @@ describe("seek and audio tags", () => {
       ],
     });
     expect(sharedAudioTagCount(video)).toBe(6);
+    // Premounting two seconds early, a cue right after another one overlaps it.
+    const premounted = plan({
+      audio: [
+        cue({ id: "a", from: 0, durationInFrames: 300 }),
+        cue({ id: "b", from: 0, durationInFrames: 300 }),
+        cue({ id: "c", from: 310, durationInFrames: 100 }),
+      ],
+    });
+    expect(sharedAudioTagCount(premounted)).toBe(6);
     const busy = plan({
       audio: Array.from({ length: 6 }, (_, i) =>
         cue({ id: `c${i}`, from: 0, durationInFrames: 40 }),
@@ -245,6 +255,19 @@ function scene(patch: Partial<CompiledScene>): CompiledScene {
   };
 }
 
+describe("current chapter", () => {
+  it("names the last mark at or before the frame", () => {
+    const marks = [
+      { frame: 30, label: "Раунд 1" },
+      { frame: 120, label: "Раунд 2" },
+    ];
+    expect(chapterAt(marks, 0)).toBeNull();
+    expect(chapterAt(marks, 30)?.label).toBe("Раунд 1");
+    expect(chapterAt(marks, 119)?.label).toBe("Раунд 1");
+    expect(chapterAt(marks, 500)?.label).toBe("Раунд 2");
+  });
+});
+
 describe("cover frame", () => {
   it("shows the first picker round with every card open and no answer yet", () => {
     const video = plan({
@@ -263,32 +286,43 @@ describe("cover frame", () => {
 });
 
 describe("preload window", () => {
-  it("lists audio and stills that start within the horizon, skipping video and blob sources", () => {
+  it("prefetches sound that starts ahead and decodes stills of every scene in reach", () => {
     const video = plan({
       durationInFrames: 900,
       audio: [
         cue({ id: "now", from: 0, durationInFrames: 255, asset: { src: "/api/watch/t/media/now.wav" } as never }),
         cue({ id: "soon", from: 255, durationInFrames: 255, asset: { src: "/api/watch/t/media/soon.wav" } as never }),
         cue({ id: "late", from: 800, durationInFrames: 30, asset: { src: "/api/watch/t/media/late.wav" } as never }),
-        cue({ id: "offline", from: 0, durationInFrames: 30, asset: { src: "blob:null/1" } as never }),
+        cue({ id: "offline", from: 100, durationInFrames: 30, asset: { src: "blob:null/1" } as never }),
       ],
       scenes: [
         scene({ id: "a", from: 0, durationInFrames: 255, nodes: [imageNode("/api/watch/t/media/a.png"), videoNode()] }),
-        scene({ id: "b", from: 255, durationInFrames: 255, nodes: [imageNode("/api/watch/t/media/b.png", "d".repeat(64))] }),
+        scene({ id: "b", from: 255, durationInFrames: 255, nodes: [imageNode("blob:null/b", "d".repeat(64))] }),
         scene({ id: "c", from: 800, durationInFrames: 100, nodes: [imageNode("/api/watch/t/media/c.png", "e".repeat(64))] }),
       ],
     });
-    expect(upcomingMedia(video, 0, 300).sort()).toEqual([
-      "/api/studio/media?path=studio%2Fposter.jpg",
-      "/api/watch/t/media/a.png",
-      "/api/watch/t/media/b.png",
+    // Before the first play everything from frame 0 counts.
+    const start = upcomingMedia(video, -1, 300);
+    expect(start.sounds.sort()).toEqual([
       "/api/watch/t/media/now.wav",
       "/api/watch/t/media/soon.wav",
     ]);
-    expect(upcomingMedia(video, 520, 300).sort()).toEqual([
-      "/api/watch/t/media/c.png",
-      "/api/watch/t/media/late.wav",
+    expect(start.stills.sort()).toEqual([
+      "/api/studio/media?path=studio%2Fposter.jpg",
+      "/api/watch/t/media/a.png",
+      "blob:null/b",
     ]);
+    // While playing, a cue that already started is left alone; its scene's stills are not.
+    const playing = upcomingMedia(video, 10, 300);
+    expect(playing.sounds).toEqual(["/api/watch/t/media/soon.wav"]);
+    expect(playing.stills.sort()).toEqual([
+      "/api/studio/media?path=studio%2Fposter.jpg",
+      "/api/watch/t/media/a.png",
+      "blob:null/b",
+    ]);
+    const late = upcomingMedia(video, 520, 300);
+    expect(late.sounds).toEqual(["/api/watch/t/media/late.wav"]);
+    expect(late.stills).toEqual(["/api/watch/t/media/c.png"]);
   });
 });
 

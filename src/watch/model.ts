@@ -1,3 +1,4 @@
+import { playerPremountFrames } from "@/remotion/premount";
 import type { CompiledVideo, ResolvedAsset } from "@/video";
 
 export const CONTROLS_HIDE_MS = 2500;
@@ -87,6 +88,13 @@ export function nextChapterFrame(
   return Math.max(0, durationInFrames - 1);
 }
 
+/** The chapter the frame is in; nothing before the first mark. */
+export function chapterAt(marks: readonly Chapter[], frame: number): Chapter | null {
+  let current: Chapter | null = null;
+  for (const mark of marks) if (mark.frame <= frame) current = mark;
+  return current;
+}
+
 export function seekBySeconds(
   frame: number,
   deltaSec: number,
@@ -99,10 +107,12 @@ export function seekBySeconds(
 }
 
 export function sharedAudioTagCount(plan: CompiledVideo): number {
+  const premount = playerPremountFrames(plan.fps);
   const events: { frame: number; delta: number }[] = [];
   for (const cue of plan.audio) {
     if (cue.durationInFrames <= 0) continue;
-    events.push({ frame: cue.from, delta: 1 });
+    // A premounted cue holds its tag before its first frame.
+    events.push({ frame: Math.max(0, cue.from - premount), delta: 1 });
     events.push({ frame: cue.from + cue.durationInFrames, delta: -1 });
   }
   events.sort((a, b) => a.frame - b.frame || a.delta - b.delta);
@@ -184,30 +194,42 @@ export function coverFrame(plan: CompiledVideo): number {
 }
 
 const fetchable = (src: string) => src.startsWith("/") || /^https?:\/\//.test(src);
-const overlaps = (from: number, duration: number, start: number, end: number) =>
-  from < end && from + duration > start;
 
-/** Sound and stills worth fetching before the playhead reaches them. Video streams. */
+export interface UpcomingMedia {
+  /** Sound to prefetch: Remotion then swaps it for a blob URL. */
+  sounds: string[];
+  /** Stills and posters to decode ahead, from any source including blob URLs. */
+  stills: string[];
+}
+
+/**
+ * What to load before the playhead reaches it. Sound counts only when it starts after
+ * `afterFrame`: Remotion swaps a prefetched source for its blob URL, and swapping a
+ * cue that already plays would reload it. Stills are decoded in place, so a scene
+ * already on screen counts too. Video streams and is never listed.
+ */
 export function upcomingMedia(
   plan: CompiledVideo,
-  frame: number,
+  afterFrame: number,
   horizonFrames: number,
-): string[] {
-  const end = frame + horizonFrames;
-  const urls = new Set<string>();
+): UpcomingMedia {
+  const end = afterFrame + horizonFrames;
+  const sounds = new Set<string>();
+  const stills = new Set<string>();
   for (const cue of plan.audio)
-    if (cue.durationInFrames > 0 && overlaps(cue.from, cue.durationInFrames, frame, end))
-      urls.add(cue.asset.src);
+    if (cue.durationInFrames > 0 && cue.from > afterFrame && cue.from <= end)
+      sounds.add(cue.asset.src);
   for (const scene of plan.scenes) {
-    if (!overlaps(scene.from, scene.durationInFrames, frame, end)) continue;
+    const sceneEnd = scene.from + scene.durationInFrames;
+    if (scene.durationInFrames <= 0 || sceneEnd <= afterFrame || scene.from > end) continue;
     for (const node of scene.nodes) {
       const asset = node.media?.asset;
       if (!asset) continue;
-      if (asset.kind === "image") urls.add(asset.src);
-      if (asset.posterSrc) urls.add(asset.posterSrc);
+      if (asset.kind === "image") stills.add(asset.src);
+      if (asset.posterSrc) stills.add(asset.posterSrc);
     }
   }
-  return [...urls].filter(fetchable);
+  return { sounds: [...sounds].filter(fetchable), stills: [...stills] };
 }
 
 export function watchMediaPath(token: string, fileName: string): string {

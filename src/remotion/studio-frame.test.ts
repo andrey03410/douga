@@ -19,6 +19,7 @@ import {
   fitTextSize,
 } from "./studio-frame";
 import { StudioSceneFrame } from "./StudioVideo";
+import { playerPremountFrames } from "./premount";
 
 const node = (overrides: Partial<CompiledNode> = {}): CompiledNode => ({
   id: "card",
@@ -504,5 +505,10 @@ describe("native media timeline synchronization", () => {
     expect(sync.acceptableTimeShiftInSeconds).toBeGreaterThan(0.1);
     expect(sync.acceptableTimeShiftInSeconds).toBeLessThanOrEqual(0.15);
     expect(sync.pauseWhenBuffering).toBe(true);
+  });
+
+  it("premounts two seconds of media ahead in the Player", () => {
+    expect(playerPremountFrames(30)).toBe(60);
+    expect(playerPremountFrames(25)).toBe(50);
   });
 });
