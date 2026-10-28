@@ -28,9 +28,12 @@ import {
   mediaFrameAt,
   mediaLayout,
   nativePlaybackAt,
+  playerAudioSync,
   playerMediaSync,
   transitionAt,
 } from "./studio-frame";
+import { imageDecoded } from "./image-ready";
+import { playerPremountFrames } from "./premount";
 import { gradientToCss, shadowToCss } from "./studio-paint";
 
 export interface StudioVideoProps {
@@ -77,11 +80,15 @@ const Media: React.FC<{
   return (
     <div style={layout.viewport}>
       {media.asset.kind === "image" ? (
-        <Img src={source} pauseWhenLoading style={layout.source} />
+        <Img
+          src={source}
+          pauseWhenLoading={!imageDecoded(source)}
+          style={layout.source}
+        />
       ) : outsideActive && media.asset.posterSrc ? (
         <Img
           src={resolveAsset(media.asset.posterSrc, mode)}
-          pauseWhenLoading
+          pauseWhenLoading={!imageDecoded(resolveAsset(media.asset.posterSrc, mode))}
           style={layout.source}
         />
       ) : playback?.type === "play" ? (
@@ -378,14 +385,13 @@ const AudioCue: React.FC<{ cue: CompiledAudio; mode: AssetMode }> = ({
   mode,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
   const audio = (
     <Audio
       src={resolveAsset(cue.asset.src, mode)}
       startFrom={cue.offsetFrames}
       endAt={cue.offsetFrames + (cue.loopFrames ?? cue.durationInFrames)}
       volume={() => audioVolumeAt(cue, cue.from + frame)}
-      {...playerMediaSync(fps)}
+      {...playerAudioSync()}
     />
   );
   // The envelope closes over cue-local time outside Loop: it never resets with
@@ -396,6 +402,8 @@ const AudioCue: React.FC<{ cue: CompiledAudio; mode: AssetMode }> = ({
     <Loop durationInFrames={Math.max(1, cue.loopFrames)}>{audio}</Loop>
   );
 };
+
+const SOUND_LAYER: React.CSSProperties = { pointerEvents: "none" };
 
 export const StudioVideo: React.FC<StudioVideoProps> = ({
   plan,
@@ -409,6 +417,7 @@ export const StudioVideo: React.FC<StudioVideoProps> = ({
           key={scene.id}
           from={scene.from}
           durationInFrames={scene.durationInFrames}
+          premountFor={playerPremountFrames(plan.fps)}
         >
           <Scene scene={scene} plan={plan} mode={assetMode} />
         </Sequence>
@@ -416,11 +425,13 @@ export const StudioVideo: React.FC<StudioVideoProps> = ({
     {plan.audio
       .filter((cue) => cue.durationInFrames > 0)
       .map((cue) => (
+        // Premounting needs a layout box; the box of a sound cue stays empty.
         <Sequence
           key={cue.id}
           from={cue.from}
           durationInFrames={cue.durationInFrames}
-          layout="none"
+          premountFor={playerPremountFrames(plan.fps)}
+          style={SOUND_LAYER}
         >
           <AudioCue cue={cue} mode={assetMode} />
         </Sequence>

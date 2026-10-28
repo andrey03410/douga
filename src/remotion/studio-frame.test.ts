@@ -11,6 +11,7 @@ import {
   evaluateNode,
   mediaFrameAt,
   nativePlaybackAt,
+  playerAudioSync,
   playerMediaSync,
   mediaLayout,
   transitionAt,
@@ -18,6 +19,7 @@ import {
   fitTextSize,
 } from "./studio-frame";
 import { StudioSceneFrame } from "./StudioVideo";
+import { playerPremountFrames } from "./premount";
 
 const node = (overrides: Partial<CompiledNode> = {}): CompiledNode => ({
   id: "card",
@@ -488,7 +490,7 @@ describe("native Player source segments", () => {
 
 describe("native media timeline synchronization", () => {
   it.each([24, 30, 60])(
-    "sets the advancing video/audio correction budget within two output frames at %s fps",
+    "sets the advancing video correction budget within two output frames at %s fps",
     (fps) => {
       const sync = playerMediaSync(fps);
       expect(sync.acceptableTimeShiftInSeconds * fps).toBeGreaterThanOrEqual(1);
@@ -496,4 +498,17 @@ describe("native media timeline synchronization", () => {
       expect(sync.pauseWhenBuffering).toBe(true);
     },
   );
+
+  it("gives sound a budget wider than one tag seek, so it does not reseek in a loop", () => {
+    // An <audio> seek takes ~0.1 s; a two-frame budget re-seeks every few frames.
+    const sync = playerAudioSync();
+    expect(sync.acceptableTimeShiftInSeconds).toBeGreaterThan(0.1);
+    expect(sync.acceptableTimeShiftInSeconds).toBeLessThanOrEqual(0.15);
+    expect(sync.pauseWhenBuffering).toBe(true);
+  });
+
+  it("premounts two seconds of media ahead in the Player", () => {
+    expect(playerPremountFrames(30)).toBe(60);
+    expect(playerPremountFrames(25)).toBe(50);
+  });
 });

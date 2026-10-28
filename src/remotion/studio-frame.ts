@@ -316,3 +316,12 @@ export function nativePlaybackAt(
 export function playerMediaSync(fps: number) {
   return { acceptableTimeShiftInSeconds: 2 / fps, pauseWhenBuffering: true };
 }
+
+/**
+ * Sound gets 0.15 s. An <audio> seek stalls ~0.1 s, so a two-frame budget makes
+ * Remotion re-seek every few frames after a cue starts and the music stutters.
+ * 0.15 s keeps the measured drift inside ±0.1 s without a single re-seek.
+ */
+export function playerAudioSync() {
+  return { acceptableTimeShiftInSeconds: 0.15, pauseWhenBuffering: true };
+}

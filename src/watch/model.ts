@@ -1,27 +1,29 @@
-import { downloadTitleStem } from "@/lib/domain/render-jobs";
-import type {
-  CompiledNode,
-  CompiledVideo,
-  ResolvedAsset,
-} from "@/video";
+import { playerPremountFrames } from "@/remotion/premount";
+import type { CompiledVideo, ResolvedAsset } from "@/video";
 
 export const CONTROLS_HIDE_MS = 2500;
-export const HTML_WARN_BYTES = 80 * 1024 * 1024;
-export const HTML_MAX_BYTES = 400 * 1024 * 1024;
-export const HTML_MAX_ASSET_BASE64 = 500_000_000;
 
 const MIN_SHARED_AUDIO_TAGS = 5;
-const SLICE_PAD_SEC = 0.5;
 
 export interface Chapter {
   frame: number;
   label: string;
 }
 
+export interface KeyInput {
+  code: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  repeat?: boolean;
+}
+
 export interface KeyTarget {
   tagName: string;
   type?: string;
   isContentEditable?: boolean;
+  /** A range that keeps its own arrow keys (volume). */
+  nativeArrows?: boolean;
 }
 
 export type KeyAction =
@@ -32,15 +34,6 @@ export type KeyAction =
   | "mute"
   | "chapter-prev"
   | "chapter-next";
-
-export interface MediaSlice {
-  id: string;
-  hash: string;
-  kind: "image" | "video" | "audio";
-  startFrame: number;
-  endFrame: number;
-  copyWhole: boolean;
-}
 
 export interface WatchMediaName {
   file: string;
@@ -95,6 +88,13 @@ export function nextChapterFrame(
   return Math.max(0, durationInFrames - 1);
 }
 
+/** The chapter the frame is in; nothing before the first mark. */
+export function chapterAt(marks: readonly Chapter[], frame: number): Chapter | null {
+  let current: Chapter | null = null;
+  for (const mark of marks) if (mark.frame <= frame) current = mark;
+  return current;
+}
+
 export function seekBySeconds(
   frame: number,
   deltaSec: number,
@@ -107,10 +107,12 @@ export function seekBySeconds(
 }
 
 export function sharedAudioTagCount(plan: CompiledVideo): number {
+  const premount = playerPremountFrames(plan.fps);
   const events: { frame: number; delta: number }[] = [];
   for (const cue of plan.audio) {
     if (cue.durationInFrames <= 0) continue;
-    events.push({ frame: cue.from, delta: 1 });
+    // A premounted cue holds its tag before its first frame.
+    events.push({ frame: Math.max(0, cue.from - premount), delta: 1 });
     events.push({ frame: cue.from + cue.durationInFrames, delta: -1 });
   }
   events.sort((a, b) => a.frame - b.frame || a.delta - b.delta);
@@ -120,50 +122,117 @@ export function sharedAudioTagCount(plan: CompiledVideo): number {
     current += event.delta;
     if (current > max) max = current;
   }
-  return Math.max(MIN_SHARED_AUDIO_TAGS, max);
+  // Remotion claims the next cue's tag before it frees the previous one, so a
+  // seek from one busy stretch into another briefly holds both sets.
+  return Math.max(MIN_SHARED_AUDIO_TAGS, 2 * max);
 }
 
-export function keyAction(key: string, target: KeyTarget): KeyAction | null {
+const KEY_ACTIONS: Record<string, KeyAction> = {
+  Space: "toggle",
+  ArrowLeft: "seek-back",
+  ArrowRight: "seek-forward",
+  KeyF: "fullscreen",
+  KeyM: "mute",
+  PageUp: "chapter-prev",
+  PageDown: "chapter-next",
+};
+const REPEATABLE = new Set<KeyAction>([
+  "seek-back",
+  "seek-forward",
+  "chapter-prev",
+  "chapter-next",
+]);
+
+/** Physical keys, so F and M also work in the Russian layout. */
+export function keyAction(key: KeyInput, target: KeyTarget): KeyAction | null {
+  if (key.ctrlKey || key.metaKey || key.altKey) return null;
   const tag = target.tagName.toUpperCase();
   if (target.isContentEditable || tag === "TEXTAREA" || tag === "SELECT")
     return null;
   if (tag === "INPUT") {
     const type = (target.type ?? "text").toLowerCase();
     if (type === "range") {
-      if (key === "ArrowLeft" || key === "ArrowRight") return null;
+      if (target.nativeArrows && key.code.startsWith("Arrow")) return null;
+      // Natively up and down would move the seek bar by a single frame.
+      if (key.code === "ArrowUp") return "seek-forward";
+      if (key.code === "ArrowDown") return "seek-back";
     } else if (type !== "button" && type !== "submit" && type !== "checkbox") {
       return null;
     }
   }
-  switch (key) {
-    case " ":
-      return "toggle";
-    case "ArrowLeft":
-      return "seek-back";
-    case "ArrowRight":
-      return "seek-forward";
-    case "f":
-    case "F":
-      return "fullscreen";
-    case "m":
-    case "M":
-      return "mute";
-    case "PageUp":
-      return "chapter-prev";
-    case "PageDown":
-      return "chapter-next";
-    default:
-      return null;
-  }
+  const action = KEY_ACTIONS[key.code] ?? null;
+  if (action && key.repeat && !REPEATABLE.has(action)) return null;
+  return action;
 }
 
 export function controlsHidden(input: {
   playing: boolean;
   loading: boolean;
+  /** The pointer rests on the panel or focus is inside it. */
+  pinned: boolean;
   idleMs: number;
 }): boolean {
-  if (!input.playing || input.loading) return false;
+  if (!input.playing || input.loading || input.pinned) return false;
   return input.idleMs >= CONTROLS_HIDE_MS;
+}
+
+export function formatClock(frame: number, fps: number): string {
+  const total = Math.max(0, Math.floor(frame / fps));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** First scene, all cards open and no answer yet; otherwise 60% into it. */
+export function coverFrame(plan: CompiledVideo): number {
+  const scene = plan.scenes.find((s) => s.durationInFrames > 0);
+  if (!scene) return 0;
+  const last = scene.durationInFrames - 1;
+  const { timerStartFrame, answerStartFrame } = scene.phases;
+  const local =
+    timerStartFrame !== undefined
+      ? timerStartFrame
+      : answerStartFrame !== undefined
+        ? answerStartFrame - 1
+        : Math.floor(scene.durationInFrames * 0.6);
+  return scene.from + Math.min(last, Math.max(0, local));
+}
+
+const fetchable = (src: string) => src.startsWith("/") || /^https?:\/\//.test(src);
+
+export interface UpcomingMedia {
+  /** Sound to fetch into the HTTP cache before its cue mounts. */
+  sounds: string[];
+  /** Stills and posters to decode ahead, from any source including blob URLs. */
+  stills: string[];
+}
+
+/**
+ * What to load before the playhead reaches it. Sound counts only when it starts after
+ * `afterFrame`: a cue that already plays is streamed by its own tag. Stills are
+ * decoded in place, so a scene already on screen counts too. Video streams and is
+ * never listed.
+ */
+export function upcomingMedia(
+  plan: CompiledVideo,
+  afterFrame: number,
+  horizonFrames: number,
+): UpcomingMedia {
+  const end = afterFrame + horizonFrames;
+  const sounds = new Set<string>();
+  const stills = new Set<string>();
+  for (const cue of plan.audio)
+    if (cue.durationInFrames > 0 && cue.from > afterFrame && cue.from <= end)
+      sounds.add(cue.asset.src);
+  for (const scene of plan.scenes) {
+    const sceneEnd = scene.from + scene.durationInFrames;
+    if (scene.durationInFrames <= 0 || sceneEnd <= afterFrame || scene.from > end) continue;
+    for (const node of scene.nodes) {
+      const asset = node.media?.asset;
+      if (!asset) continue;
+      if (asset.kind === "image") stills.add(asset.src);
+      if (asset.posterSrc) stills.add(asset.posterSrc);
+    }
+  }
+  return { sounds: [...sounds].filter(fetchable), stills: [...stills] };
 }
 
 export function watchMediaPath(token: string, fileName: string): string {
@@ -192,229 +261,3 @@ export function rewritePlanMedia(
   return next;
 }
 
-interface Usage {
-  hash: string;
-  kind: "image" | "video" | "audio";
-  startFrame: number;
-  endFrame: number;
-  sourceFrames: number;
-}
-
-function sourceFrames(asset: ResolvedAsset, fps: number): number {
-  if (asset.durationSec == null) return Number.POSITIVE_INFINITY;
-  return Math.max(1, Math.round(asset.durationSec * fps));
-}
-
-function usages(plan: CompiledVideo): Usage[] {
-  const found: Usage[] = [];
-  const push = (
-    asset: ResolvedAsset,
-    startFrame: number,
-    endFrame: number,
-  ) => {
-    if (!asset.hash) return;
-    const end = asset.kind === "image" ? sourceFrames(asset, plan.fps) : endFrame;
-    found.push({
-      hash: asset.hash,
-      kind: asset.kind,
-      startFrame: asset.kind === "image" ? 0 : startFrame,
-      endFrame: end,
-      sourceFrames: sourceFrames(asset, plan.fps),
-    });
-  };
-  for (const cue of plan.audio) {
-    const length = cue.loopFrames ?? cue.durationInFrames;
-    push(cue.asset, cue.offsetFrames, cue.offsetFrames + Math.max(1, length));
-  }
-  for (const scene of plan.scenes)
-    for (const node of scene.nodes) {
-      const media = node.media;
-      if (!media) continue;
-      const length = media.loopFrames ?? node.durationInFrames;
-      let end = media.offsetFrames + Math.max(1, length);
-      if (media.freezeAtFrame != null)
-        end = Math.max(end, media.freezeAtFrame + 1);
-      push(media.asset, media.offsetFrames, end);
-    }
-  return found;
-}
-
-export function mediaSlices(plan: CompiledVideo): MediaSlice[] {
-  const pad = Math.round(SLICE_PAD_SEC * plan.fps);
-  const grouped = new Map<string, Usage[]>();
-  for (const usage of usages(plan)) {
-    const list = grouped.get(usage.hash) ?? [];
-    list.push(usage);
-    grouped.set(usage.hash, list);
-  }
-  const slices: MediaSlice[] = [];
-  for (const [digest, list] of grouped) {
-    const kind = list[0].kind;
-    const source = list[0].sourceFrames;
-    if (kind === "image" || !Number.isFinite(source)) {
-      slices.push({
-        id: `whole:${digest}`,
-        hash: digest,
-        kind,
-        startFrame: 0,
-        endFrame: Number.isFinite(source) ? source : list[0].endFrame,
-        copyWhole: true,
-      });
-      continue;
-    }
-    const ranges = list
-      .map((usage) => ({
-        start: Math.max(0, usage.startFrame),
-        end: Math.max(usage.startFrame + 1, usage.endFrame),
-      }))
-      .sort((a, b) => a.start - b.start || a.end - b.end);
-    const merged: { start: number; end: number }[] = [];
-    for (const range of ranges) {
-      const last = merged[merged.length - 1];
-      if (last && range.start - last.end < plan.fps)
-        last.end = Math.max(last.end, range.end);
-      else merged.push({ ...range });
-    }
-    for (const range of merged) {
-      const unusedHead = range.start;
-      const unusedTail = source - range.end;
-      if (unusedHead < pad && unusedTail < pad) {
-        slices.push({
-          id: `whole:${digest}`,
-          hash: digest,
-          kind,
-          startFrame: 0,
-          endFrame: source,
-          copyWhole: true,
-        });
-        continue;
-      }
-      const startFrame = Math.max(0, range.start - pad);
-      const endFrame = Math.min(source, range.end + pad);
-      slices.push({
-        id: `${digest}:${startFrame}:${endFrame}`,
-        hash: digest,
-        kind,
-        startFrame,
-        endFrame,
-        copyWhole: false,
-      });
-    }
-  }
-  return slices;
-}
-
-function sliceFor(
-  slices: readonly MediaSlice[],
-  hash: string,
-  startFrame: number,
-  endFrame: number,
-): MediaSlice {
-  const match = slices.find(
-    (slice) =>
-      slice.hash === hash &&
-      (slice.copyWhole ||
-        (slice.startFrame <= startFrame && slice.endFrame >= endFrame)),
-  );
-  if (!match) throw new Error("SLICE_NOT_FOUND");
-  return match;
-}
-
-function retarget(
-  asset: ResolvedAsset,
-  slice: MediaSlice,
-  offsetFrames: number,
-  fps: number,
-): number {
-  asset.src = `slice:${slice.id}`;
-  if (asset.posterSrc) asset.posterSrc = `slice:poster:${asset.hash}`;
-  if (!slice.copyWhole)
-    asset.durationSec = (slice.endFrame - slice.startFrame) / fps;
-  return slice.copyWhole ? offsetFrames : offsetFrames - slice.startFrame;
-}
-
-export function applySlices(plan: CompiledVideo): CompiledVideo {
-  const slices = mediaSlices(plan);
-  const next = structuredClone(plan);
-  for (const cue of next.audio) {
-    if (!cue.asset.hash) continue;
-    const length = cue.loopFrames ?? cue.durationInFrames;
-    const slice = sliceFor(
-      slices,
-      cue.asset.hash,
-      cue.offsetFrames,
-      cue.offsetFrames + Math.max(1, length),
-    );
-    cue.offsetFrames = retarget(cue.asset, slice, cue.offsetFrames, next.fps);
-  }
-  for (const scene of next.scenes)
-    for (const node of scene.nodes) retargetNode(node, slices, next.fps);
-  return next;
-}
-
-function retargetNode(
-  node: CompiledNode,
-  slices: readonly MediaSlice[],
-  fps: number,
-) {
-  const media = node.media;
-  if (!media?.asset.hash) return;
-  const length = media.loopFrames ?? node.durationInFrames;
-  let end = media.offsetFrames + Math.max(1, length);
-  if (media.freezeAtFrame != null) end = Math.max(end, media.freezeAtFrame + 1);
-  const slice = sliceFor(slices, media.asset.hash, media.offsetFrames, end);
-  const shift = slice.copyWhole ? 0 : slice.startFrame;
-  media.offsetFrames = retarget(media.asset, slice, media.offsetFrames, fps);
-  if (media.freezeAtFrame != null && !slice.copyWhole)
-    media.freezeAtFrame -= shift;
-}
-
-export function base64Length(bytes: number): number {
-  return 4 * Math.ceil(bytes / 3);
-}
-
-export function htmlByteSize(input: {
-  skeletonBytes: number;
-  bundleBytes: number;
-  fontBase64Chars: number;
-  assets: { bytes: number; wrapperBytes: number }[];
-}): number {
-  return (
-    input.skeletonBytes +
-    input.bundleBytes +
-    input.fontBase64Chars +
-    input.assets.reduce(
-      (sum, asset) => sum + base64Length(asset.bytes) + asset.wrapperBytes,
-      0,
-    )
-  );
-}
-
-export function htmlExportLimit(
-  bytes: number,
-  largestAssetBase64: number,
-): "ok" | "warn" | "refuse" {
-  if (bytes >= HTML_MAX_BYTES || largestAssetBase64 >= HTML_MAX_ASSET_BASE64)
-    return "refuse";
-  if (bytes >= HTML_WARN_BYTES) return "warn";
-  return "ok";
-}
-
-function encodeExtValue(value: string): string {
-  return encodeURIComponent(value).replace(
-    /['()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-}
-
-export function htmlContentDisposition(
-  ownerId: string,
-  title: string | null | undefined,
-): string {
-  const id = ownerId.replace(/[^A-Za-z0-9_-]/g, "");
-  const fallback = `attachment; filename="${id ? `douga-${id}` : "douga"}.html"`;
-  const stem = downloadTitleStem(title);
-  return stem
-    ? `${fallback}; filename*=UTF-8''${encodeExtValue(`${stem}.html`)}`
-    : fallback;
-}

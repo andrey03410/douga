@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import type { CompiledVideo } from "@/video";
-import { WatchPlayer } from "./WatchPlayer";
+import { WatchPlayer, WatchShell } from "./WatchPlayer";
 
 declare global {
   interface Window {
@@ -12,5 +12,7 @@ const boot = window.__DOUGA__;
 const root = document.getElementById("root");
 if (boot && root)
   createRoot(root).render(
-    <WatchPlayer plan={boot.plan} title={boot.title} />,
+    <WatchShell>
+      <WatchPlayer plan={boot.plan} title={boot.title} />
+    </WatchShell>,
   );

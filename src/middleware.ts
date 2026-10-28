@@ -21,5 +21,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/watch/:path*"],
+  // Every page, so a bare header a client sends to any other page is dropped.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

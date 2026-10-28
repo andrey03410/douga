@@ -336,6 +336,24 @@ it("streams authenticated completed job results above the MCP 12 MiB cap, includ
     await removePath(`studio-jobs/${owner}`);
   }
 });
+it("answers MALFORMED_JSON for a broken publication body and accepts an empty DELETE", async () => {
+  session.id = owner;
+  const call = (method: string, body?: string) =>
+    studioHttp(
+      new Request(`http://localhost/api/studio/projects/${id}/publication`, {
+        method,
+        ...(body === undefined ? {} : { body }),
+      }),
+      ["projects", id, "publication"],
+    );
+  const broken = await call("POST", "{");
+  expect(broken.status).toBe(400);
+  expect((await broken.json()).error).toBe("MALFORMED_JSON");
+  expect(await prisma.studioPublication.count({ where: { projectId: id } })).toBe(0);
+  const removed = await call("DELETE");
+  expect(removed.status).toBe(200);
+  expect(await removed.json()).toEqual({ removed: false, projectId: id });
+});
 it("rejects cross-origin mutation attempts before any draft write", async () => {
   session.id = owner;
   const p = await studio.getStudioProject(owner, id);

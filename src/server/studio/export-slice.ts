@@ -2,18 +2,25 @@ import "server-only";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { can } from "@/lib/domain/permissions";
 import { absPath } from "@/lib/storage";
 import type { CompiledVideo } from "@/video";
-import { applySlices, mediaSlices } from "@/watch/model";
+import {
+  applySlices,
+  mediaSlices,
+  offlineMediaUnresolved,
+  posterHashes,
+  posterSliceId,
+  type MediaSlice,
+} from "@/watch/offline";
 import { safeFile } from "./assets";
 import { StudioError } from "./errors";
 import { studioMimeType } from "./http-media";
 import { studioJobLimits } from "./job-types";
-import { hash, actor, type Db } from "./shared";
+import { actor, hash, type Db } from "./shared";
 import type { StudioFile } from "./types";
 
 export interface ExportAsset {
@@ -23,19 +30,53 @@ export interface ExportAsset {
   bytes: number;
 }
 
-async function ffmpeg(args: string[]) {
-  await new Promise<void>((resolve, reject) => {
+/** Part of every cache key: bump it when the encoder settings below change. */
+const ENCODER = "v2";
+const FFMPEG_TIMEOUT_MS = 120_000;
+
+const ENCODE = {
+  audio: { ext: ".m4a", args: ["-vn", "-c:a", "aac", "-b:a", "160k"] },
+  visual: {
+    ext: ".mp4",
+    args: [
+      "-an",
+      // libx264 with yuv420p needs even dimensions.
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "20",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+    ],
+  },
+} as const;
+
+type CutRole = keyof typeof ENCODE;
+
+function ffmpeg(args: string[]) {
+  return new Promise<void>((resolve, reject) => {
     const proc = spawn(ffmpegPath as unknown as string, args, {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let err = "";
+    const timer = setTimeout(() => proc.kill("SIGKILL"), FFMPEG_TIMEOUT_MS);
     proc.stderr.on("data", (chunk) => {
-      err += chunk.toString();
+      err = (err + chunk.toString()).slice(-800);
     });
-    proc.on("error", reject);
-    proc.on("close", (code) => {
+    proc.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    proc.on("close", (code, signal) => {
+      clearTimeout(timer);
       if (code === 0) resolve();
-      else reject(new Error(err.slice(-800) || `ffmpeg exited ${code}`));
+      else reject(new Error(signal ? `ffmpeg killed by ${signal}` : err || `ffmpeg exited ${code}`));
     });
   });
 }
@@ -50,7 +91,6 @@ export const exportCommitGate: { wait: null | (() => Promise<void>) } = {
 };
 
 async function assertExportRoom(userId: string, additional: number, db: Db = prisma) {
-  if (additional <= 0) return;
   const user = await actor(userId, db);
   if (can(user.role, "render:run")) return;
   const used = await db.studioExportCache.aggregate({
@@ -64,193 +104,209 @@ async function assertExportRoom(userId: string, additional: number, db: Db = pri
     throw new StudioError("EXPORT_QUOTA_EXCEEDED");
 }
 
-async function placeSlice(input: {
-  userId: string;
-  projectId: string;
-  revisionId: string;
-  id: string;
-  sourcePath: string;
-  kind: "image" | "video" | "audio";
-  startFrame: number;
-  endFrame: number;
-  copyWhole: boolean;
-  fps: number;
-  ext: string;
-}) {
-  const key = hash(
-    `${input.userId}:${input.revisionId}:${input.id}:${input.kind}:v1`,
-  );
-  const relative = `studio-exports/${input.userId}/${input.projectId}/${input.revisionId}/${key}${input.ext}`;
-  const existing = await prisma.studioExportCache.findUnique({ where: { key } });
-  if (existing) {
-    await safeFile(existing.relativePath);
-    return {
-      id: input.id,
-      mime: studioMimeType(existing.relativePath),
-      relativePath: existing.relativePath,
-      bytes: existing.bytes,
-      fresh: false as const,
-    };
-  }
-  await mkdir(path.dirname(absPath(relative)), { recursive: true });
-  const partial = relative.replace(/(\.[^.]+)$/, `.${randomUUID()}$1`);
-  const source = await safeFile(input.sourcePath);
-  if (input.copyWhole || input.kind === "image") await copyFile(source, absPath(partial));
-  else {
-    const start = input.startFrame / input.fps;
-    const duration = Math.max(0.05, (input.endFrame - input.startFrame) / input.fps);
-    const args = ["-y", "-i", source, "-ss", String(start), "-t", String(duration)];
-    if (input.kind === "audio")
-      args.push("-vn", "-c:a", "aac", "-b:a", "160k", absPath(partial));
-    else
-      args.push(
-        "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        absPath(partial),
-      );
-    await ffmpeg(args);
-  }
-  const bytes = (await stat(absPath(partial))).size;
-  return { id: input.id, relative, partial, bytes, fresh: true as const, key };
+async function directAsset(id: string, relativePath: string): Promise<ExportAsset> {
+  const file = await safeFile(relativePath);
+  return {
+    id,
+    mime: studioMimeType(relativePath),
+    relativePath,
+    bytes: (await stat(file)).size,
+  };
 }
 
-export async function materializeSlices(input: {
+interface CutInput {
   userId: string;
   projectId: string;
-  revisionId: string;
-  plan: CompiledVideo;
-  files: Record<string, StudioFile>;
-}): Promise<{ plan: CompiledVideo; assets: ExportAsset[] }> {
-  const slices = mediaSlices(input.plan);
-  const pending: {
-    id: string;
-    relative: string;
-    partial: string;
-    bytes: number;
-    key: string;
-  }[] = [];
-  const assets: ExportAsset[] = [];
-  const posterHashes = new Set<string>();
+  fps: number;
+  slice: MediaSlice & { role: CutRole };
+  sourcePath: string;
+}
+
+type Cut = Omit<ExportAsset, "id">;
+
+const present = (relative: string) =>
+  safeFile(relative).then(
+    () => true,
+    () => false,
+  );
+
+async function placeCut(key: string, input: CutInput): Promise<Cut> {
+  const { userId, projectId, slice } = input;
+  const found = (row: { relativePath: string; bytes: number }): Cut => ({
+    mime: studioMimeType(row.relativePath),
+    relativePath: row.relativePath,
+    bytes: row.bytes,
+  });
+  const existing = await prisma.studioExportCache.findUnique({ where: { key } });
+  if (existing) {
+    if (await present(existing.relativePath)) return found(existing);
+    await prisma.studioExportCache.deleteMany({ where: { id: existing.id } });
+  }
+  // An exhausted quota refuses before ffmpeg spends any time.
+  await assertExportRoom(userId, 1);
+  const { ext, args } = ENCODE[slice.role];
+  const relative = `studio-exports/${userId}/${projectId}/${key}${ext}`;
+  const partial = `studio-exports/${userId}/${projectId}/${key}.${randomUUID()}${ext}`;
+  const source = await safeFile(input.sourcePath);
+  await mkdir(path.dirname(absPath(relative)), { recursive: true });
   try {
-    for (const slice of slices) {
-      const source = fileFor(input.files, slice.hash);
-      if (!source) throw new StudioError("ASSET_FILE_MISSING");
-      const ext = slice.copyWhole || slice.kind === "image"
-        ? path.extname(source.path).toLowerCase() || ".bin"
-        : slice.kind === "audio"
-          ? ".m4a"
-          : ".mp4";
-      const placed = await placeSlice({
-        userId: input.userId,
-        projectId: input.projectId,
-        revisionId: input.revisionId,
-        id: slice.id,
-        sourcePath: source.path,
-        kind: slice.kind,
-        startFrame: slice.startFrame,
-        endFrame: slice.endFrame,
-        copyWhole: slice.copyWhole,
-        fps: input.plan.fps,
-        ext,
-      });
-      if (placed.fresh) pending.push(placed);
-      else assets.push(placed);
-      if (source.posterPath && source.posterHash) posterHashes.add(source.hash);
+    const start = slice.startFrame / input.fps;
+    const duration = Math.max(0.05, (slice.endFrame - slice.startFrame) / input.fps);
+    try {
+      // -ss before -i seeks the input; with re-encoding the cut is still frame-exact.
+      await ffmpeg([
+        "-y",
+        "-ss",
+        String(start),
+        "-t",
+        String(duration),
+        "-i",
+        source,
+        ...args,
+        absPath(partial),
+      ]);
+    } catch (error) {
+      console.error("Export slice failed", error);
+      throw new StudioError("EXPORT_SLICE_FAILED");
     }
-    for (const digest of posterHashes) {
-      const source = fileFor(input.files, digest);
-      if (!source?.posterPath) continue;
-      const placed = await placeSlice({
-        userId: input.userId,
-        projectId: input.projectId,
-        revisionId: input.revisionId,
-        id: `poster:${digest}`,
-        sourcePath: source.posterPath,
-        kind: "image",
-        startFrame: 0,
-        endFrame: 1,
-        copyWhole: true,
-        fps: input.plan.fps,
-        ext: path.extname(source.posterPath).toLowerCase() || ".jpg",
-      });
-      if (placed.fresh) pending.push(placed);
-      else assets.push(placed);
-    }
-    if (pending.length) await prisma.$transaction(async (db) => {
+    const bytes = (await stat(absPath(partial))).size;
+    const row = await prisma.$transaction(async (db) => {
       // A write lock makes a second export wait until this quota check commits.
       const locked = await db.$executeRaw`
-        UPDATE "User" SET "id" = "id" WHERE "id" = ${input.userId}
+        UPDATE "User" SET "id" = "id" WHERE "id" = ${userId}
       `;
       if (locked !== 1) throw new StudioError("NOT_FOUND");
-      const existing = await db.studioExportCache.findMany({
-        where: { key: { in: pending.map((item) => item.key) } },
-      });
-      const have = new Map(existing.map((row) => [row.key, row]));
-      const fresh = pending.filter((item) => !have.has(item.key));
-      await assertExportRoom(
-        input.userId,
-        fresh.reduce((sum, item) => sum + item.bytes, 0),
-        db,
-      );
+      const stored = await db.studioExportCache.findUnique({ where: { key } });
+      if (stored) return stored;
+      await assertExportRoom(userId, bytes, db);
       if (exportCommitGate.wait) await exportCommitGate.wait();
-      const stored = new Map(have);
-      for (const item of fresh) {
-        try {
-          await rename(absPath(item.partial), absPath(item.relative));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-        const row = await db.studioExportCache.create({
-          data: {
-            userId: input.userId,
-            projectId: input.projectId,
-            revisionId: input.revisionId,
-            key: item.key,
-            bytes: item.bytes,
-            relativePath: item.relative,
-          },
-        });
-        stored.set(item.key, row);
-      }
-      for (const item of pending) {
-        const row = stored.get(item.key);
-        if (!row) throw new StudioError("ASSET_FILE_MISSING");
-        await safeFile(row.relativePath);
-        assets.push({
-          id: item.id,
-          mime: studioMimeType(row.relativePath),
-          relativePath: row.relativePath,
-          bytes: row.bytes,
-        });
-      }
+      const created = await db.studioExportCache.create({
+        data: { userId, projectId, key, bytes, relativePath: relative },
+      });
+      await rename(absPath(partial), absPath(relative));
+      return created;
     });
-    await Promise.all(
-      pending.map((item) => rm(absPath(item.partial), { force: true })),
-    );
-    const offline = applySlices(input.plan);
-    const dumped = JSON.stringify(offline);
-    if (/https?:\/\//.test(dumped) || dumped.includes("/api/"))
-      throw new StudioError("EXPORT_MEDIA_UNRESOLVED");
-    return { plan: offline, assets };
-  } catch (error) {
-    await Promise.all(
-      pending.map(async (item) => {
-        await rm(absPath(item.partial), { force: true });
-        const row = await prisma.studioExportCache.findUnique({
-          where: { key: item.key },
-        });
-        if (!row) await rm(absPath(item.relative), { force: true });
-      }),
-    );
-    throw error;
+    return found(row);
+  } finally {
+    await rm(absPath(partial), { force: true });
   }
+}
+
+function cutKey(input: CutInput) {
+  const { slice } = input;
+  return hash(
+    [
+      input.projectId,
+      slice.hash,
+      slice.role,
+      slice.startFrame,
+      slice.endFrame,
+      input.fps,
+      ENCODER,
+    ].join(":"),
+  );
+}
+
+/**
+ * Keys of cuts an unfinished export still streams. Exports run only in the site
+ * process, so an in-memory count is enough.
+ */
+const reading = new Map<string, number>();
+
+function hold(keys: readonly string[]) {
+  for (const key of keys) reading.set(key, (reading.get(key) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    for (const key of keys) {
+      const left = (reading.get(key) ?? 1) - 1;
+      if (left > 0) reading.set(key, left);
+      else reading.delete(key);
+    }
+  };
+}
+
+/** One export of a project prepares at a time, so pruning never races a placement. */
+const turns = new Map<string, Promise<void>>();
+
+function inTurn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+  const run = (turns.get(projectId) ?? Promise.resolve()).then(work);
+  const done = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  turns.set(projectId, done);
+  void done.then(() => {
+    if (turns.get(projectId) === done) turns.delete(projectId);
+  });
+  return run;
+}
+
+/** Drop the project's cuts this export does not use, unless a download still reads them. */
+async function pruneCuts(projectId: string, keep: ReadonlySet<string>) {
+  const stale = (
+    await prisma.studioExportCache.findMany({
+      where: { projectId, key: { notIn: [...keep] } },
+    })
+  ).filter((row) => !reading.has(row.key));
+  if (!stale.length) return;
+  await prisma.studioExportCache.deleteMany({
+    where: { id: { in: stale.map((row) => row.id) } },
+  });
+  await Promise.all(stale.map((row) => rm(absPath(row.relativePath), { force: true })));
+}
+
+/**
+ * The files the offline export embeds. Stills and sources used whole are read from
+ * the revision itself; only ffmpeg cuts are cached and count against the quota.
+ * `release` must be called once the export has read them.
+ */
+export function materializeSlices(input: {
+  userId: string;
+  projectId: string;
+  plan: CompiledVideo;
+  files: Record<string, StudioFile>;
+}): Promise<{ plan: CompiledVideo; assets: ExportAsset[]; release: () => void }> {
+  return inTurn(input.projectId, async () => {
+    const slices = mediaSlices(input.plan).map((slice) => {
+      const source = fileFor(input.files, slice.hash);
+      if (!source) throw new StudioError("ASSET_FILE_MISSING");
+      if (slice.whole || slice.role === "still") return { slice, source, cut: null };
+      const cut: CutInput = {
+        userId: input.userId,
+        projectId: input.projectId,
+        fps: input.plan.fps,
+        slice: slice as CutInput["slice"],
+        sourcePath: source.path,
+      };
+      return { slice, source, cut: { input: cut, key: cutKey(cut) } };
+    });
+    const keys = slices.flatMap(({ cut }) => (cut ? [cut.key] : []));
+    // Old cuts go first, so they never count against the quota of the new ones.
+    await pruneCuts(input.projectId, new Set(keys));
+    const release = hold(keys);
+    try {
+      const assets: ExportAsset[] = [];
+      for (const { slice, source, cut } of slices) {
+        if (!cut) {
+          assets.push(await directAsset(slice.id, source.path));
+          continue;
+        }
+        assets.push({ id: slice.id, ...(await placeCut(cut.key, cut.input)) });
+      }
+      for (const digest of posterHashes(input.plan)) {
+        const posterPath = fileFor(input.files, digest)?.posterPath;
+        if (!posterPath) throw new StudioError("ASSET_FILE_MISSING");
+        assets.push(await directAsset(posterSliceId(digest), posterPath));
+      }
+      const offline = applySlices(input.plan);
+      if (offlineMediaUnresolved(offline, new Set(assets.map((asset) => asset.id))))
+        throw new StudioError("EXPORT_MEDIA_UNRESOLVED");
+      return { plan: offline, assets, release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  });
 }

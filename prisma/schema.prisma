@@ -396,7 +396,6 @@ model StudioRevision {
   assetsJson String?
   createdAt DateTime @default(now())
   snapshots StudioSnapshot[]
-  exportCaches StudioExportCache[]
   @@unique([projectId,revision])
 }
 model StudioAssetReference {
@@ -451,15 +450,12 @@ model StudioExportCache {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId String
   project StudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  revisionId String
-  revision StudioRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   key String @unique
   bytes Float
   relativePath String
   createdAt DateTime @default(now())
   @@index([userId])
   @@index([projectId])
-  @@index([revisionId])
 }
 model StudioPreset {
   id String @id @default(cuid())

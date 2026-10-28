@@ -59,6 +59,18 @@ async function present(
   };
 }
 
+/**
+ * The first statement of a publication transaction writes the project row and so
+ * takes SQLite's write lock. A publish from another process (site, MCP) waits here
+ * and then sees this one's row instead of racing it.
+ */
+async function lockProject(db: Db, userId: string, projectId: string) {
+  const locked = await db.$executeRaw`
+    UPDATE "StudioProject" SET "id" = "id" WHERE "id" = ${projectId} AND "userId" = ${userId}
+  `;
+  if (locked !== 1) throw new StudioError("NOT_FOUND");
+}
+
 export function publicWatchUrl(token: string): string {
   const base = (process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(
     /\/+$/,
@@ -80,7 +92,10 @@ export async function listStudioPublications(userId: string) {
   const rows = await prisma.studioPublication.findMany({
     where: { userId },
     orderBy: { updatedAt: "desc" },
-    include: { snapshot: true, project: { select: { title: true } } },
+    include: {
+      snapshot: { select: { bytes: true } },
+      project: { select: { title: true } },
+    },
   });
   return rows.map((row) => ({
     projectId: row.projectId,
@@ -150,6 +165,7 @@ export async function publishStudioProject(
   });
   try {
     return await prisma.$transaction(async (db) => {
+      await lockProject(db, userId, projectId);
       const again = await replay<StudioPublicationView>(
         db,
         userId,
@@ -227,6 +243,7 @@ export async function unpublishStudioProject(
   if (replayed) return replayed;
   await owned(userId, projectId);
   return prisma.$transaction(async (db) => {
+    await lockProject(db, userId, projectId);
     const again = await replay<{ removed: boolean; projectId: string }>(
       db,
       userId,
@@ -234,7 +251,12 @@ export async function unpublishStudioProject(
       request,
     );
     if (again) return again;
-    await owned(userId, projectId, db);
+    const project = await owned(userId, projectId, db);
+    if (
+      input.expectedVersion !== undefined &&
+      input.expectedVersion !== project.version
+    )
+      throw new StudioError("VERSION_CONFLICT");
     const row = await db.studioPublication.findUnique({ where: { projectId } });
     if (!row) {
       const result = { removed: false, projectId };

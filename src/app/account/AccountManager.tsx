@@ -124,7 +124,8 @@ export function AccountManager() {
   const [archives, setArchives] = useState<ArchiveRow[] | null>(null);
   const [renders, setRenders] = useState<RenderRow[] | null>(null);
   const [publications, setPublications] = useState<
-    { projectId: string; title: string; revision: number; bytes: number }[] | null
+    { projectId: string; title: string; revision: number; bytes: number; token: string }[]
+    | null
   >(null);
   const [rendersCursor, setRendersCursor] = useState<string | null>(null);
 
@@ -281,38 +282,48 @@ export function AccountManager() {
                 <span>
                   {row.title} · ревизия {row.revision} · {fmtBytes(row.bytes)}
                 </span>
-                <button
-                  className="btn ghost"
-                  disabled={busyId === row.projectId}
-                  onClick={() =>
-                    void (async () => {
-                      if (!confirm(`Снять «${row.title}» с публикации?`)) return;
-                      setBusyId(row.projectId);
-                      setError(null);
-                      try {
-                        const res = await fetch(
-                          `/api/studio/projects/${row.projectId}/publication`,
-                          {
-                            method: "DELETE",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
-                          },
-                        );
-                        const d = await res.json().catch(() => ({}));
-                        if (!res.ok) throw new Error(d.error ?? "Не удалось снять");
-                        setPublications((prev) =>
-                          prev?.filter((item) => item.projectId !== row.projectId) ?? null,
-                        );
-                      } catch (e) {
-                        setError((e as Error).message);
-                      } finally {
-                        setBusyId(null);
-                      }
-                    })()
-                  }
-                >
-                  Снять
-                </button>
+                <span className="row" style={{ gap: 8 }}>
+                  <a
+                    className="btn ghost"
+                    href={`/watch/${row.token}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Открыть
+                  </a>
+                  <button
+                    className="btn ghost"
+                    disabled={busyId === row.projectId}
+                    onClick={() =>
+                      void (async () => {
+                        if (!confirm(`Снять «${row.title}» с публикации?`)) return;
+                        setBusyId(row.projectId);
+                        setError(null);
+                        try {
+                          const res = await fetch(
+                            `/api/studio/projects/${row.projectId}/publication`,
+                            {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+                            },
+                          );
+                          const d = await res.json().catch(() => ({}));
+                          if (!res.ok) throw new Error(d.error ?? "Не удалось снять");
+                          setPublications((prev) =>
+                            prev?.filter((item) => item.projectId !== row.projectId) ?? null,
+                          );
+                        } catch (e) {
+                          setError((e as Error).message);
+                        } finally {
+                          setBusyId(null);
+                        }
+                      })()
+                    }
+                  >
+                    Снять
+                  </button>
+                </span>
               </div>
             ))
           )
