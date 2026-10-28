@@ -111,7 +111,7 @@
   Готово, когда тест списка зелёный, а в студии есть опубликовать, копировать,
   открыть, обновить, снять и скачать с размером.
 
-- [ ] **7. MCP.** Файлы: `src/mcp/studio-tools.ts`, `.env.example`, `README.md`.
+- [x] **7. MCP.** Файлы: `src/mcp/studio-tools.ts`, `.env.example`, `README.md`.
   Инструменты `video_publish`, `video_unpublish`, `video_publication_get`
   зовут сервисы задачи 2. `video_publish` возвращает абсолютный URL из
   `DOUGA_PUBLIC_URL` (по умолчанию `http://localhost:3000`, хвостовой слэш

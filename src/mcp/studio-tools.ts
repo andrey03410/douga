@@ -273,6 +273,44 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       ),
   );
   register(
+    "video_publish",
+    "Publish the latest saved studio revision, or move the existing public link onto it. Returns an absolute watch URL. Does not render MP4 and ignores unsaved draft edits.",
+    project.merge(studio.publishStudioProjectSchema),
+    async ({ projectId, ...input }) => {
+      const row = await studio.publishStudioProject(uid, projectId, input);
+      return {
+        url: studio.publicWatchUrl(row.token),
+        revision: row.revision,
+        updated: row.updated,
+        projectId: row.projectId,
+      };
+    },
+  );
+  register(
+    "video_unpublish",
+    "Remove the public watch link for a studio project. Publishing again creates a new link.",
+    project.merge(studio.unpublishStudioProjectSchema),
+    async ({ projectId, ...input }) =>
+      studio.unpublishStudioProject(uid, projectId, input),
+  );
+  register(
+    "video_publication_get",
+    "Read the current public watch link for a studio project. publication is null when nothing is published.",
+    project,
+    async ({ projectId }) => {
+      const row = await studio.getStudioPublication(uid, projectId);
+      return {
+        publication: row
+          ? {
+              url: studio.publicWatchUrl(row.token),
+              revision: row.revision,
+              projectId: row.projectId,
+            }
+          : null,
+      };
+    },
+  );
+  register(
     "video_document_get",
     "Explicit content read (can contain answers). Assistant audience is a hint; client may display it.",
     project
