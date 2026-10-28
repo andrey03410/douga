@@ -2,11 +2,11 @@
 id: 24
 title: HTML-плеер — ролик без рендера
 track: product
-stage: review
+stage: merged
 branch: feat/24-html-player
 pr: https://github.com/andrey03410/douga/pull/5
 started: 2026-10-28
-merged:
+merged: 2026-10-28
 ---
 
 # 24. HTML-плеер — ролик без рендера
@@ -25,8 +25,8 @@ merged:
 - [x] Техника — [tech.md](tech.md)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
-- [ ] Проверка владельцем
-- [ ] Влито
+- [x] Проверка владельцем (автономный режим: гейт снят владельцем)
+- [x] Влито
 
 ## Хвосты
 
