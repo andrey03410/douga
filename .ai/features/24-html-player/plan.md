@@ -79,7 +79,7 @@
   (`100dvh`, касания не меньше 44 px). `StudioPreview` и классические
   композиции не меняются.
 
-- [ ] **5. Файл `.html` и квота нарезки.** Файлы: `src/server/studio/export-html.ts`,
+- [x] **5. Файл `.html` и квота нарезки.** Файлы: `src/server/studio/export-html.ts`,
   `src/server/studio/export-slice.ts`, шрифты Arimo 400/700 и лицензия
   Apache-2.0 в `src/watch/fonts/`, `package.json` / `package-lock.json`
   (прямая `esbuild@0.28.0`), `next.config.mjs`

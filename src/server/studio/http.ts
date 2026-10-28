@@ -198,6 +198,35 @@ export async function studioHttp(
             nextCursor: rows.length > limit ? rows[limit - 1].id : null,
           });
         }
+        if (action === "publication") {
+          const raw = req.method === "GET" || req.method === "HEAD" ? {} : await req.json().catch(() => ({}));
+          if (read) {
+            const row = await studio.getStudioPublication(uid, id);
+            if (!row) throw new studio.StudioError("NOT_FOUND");
+            return json(row);
+          }
+          if (req.method === "POST")
+            return json(
+              await studio.publishStudioProject(
+                uid,
+                id,
+                studio.publishStudioProjectSchema.parse(raw),
+              ),
+            );
+          if (req.method === "DELETE")
+            return json(
+              await studio.unpublishStudioProject(
+                uid,
+                id,
+                studio.unpublishStudioProjectSchema.parse(raw),
+              ),
+            );
+        }
+        if (read && action === "export.html") {
+          if (url.searchParams.get("estimate") === "1")
+            return json(await studio.estimateStudioExport(uid, id));
+          return studio.streamStudioExport(uid, id);
+        }
         if (req.method === "PUT" && action === "draft")
           return json(
             await studio.saveStudioDraft(

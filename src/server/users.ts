@@ -151,8 +151,11 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
       if(file.posterPath) studioFiles.set(file.posterPath,file.posterBytes??0);
     }
   }
-  const studioJobs = await prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}});
-  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)};
+  const [studioJobs, exportCache] = await Promise.all([
+    prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}}),
+    prisma.studioExportCache.aggregate({where:{userId},_sum:{bytes:true}}),
+  ]);
+  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)+(exportCache._sum.bytes??0)};
   return {
     studio,
     role: user.role,
