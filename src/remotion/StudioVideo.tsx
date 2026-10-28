@@ -77,10 +77,11 @@ const Media: React.FC<{
   return (
     <div style={layout.viewport}>
       {media.asset.kind === "image" ? (
-        <Img src={source} style={layout.source} />
+        <Img src={source} pauseWhenLoading style={layout.source} />
       ) : outsideActive && media.asset.posterSrc ? (
         <Img
           src={resolveAsset(media.asset.posterSrc, mode)}
+          pauseWhenLoading
           style={layout.source}
         />
       ) : playback?.type === "play" ? (

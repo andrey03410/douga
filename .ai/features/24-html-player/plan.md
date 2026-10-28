@@ -63,7 +63,7 @@
   показывает «Ролик снят с публикации» и не зовёт `currentUser` ради редиректа.
   Готово, когда тесты зелёные, а ответ медиа идёт через `streamStudioFile`.
 
-- [ ] **4. Оболочка плеера.** Файлы: `src/watch/WatchPlayer.tsx`,
+- [x] **4. Оболочка плеера.** Файлы: `src/watch/WatchPlayer.tsx`,
   `src/watch/standalone.tsx` (точка монтирования для файла, без сборки),
   стили страницы просмотра, `src/remotion/StudioVideo.tsx`
   (`pauseWhenLoading` только у `<Img>`), `src/app/watch/[token]/page.tsx`
