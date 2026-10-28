@@ -351,12 +351,14 @@ export async function deleteUser(actorId: string, targetId: string) {
     if (activeJobs) throw new Error("JOB_IN_USE");
     // Jobs reference snapshots and projects with onDelete: Restrict.
     await tx.studioJob.deleteMany({ where: { userId: targetId } });
+    await tx.studioPublication.deleteMany({ where: { userId: targetId } });
     await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
     await tx.studioProject.deleteMany({where:{userId:targetId}});
     await tx.user.delete({where:{id:targetId}});
   });
   await removePath(path.join("studio",targetId));
   await removePath(path.join("studio-jobs",targetId));
+  await removePath(path.join("studio-exports",targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
   }

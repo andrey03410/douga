@@ -697,6 +697,7 @@ export async function deleteStudioProject(
       throw new StudioError("VERSION_CONFLICT");
     if (await db.studioJob.count({ where: { projectId: id } }))
       throw new StudioError("JOB_IN_USE");
+    await db.studioPublication.deleteMany({ where: { projectId: id } });
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
     await db.studioProject.delete({ where: { id } });
     const result = { deleted: true as const, id };
@@ -704,5 +705,6 @@ export async function deleteStudioProject(
     return result;
   });
   await cleanupDirectory(`studio/${userId}/${id}`);
+  await cleanupDirectory(`studio-exports/${userId}/${id}`);
   return result;
 }

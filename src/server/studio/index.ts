@@ -15,6 +15,12 @@ export {
 export * from "./revisions";
 export * from "./presets";
 export { getStudioManifest } from "./assets";
+export {
+  publishStudioProject,
+  unpublishStudioProject,
+  findPublicationByToken,
+  getStudioPublication,
+} from "./publication";
 
 export * from "./job-types";
 export {

@@ -15,6 +15,7 @@ import {
 import { freezeStudioProject } from "./revisions";
 import { StudioError } from "./errors";
 import { cleanupDirectory, fileHash, safeFile } from "./assets";
+import { releaseSnapshotIfFree } from "./snapshots";
 import { cleanupImportPool } from "./imports";
 import { prepareStudioEngine } from "./engine";
 import type { StudioFrozenRevision } from "./types";
@@ -138,13 +139,11 @@ async function releaseUnclaimedSnapshot(
   internalKey?: string,
 ) {
   await prisma.$transaction(async (db) => {
-    if (!(await db.studioJob.count({ where: { snapshotId: id } }))) {
-      await db.studioSnapshot.deleteMany({ where: { id } });
-      if (internalKey)
-        await db.studioMutation.deleteMany({
-          where: { userId, key: internalKey },
-        });
-    }
+    const released = await releaseSnapshotIfFree(id, db);
+    if (released && internalKey)
+      await db.studioMutation.deleteMany({
+        where: { userId, key: internalKey },
+      });
   });
 }
 export async function startStudioJob(
@@ -248,11 +247,7 @@ export async function deleteStudioJob(userId: string, id: string) {
     )
       throw new StudioError("JOB_ACTIVE");
     await db.studioJob.delete({ where: { id } });
-    if (
-      row.snapshotId &&
-      !(await db.studioJob.count({ where: { snapshotId: row.snapshotId } }))
-    )
-      await db.studioSnapshot.delete({ where: { id: row.snapshotId } });
+    if (row.snapshotId) await releaseSnapshotIfFree(row.snapshotId, db);
     return row;
   });
   await cleanupDirectory(jobDirectory(row.userId, row.id));

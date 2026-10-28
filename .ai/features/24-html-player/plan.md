@@ -28,7 +28,7 @@
   `.html`. Готово, когда `npx vitest run src/watch/model.test.ts` зелёный
   и серверные модули этот файл не импортируют `remotion`.
 
-- [ ] **2. Публикация и защита снимка.** Файлы: `prisma/schema.prisma`
+- [x] **2. Публикация и защита снимка.** Файлы: `prisma/schema.prisma`
   (`StudioPublication`, `StudioExportCache`), `src/server/studio/publication.ts`,
   `src/server/studio/types.ts`, `src/server/studio/index.ts`,
   `src/server/studio/jobs.ts`, `src/server/studio/revisions.ts`,
