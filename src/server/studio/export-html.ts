@@ -1,6 +1,6 @@
 import "server-only";
 import path from "node:path";
-import { open, readFile } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath } from "@/lib/storage";
 import type { CompiledVideo } from "@/video";
@@ -15,6 +15,22 @@ import { getStudioProject } from "./projects";
 import type { StudioFile, StudioValidation } from "./types";
 
 const BOOT = `(function(){
+var NativeURL=URL;
+function SafeURL(url,base){
+  try{
+    if(base===undefined||base===null||base==="null") return new NativeURL(url);
+    return new NativeURL(url,base);
+  }catch(error){
+    if(typeof url==="string"&&url.indexOf("blob:")===0) return new NativeURL(url);
+    throw error;
+  }
+}
+SafeURL.prototype=NativeURL.prototype;
+SafeURL.createObjectURL=NativeURL.createObjectURL.bind(NativeURL);
+SafeURL.revokeObjectURL=NativeURL.revokeObjectURL.bind(NativeURL);
+window.URL=SafeURL;
+})();
+(function(){
 var plan=JSON.parse(document.getElementById("douga-plan").textContent);
 var nodes=document.querySelectorAll("script[type='text/plain']");
 var urls={};
@@ -36,11 +52,19 @@ walk(plan);
 window.__DOUGA__={title:__TITLE__,plan:plan};
 })();`;
 
-let bundleCache: string | undefined;
+let bundleCache: { key: string; js: string } | undefined;
 let fontCssCache: string | undefined;
 
 async function playerBundle() {
-  if (bundleCache) return bundleCache;
+  const files = [
+    "src/watch/standalone.tsx",
+    "src/watch/WatchPlayer.tsx",
+    "src/remotion/StudioVideo.tsx",
+  ];
+  const key = (
+    await Promise.all(files.map(async (file) => (await stat(file)).mtimeMs))
+  ).join(":");
+  if (bundleCache?.key === key) return bundleCache.js;
   const esbuild = await import("esbuild");
   const result = await esbuild.build({
     entryPoints: [path.resolve("src/watch/standalone.tsx")],
@@ -55,9 +79,10 @@ async function playerBundle() {
     define: { "process.env.NODE_ENV": '"production"' },
     logLevel: "silent",
   });
-  bundleCache = result.outputFiles?.[0]?.text;
-  if (!bundleCache) throw new StudioError("EXPORT_BUNDLE_FAILED");
-  return bundleCache;
+  const js = result.outputFiles?.[0]?.text;
+  if (!js) throw new StudioError("EXPORT_BUNDLE_FAILED");
+  bundleCache = { key, js };
+  return js;
 }
 
 async function fontCss() {

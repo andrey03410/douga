@@ -1,5 +1,6 @@
 import "server-only";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import ffmpegPath from "ffmpeg-static";
@@ -87,7 +88,7 @@ async function placeSlice(input: {
     };
   }
   await mkdir(path.dirname(absPath(relative)), { recursive: true });
-  const partial = relative.replace(/(\.[^.]+)$/, ".partial$1");
+  const partial = relative.replace(/(\.[^.]+)$/, `.${randomUUID()}$1`);
   const source = await safeFile(input.sourcePath);
   if (input.copyWhole || input.kind === "image") await copyFile(source, absPath(partial));
   else {
@@ -184,17 +185,30 @@ export async function materializeSlices(input: {
       pending.reduce((sum, item) => sum + item.bytes, 0),
     );
     for (const item of pending) {
-      await rename(absPath(item.partial), absPath(item.relative));
-      const row = await prisma.studioExportCache.create({
-        data: {
-          userId: input.userId,
-          projectId: input.projectId,
-          revisionId: input.revisionId,
-          key: item.key,
-          bytes: item.bytes,
-          relativePath: item.relative,
-        },
-      });
+      try {
+        await rename(absPath(item.partial), absPath(item.relative));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      let row;
+      try {
+        row = await prisma.studioExportCache.create({
+          data: {
+            userId: input.userId,
+            projectId: input.projectId,
+            revisionId: input.revisionId,
+            key: item.key,
+            bytes: item.bytes,
+            relativePath: item.relative,
+          },
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code !== "P2002") throw error;
+        row = await prisma.studioExportCache.findUniqueOrThrow({
+          where: { key: item.key },
+        });
+      }
+      await safeFile(row.relativePath);
       assets.push({
         id: item.id,
         mime: studioMimeType(row.relativePath),

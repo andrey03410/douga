@@ -65,8 +65,10 @@ function prefetchStills(plan: CompiledVideo) {
       if (asset.posterSrc) urls.add(asset.posterSrc);
     }
   for (const url of urls) {
+    if (!url.startsWith("/") && !url.startsWith("http")) continue;
     try {
-      prefetch(url, { method: "blob-url" });
+      const handle = prefetch(url, { method: "blob-url" });
+      void handle.waitUntilDone().catch(() => {});
     } catch {
       /* A still that cannot be prefetched pauses through pauseWhenLoading. */
     }
