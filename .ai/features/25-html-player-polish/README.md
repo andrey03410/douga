@@ -4,7 +4,7 @@ title: HTML-плеер — перепроверка и доводка, общи�
 track: tech
 stage: review
 branch: fix/25-html-player-polish
-pr:
+pr: https://github.com/andrey03410/douga/pull/6
 started: 2026-10-28
 merged:
 ---
