@@ -79,6 +79,7 @@
 - Обязательно после последних правок: `npm test`, `npx tsc --noEmit`, `npm run build`
 - Живой сайт: `npm run dev` (сначала проверьте, что порт 3000 свободен) + `npm run studio:worker`. Путь: `/projects` → `/studio/new` → `/studio/<id>`: «Сохранить и проверить», «Показать превью», задания PNG/клип/аудио.
 - MCP: `node scripts/verify-studio.mjs --actor you@example.com --project PROJECT_ID --kind clip --seconds 3 --output storage/studio-verification/<run>`. Нужны ровно один `--project`/`--document` и новый каталог. Код 0 — байты сверены; 1 — ошибка/отмена/таймаут; 2 — результат > 12 MiB, нужна аутентифицированная загрузка на сайте (это не подтверждение download).
+- HTML-плеер: `/watch/<token>` и скачанный `.html` (открывать с выключенной сетью) прогоняйте в headless Chrome (`puppeteer-core`). Смотрите события `waiting` у `<audio>` во время просмотра, уход кадра от часов и кадры на паузе против MP4 того же номера (PSNR). Так сделана приёмка [задачи 25](../features/25-html-player-polish/verify.md).
 - Приёмка: смотрите реальные кадры, декодированный звук и живой Player/сайт. Parity по типам, юнитам или метаданным не объявляйте.
 
 ## История
