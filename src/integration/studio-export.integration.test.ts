@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video";
@@ -39,6 +44,46 @@ function wav(seconds: number) {
   return data;
 }
 
+const run = promisify(execFile);
+const ffmpeg = ffmpegPath as unknown as string;
+
+/** ffmpeg prints the streams of its input on stderr, even when it stops early. */
+async function streams(file: string) {
+  const result = await run(ffmpeg, ["-hide_banner", "-i", file, "-f", "null", "-"]);
+  return result.stderr;
+}
+
+/** Six seconds of a test pattern with a 440 Hz tone. */
+async function clip() {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "douga-export-"));
+  const file = path.join(dir, "clip.mp4");
+  await run(ffmpeg, [
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc=size=320x180:rate=30:duration=6",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=6",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-shortest",
+    file,
+  ]);
+  const data = await readFile(file);
+  await rm(dir, { recursive: true, force: true });
+  return data;
+}
+
+const cacheRows = (projectId: string) =>
+  prisma.studioExportCache.findMany({ where: { projectId }, orderBy: { key: "asc" } });
+
 beforeAll(async () => {
   owner = (
     await prisma.user.create({
@@ -64,10 +109,11 @@ describe("html export", () => {
   it("downloads one offline file of the saved revision without publishing", async () => {
     const image = await createArt(owner, { fileName: "pixel.png", data: png });
     const sound = await createArt(owner, { fileName: "tone.wav", data: wav(6) });
+    const title = "Сохранено $& $1 https://t.me/douga";
     const document = createVideoDocument({
       kind: "top",
-      title: "Сохранено",
-      participants: [{ id: "object", label: "Стул" }],
+      title,
+      participants: [{ id: "object", label: "Стул с https://example.com" }],
     });
     document.bindings.image = { kind: "pool", assetId: image.id };
     document.bindings.sound = { kind: "pool", assetId: sound.id };
@@ -95,7 +141,8 @@ describe("html export", () => {
     expect(body.length).toBe(estimate.bytes);
     expect(response.headers.get("content-type")).toContain("text/html");
     const html = body.toString("utf8");
-    expect(html).toContain("Сохранено");
+    expect(html).toContain("<title>Сохранено $&amp; $1 https://t.me/douga</title>");
+    expect(html).toContain(`title:${JSON.stringify(title)}`);
     expect(html).not.toContain("Черновик не для файла");
     expect(html).toContain("data:font/woff2;base64,");
     expect(html).not.toContain('type="module"');
@@ -106,12 +153,10 @@ describe("html export", () => {
     expect(shell).not.toMatch(/fetch\("https?:/);
     const again = await studio.estimateStudioExport(owner, created.id);
     expect(again.bytes).toBe(estimate.bytes);
-    const caches = await prisma.studioExportCache.findMany({
-      where: { projectId: created.id },
-    });
-    expect(caches.length).toBeGreaterThan(0);
-    const soundCache = caches.find((row) => row.relativePath.endsWith(".m4a"));
-    expect(soundCache).toBeTruthy();
+    // The still is read from the revision; only the cut sound is cached.
+    const caches = await cacheRows(created.id);
+    expect(caches.map((row) => path.extname(row.relativePath))).toEqual([".m4a"]);
+    const soundCache = caches[0];
     const sliced = await stat(absPath(soundCache!.relativePath));
     const original = await stat(absPath(sound.filePath));
     expect(sliced.size).toBeLessThan(original.size / 2);
@@ -120,11 +165,6 @@ describe("html export", () => {
       data: {
         userId: owner,
         projectId: created.id,
-        revisionId: (
-          await prisma.studioRevision.findFirstOrThrow({
-            where: { projectId: created.id, revision: created.revision },
-          })
-        ).id,
         key: `quota-${randomUUID()}`,
         bytes: studioJobLimits.maxResultBytesPerAccount,
         relativePath: `studio-exports/${owner}/quota-marker`,
@@ -137,7 +177,9 @@ describe("html export", () => {
       participants: [{ id: "object", label: "Стул" }],
     });
     second.bindings.image = { kind: "pool", assetId: otherImage.id };
-    second.source.participants[0].media = { visual: "image" };
+    second.bindings.sound = { kind: "pool", assetId: sound.id };
+    second.source.participants[0].media = { visual: "image", audio: "sound" };
+    second.settings.top = { ...second.settings.top, durationSec: 0.5 };
     const blocked = await studio.createStudioProject(owner, {
       document: second,
       idempotencyKey: randomUUID(),
@@ -158,6 +200,7 @@ describe("html export", () => {
 
   it("lets only one of two simultaneous exports pass a tight quota", async () => {
     const image = await createArt(owner, { fileName: "race.png", data: png });
+    const sound = await createArt(owner, { fileName: "race.wav", data: wav(6) });
     const make = async (title: string) => {
       const document = createVideoDocument({
         kind: "top",
@@ -165,7 +208,8 @@ describe("html export", () => {
         participants: [{ id: "object", label: "Стул" }],
       });
       document.bindings.image = { kind: "pool", assetId: image.id };
-      document.source.participants[0].media = { visual: "image" };
+      document.bindings.sound = { kind: "pool", assetId: sound.id };
+      document.source.participants[0].media = { visual: "image", audio: "sound" };
       document.settings.top = { ...document.settings.top, durationSec: 0.4 };
       return studio.createStudioProject(owner, {
         document,
@@ -193,14 +237,10 @@ describe("html export", () => {
         })
       )._sum.bytes ?? 0;
     const holder = await make("Держатель");
-    const revision = await prisma.studioRevision.findFirstOrThrow({
-      where: { projectId: holder.id },
-    });
     await prisma.studioExportCache.create({
       data: {
         userId: owner,
         projectId: holder.id,
-        revisionId: revision.id,
         key: `race-${randomUUID()}`,
         bytes: studioJobLimits.maxResultBytesPerAccount - used - learned,
         relativePath: `studio-exports/${owner}/race-marker`,
@@ -252,6 +292,83 @@ describe("html export", () => {
     } finally {
       exportCommitGate.wait = null;
       releaseFirst.current?.();
+      await prisma.studioExportCache.deleteMany({ where: { projectId: holder.id } });
     }
+  });
+  it("cuts a video's picture and sound apart and keeps cuts across revisions", async () => {
+    const video = await createArt(owner, { fileName: "clip.mp4", data: await clip() });
+    const document = createVideoDocument({
+      kind: "top",
+      title: "Клип",
+      participants: [{ id: "object", label: "Клип" }],
+    });
+    document.bindings.clip = { kind: "pool", assetId: video.id };
+    document.source.participants[0].media = { visual: "clip", audio: "clip" };
+    // A video node may hold its last frame, so its picture is cut from the offset on.
+    document.settings.top = {
+      ...document.settings.top,
+      snippet: { mode: "manual", startSec: 2, durationSec: 1 },
+    };
+    const created = await studio.createStudioProject(owner, {
+      document,
+      idempotencyKey: randomUUID(),
+    });
+    const html = Buffer.from(
+      await (await studio.streamStudioExport(owner, created.id)).arrayBuffer(),
+    ).toString("utf8");
+    expect(html).toContain('data-mime="image/jpeg"');
+    const first = await cacheRows(created.id);
+    expect(first.map((row) => path.extname(row.relativePath)).sort()).toEqual([
+      ".m4a",
+      ".mp4",
+    ]);
+    const sound = first.find((row) => row.relativePath.endsWith(".m4a"))!;
+    const picture = first.find((row) => row.relativePath.endsWith(".mp4"))!;
+    expect(await streams(absPath(sound.relativePath))).toMatch(/Audio: aac/);
+    const pictureStreams = await streams(absPath(picture.relativePath));
+    expect(pictureStreams).toMatch(/Video: h264/);
+    expect(pictureStreams).not.toMatch(/Audio:/);
+
+    const commit = async (patch: (doc: typeof document) => void) => {
+      const project = await studio.getStudioProject(owner, created.id);
+      const next = structuredClone(project.document);
+      patch(next);
+      const drafted = await studio.saveStudioDraft(owner, created.id, {
+        expectedVersion: project.version,
+        idempotencyKey: randomUUID(),
+        document: next,
+      });
+      await studio.commitStudioDraft(owner, created.id, {
+        expectedVersion: drafted.version,
+        idempotencyKey: randomUUID(),
+      });
+    };
+
+    // Same windows in a new revision: nothing is cut again.
+    await commit((doc) => {
+      doc.title = "Клип, второе сохранение";
+    });
+    await studio.estimateStudioExport(owner, created.id);
+    expect(await cacheRows(created.id)).toEqual(first);
+
+    // Longer windows: new cuts, and the old ones leave the disk.
+    await commit((doc) => {
+      doc.settings.top = {
+        ...doc.settings.top,
+        snippet: { mode: "manual", startSec: 3, durationSec: 1 },
+      };
+    });
+    await studio.estimateStudioExport(owner, created.id);
+    const longer = await cacheRows(created.id);
+    expect(longer).toHaveLength(2);
+    expect(longer.some((row) => first.some((old) => old.key === row.key))).toBe(false);
+    for (const old of first) await expect(stat(absPath(old.relativePath))).rejects.toThrow();
+
+    // A cut that vanished from disk is cut again.
+    await rm(absPath(longer[0].relativePath));
+    await studio.estimateStudioExport(owner, created.id);
+    const healed = await cacheRows(created.id);
+    expect(healed.map((row) => row.key)).toEqual(longer.map((row) => row.key));
+    expect((await stat(absPath(healed[0].relativePath))).size).toBe(longer[0].bytes);
   });
 });

@@ -145,6 +145,7 @@ function WatchChrome({
         controlsHidden({
           playing: player.isPlaying(),
           loading: false,
+          pinned: false,
           idleMs: Date.now() - idleAt.current,
         }) && !loading,
       );
@@ -168,7 +169,7 @@ function WatchChrome({
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      const action = keyAction(event.key, {
+      const action = keyAction(event, {
         tagName: target.tagName,
         type: target instanceof HTMLInputElement ? target.type : undefined,
         isContentEditable: target.isContentEditable,

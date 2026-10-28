@@ -1,107 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { CompiledAudio, CompiledNode, CompiledVideo } from "@/video";
+import type { CompiledScene } from "@/video";
+import { cue, hash, hashB, imageNode, plan, videoNode } from "./fixtures";
 import {
   CONTROLS_HIDE_MS,
-  HTML_MAX_ASSET_BASE64,
-  HTML_MAX_BYTES,
-  HTML_WARN_BYTES,
-  applySlices,
-  base64Length,
   chapters,
   controlsHidden,
-  htmlByteSize,
-  htmlContentDisposition,
-  htmlExportLimit,
+  coverFrame,
+  formatClock,
   keyAction,
-  mediaSlices,
   nextChapterFrame,
   previousChapterFrame,
   rewritePlanMedia,
   seekBySeconds,
   sharedAudioTagCount,
+  upcomingMedia,
   watchMediaPath,
 } from "./model";
-
-const hash = "a".repeat(64);
-const hashB = "b".repeat(64);
-
-function plan(patch: Partial<CompiledVideo> = {}): CompiledVideo {
-  return {
-    schemaVersion: 1,
-    compilerVersion: "1.0.0",
-    seed: 1,
-    width: 1920,
-    height: 1080,
-    fps: 30,
-    durationInFrames: 300,
-    scenes: [],
-    audio: [],
-    ...patch,
-  };
-}
-
-function cue(
-  patch: Partial<CompiledAudio> & { hash?: string; offsetFrames?: number },
-): CompiledAudio {
-  const digest = patch.hash ?? hash;
-  return {
-    id: patch.id ?? "cue",
-    asset: {
-      id: "asset",
-      kind: "audio",
-      src: `/api/studio/media?path=studio%2Fuser%2Fproj%2F${digest}.m4a`,
-      hash: digest,
-      durationSec: 10,
-      ...patch.asset,
-    },
-    role: "music",
-    from: 0,
-    durationInFrames: 30,
-    offsetFrames: 0,
-    loopFrames: null,
-    volume: 1,
-    fadeInFrames: 0,
-    fadeOutFrames: 0,
-    duckVolume: 1,
-    duckWindows: [],
-    muteWindows: [],
-    ...patch,
-  };
-}
-
-function videoNode(
-  patch: Partial<CompiledNode> & { hash?: string } = {},
-): CompiledNode {
-  const digest = patch.hash ?? hashB;
-  return {
-    id: patch.id ?? "video",
-    type: "video",
-    from: 0,
-    durationInFrames: 60,
-    rect: { x: 0, y: 0, width: 100, height: 100 },
-    layer: 1,
-    visible: [],
-    style: {},
-    opacity: 1,
-    rotate: 0,
-    scale: 1,
-    animation: [],
-    media: {
-      asset: {
-        id: "vid",
-        kind: "video",
-        src: `/api/arts/secret`,
-        hash: digest,
-        durationSec: 10,
-        posterSrc: `/api/studio/media?path=studio%2Fposter.jpg`,
-      },
-      offsetFrames: 90,
-      loopFrames: null,
-      fit: "cover",
-    },
-    ...patch,
-  } as CompiledNode;
-}
 
 describe("chapters", () => {
   it("marks the first scene of each round and skips the answer scene", () => {
@@ -231,7 +145,7 @@ describe("seek and audio tags", () => {
     expect(seekBySeconds(290, 5, 30, 300)).toBe(299);
   });
 
-  it("counts overlapping cues and never goes below five shared tags", () => {
+  it("reserves twice the busiest overlap, so a seek between two busy regions fits", () => {
     expect(sharedAudioTagCount(plan())).toBe(5);
     const video = plan({
       audio: [
@@ -242,53 +156,139 @@ describe("seek and audio tags", () => {
         cue({ id: "e", from: 0, durationInFrames: 0 }),
       ],
     });
-    expect(sharedAudioTagCount(video)).toBe(5);
+    expect(sharedAudioTagCount(video)).toBe(6);
     const busy = plan({
       audio: Array.from({ length: 6 }, (_, i) =>
         cue({ id: `c${i}`, from: 0, durationInFrames: 40 }),
       ),
     });
-    expect(sharedAudioTagCount(busy)).toBe(6);
+    expect(sharedAudioTagCount(busy)).toBe(12);
+  });
+});
+
+describe("clock", () => {
+  it("rounds down, so the end reads the same as the total", () => {
+    expect(formatClock(0, 30)).toBe("0:00");
+    expect(formatClock(29, 30)).toBe("0:00");
+    expect(formatClock(764, 30)).toBe("0:25");
+    expect(formatClock(765, 30)).toBe("0:25");
+    expect(formatClock(30 * 61, 30)).toBe("1:01");
   });
 });
 
 describe("keys and control visibility", () => {
   const body = { tagName: "BODY" };
-
-  it("maps the player keys and ignores text fields and arrows on a range", () => {
-    expect(keyAction(" ", body)).toBe("toggle");
-    expect(keyAction("ArrowLeft", body)).toBe("seek-back");
-    expect(keyAction("ArrowRight", body)).toBe("seek-forward");
-    expect(keyAction("f", body)).toBe("fullscreen");
-    expect(keyAction("M", body)).toBe("mute");
-    expect(keyAction("PageUp", body)).toBe("chapter-prev");
-    expect(keyAction("PageDown", body)).toBe("chapter-next");
-    expect(keyAction("k", body)).toBeNull();
-    expect(keyAction(" ", { tagName: "INPUT", type: "text" })).toBeNull();
-    expect(keyAction("ArrowLeft", { tagName: "TEXTAREA" })).toBeNull();
-    expect(
-      keyAction("ArrowRight", { tagName: "INPUT", type: "range" }),
-    ).toBeNull();
-    expect(keyAction(" ", { tagName: "INPUT", type: "range" })).toBe("toggle");
-    expect(
-      keyAction("f", { tagName: "DIV", isContentEditable: true }),
-    ).toBeNull();
+  const key = (code: string, extra: Partial<Parameters<typeof keyAction>[0]> = {}) => ({
+    code,
+    ...extra,
   });
 
-  it("hides controls after 2.5s of playback and keeps them while paused or loading", () => {
+  it("maps physical keys, so F and M work in the Russian layout", () => {
+    expect(keyAction(key("Space"), body)).toBe("toggle");
+    expect(keyAction(key("ArrowLeft"), body)).toBe("seek-back");
+    expect(keyAction(key("ArrowRight"), body)).toBe("seek-forward");
+    expect(keyAction(key("KeyF"), body)).toBe("fullscreen");
+    expect(keyAction(key("KeyM"), body)).toBe("mute");
+    expect(keyAction(key("PageUp"), body)).toBe("chapter-prev");
+    expect(keyAction(key("PageDown"), body)).toBe("chapter-next");
+    expect(keyAction(key("KeyK"), body)).toBeNull();
+  });
+
+  it("leaves browser shortcuts and held toggles alone", () => {
+    expect(keyAction(key("KeyF", { ctrlKey: true }), body)).toBeNull();
+    expect(keyAction(key("KeyF", { metaKey: true }), body)).toBeNull();
+    expect(keyAction(key("ArrowLeft", { altKey: true }), body)).toBeNull();
+    expect(keyAction(key("ArrowLeft", { metaKey: true }), body)).toBeNull();
+    expect(keyAction(key("Space", { repeat: true }), body)).toBeNull();
+    expect(keyAction(key("KeyF", { repeat: true }), body)).toBeNull();
+    expect(keyAction(key("KeyM", { repeat: true }), body)).toBeNull();
+    expect(keyAction(key("ArrowRight", { repeat: true }), body)).toBe("seek-forward");
+    expect(keyAction(key("PageDown", { repeat: true }), body)).toBe("chapter-next");
+  });
+
+  it("ignores text fields and keeps native arrows only where a range asks for them", () => {
+    expect(keyAction(key("Space"), { tagName: "INPUT", type: "text" })).toBeNull();
+    expect(keyAction(key("ArrowLeft"), { tagName: "TEXTAREA" })).toBeNull();
+    expect(keyAction(key("KeyF"), { tagName: "DIV", isContentEditable: true })).toBeNull();
+    const seekBar = { tagName: "INPUT", type: "range" };
+    expect(keyAction(key("ArrowRight"), seekBar)).toBe("seek-forward");
+    expect(keyAction(key("Space"), seekBar)).toBe("toggle");
+    const volume = { tagName: "INPUT", type: "range", nativeArrows: true };
+    expect(keyAction(key("ArrowRight"), volume)).toBeNull();
+    expect(keyAction(key("ArrowLeft"), volume)).toBeNull();
+    expect(keyAction(key("KeyM"), volume)).toBe("mute");
+    expect(keyAction(key("Space"), { tagName: "BUTTON" })).toBe("toggle");
+  });
+
+  it("hides controls after 2.5s of playback and keeps them while paused, loading or pinned", () => {
     expect(CONTROLS_HIDE_MS).toBe(2500);
-    expect(controlsHidden({ playing: true, loading: false, idleMs: 2499 })).toBe(
-      false,
-    );
-    expect(controlsHidden({ playing: true, loading: false, idleMs: 2500 })).toBe(
-      true,
-    );
-    expect(controlsHidden({ playing: false, loading: false, idleMs: 9000 })).toBe(
-      false,
-    );
-    expect(controlsHidden({ playing: true, loading: true, idleMs: 9000 })).toBe(
-      false,
-    );
+    const idle = { playing: true, loading: false, pinned: false };
+    expect(controlsHidden({ ...idle, idleMs: 2499 })).toBe(false);
+    expect(controlsHidden({ ...idle, idleMs: 2500 })).toBe(true);
+    expect(controlsHidden({ ...idle, playing: false, idleMs: 9000 })).toBe(false);
+    expect(controlsHidden({ ...idle, loading: true, idleMs: 9000 })).toBe(false);
+    expect(controlsHidden({ ...idle, pinned: true, idleMs: 9000 })).toBe(false);
+  });
+});
+
+function scene(patch: Partial<CompiledScene>): CompiledScene {
+  return {
+    id: "s",
+    kind: "custom",
+    from: 0,
+    durationInFrames: 100,
+    background: "#000",
+    nodes: [],
+    phases: {},
+    transition: { type: "none", durationInFrames: 0 },
+    ...patch,
+  };
+}
+
+describe("cover frame", () => {
+  it("shows the first picker round with every card open and no answer yet", () => {
+    const video = plan({
+      scenes: [
+        scene({ id: "r1", kind: "picker", from: 0, durationInFrames: 300, phases: { revealStartFrame: 20, timerStartFrame: 150, answerStartFrame: 240 } }),
+      ],
+    });
+    expect(coverFrame(video)).toBe(150);
+  });
+
+  it("stops before the answer when there is no timer, else takes 60% of the first scene", () => {
+    expect(coverFrame(plan({ scenes: [scene({ from: 0, durationInFrames: 100, phases: { answerStartFrame: 40 } })] }))).toBe(39);
+    expect(coverFrame(plan({ scenes: [scene({ id: "empty", durationInFrames: 0 }), scene({ id: "intro", from: 0, durationInFrames: 255 })] }))).toBe(153);
+    expect(coverFrame(plan({ durationInFrames: 0 }))).toBe(0);
+  });
+});
+
+describe("preload window", () => {
+  it("lists audio and stills that start within the horizon, skipping video and blob sources", () => {
+    const video = plan({
+      durationInFrames: 900,
+      audio: [
+        cue({ id: "now", from: 0, durationInFrames: 255, asset: { src: "/api/watch/t/media/now.wav" } as never }),
+        cue({ id: "soon", from: 255, durationInFrames: 255, asset: { src: "/api/watch/t/media/soon.wav" } as never }),
+        cue({ id: "late", from: 800, durationInFrames: 30, asset: { src: "/api/watch/t/media/late.wav" } as never }),
+        cue({ id: "offline", from: 0, durationInFrames: 30, asset: { src: "blob:null/1" } as never }),
+      ],
+      scenes: [
+        scene({ id: "a", from: 0, durationInFrames: 255, nodes: [imageNode("/api/watch/t/media/a.png"), videoNode()] }),
+        scene({ id: "b", from: 255, durationInFrames: 255, nodes: [imageNode("/api/watch/t/media/b.png", "d".repeat(64))] }),
+        scene({ id: "c", from: 800, durationInFrames: 100, nodes: [imageNode("/api/watch/t/media/c.png", "e".repeat(64))] }),
+      ],
+    });
+    expect(upcomingMedia(video, 0, 300).sort()).toEqual([
+      "/api/studio/media?path=studio%2Fposter.jpg",
+      "/api/watch/t/media/a.png",
+      "/api/watch/t/media/b.png",
+      "/api/watch/t/media/now.wav",
+      "/api/watch/t/media/soon.wav",
+    ]);
+    expect(upcomingMedia(video, 520, 300).sort()).toEqual([
+      "/api/watch/t/media/c.png",
+      "/api/watch/t/media/late.wav",
+    ]);
   });
 });
 
@@ -330,115 +330,3 @@ describe("public media urls", () => {
   });
 });
 
-describe("slice windows", () => {
-  it("pads a partial window by half a second and shifts the offset", () => {
-    const video = plan({
-      audio: [cue({ id: "part", offsetFrames: 100, durationInFrames: 30 })],
-    });
-    const slices = mediaSlices(video);
-    expect(slices).toEqual([
-      expect.objectContaining({
-        hash,
-        kind: "audio",
-        startFrame: 85,
-        endFrame: 145,
-        copyWhole: false,
-      }),
-    ]);
-    const sliced = applySlices(video);
-    expect(sliced.audio[0].offsetFrames).toBe(15);
-    expect(sliced.audio[0].asset.src).toBe(`slice:${slices[0].id}`);
-    expect(sliced.audio[0].asset.durationSec).toBeCloseTo(60 / 30, 5);
-  });
-
-  it("copies a file that is already used edge to edge", () => {
-    const video = plan({
-      audio: [cue({ id: "all", offsetFrames: 0, durationInFrames: 290 })],
-    });
-    expect(mediaSlices(video)[0].copyWhole).toBe(true);
-    expect(applySlices(video).audio[0].offsetFrames).toBe(0);
-  });
-
-  it("keeps distant windows apart and extends a video slice to the freeze frame", () => {
-    const node = videoNode();
-    node.media!.freezeAtFrame = 200;
-    node.media!.offsetFrames = 90;
-    node.durationInFrames = 30;
-    const video = plan({
-      fps: 30,
-      audio: [
-        cue({ id: "early", hash, offsetFrames: 0, durationInFrames: 20 }),
-        cue({ id: "late", hash, offsetFrames: 240, durationInFrames: 20 }),
-      ],
-      scenes: [
-        {
-          id: "s",
-          kind: "custom",
-          from: 0,
-          durationInFrames: 30,
-          background: "#000",
-          nodes: [node],
-          phases: {},
-          transition: { type: "none", durationInFrames: 0 },
-        },
-      ],
-    });
-    const slices = mediaSlices(video);
-    const audioSlices = slices.filter((s) => s.hash === hash);
-    expect(audioSlices).toHaveLength(2);
-    const picture = slices.find((s) => s.hash === hashB);
-    expect(picture?.endFrame).toBe(200 + 1 + 15);
-    const sliced = applySlices(video);
-    expect(sliced.scenes[0].nodes[0].media?.offsetFrames).toBe(15);
-    expect(sliced.scenes[0].nodes[0].media?.freezeAtFrame).toBe(
-      200 - (picture!.startFrame),
-    );
-  });
-
-  it("merges windows that sit less than a second apart", () => {
-    const video = plan({
-      audio: [
-        cue({ id: "a", offsetFrames: 0, durationInFrames: 30 }),
-        cue({ id: "b", offsetFrames: 40, durationInFrames: 30 }),
-      ],
-    });
-    expect(mediaSlices(video)).toHaveLength(1);
-    expect(mediaSlices(video)[0].endFrame).toBe(70 + 15);
-  });
-});
-
-describe("html size and disposition", () => {
-  it("sums base64 parts without building the file", () => {
-    expect(base64Length(3)).toBe(4);
-    expect(base64Length(4)).toBe(8);
-    expect(
-      htmlByteSize({
-        skeletonBytes: 10,
-        bundleBytes: 20,
-        fontBase64Chars: 5,
-        assets: [{ bytes: 3, wrapperBytes: 7 }],
-      }),
-    ).toBe(10 + 20 + 5 + 4 + 7);
-  });
-
-  it("warns at 80 MiB and refuses at 400 MiB or a huge asset string", () => {
-    expect(htmlExportLimit(HTML_WARN_BYTES - 1, 10)).toBe("ok");
-    expect(htmlExportLimit(HTML_WARN_BYTES, 10)).toBe("warn");
-    expect(htmlExportLimit(HTML_MAX_BYTES - 1, 10)).toBe("warn");
-    expect(htmlExportLimit(HTML_MAX_BYTES, 10)).toBe("refuse");
-    expect(htmlExportLimit(100, HTML_MAX_ASSET_BASE64)).toBe("refuse");
-  });
-
-  it("names the download like a render, with an html extension", () => {
-    expect(htmlContentDisposition("cm123", "Топ: аниме (2024)")).toBe(
-      "attachment; filename=\"douga-cm123.html\"; " +
-        "filename*=UTF-8''%D0%A2%D0%BE%D0%BF%20%D0%B0%D0%BD%D0%B8%D0%BC%D0%B5%20%282024%29.html",
-    );
-    expect(htmlContentDisposition("cm123", null)).toBe(
-      'attachment; filename="douga-cm123.html"',
-    );
-    const header = htmlContentDisposition("cm123", "Выбери вайфу 💖");
-    expect(header).toMatch(/^[\x20-\x7e]+$/);
-    expect(() => new Headers({ "Content-Disposition": header })).not.toThrow();
-  });
-});
