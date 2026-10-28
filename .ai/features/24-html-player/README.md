@@ -2,9 +2,9 @@
 id: 24
 title: HTML-плеер — ролик без рендера
 track: product
-stage: build
+stage: review
 branch: feat/24-html-player
-pr:
+pr: https://github.com/andrey03410/douga/pull/5
 started: 2026-10-28
 merged:
 ---
