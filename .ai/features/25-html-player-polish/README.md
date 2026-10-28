@@ -2,7 +2,7 @@
 id: 25
 title: HTML-плеер — перепроверка и доводка, общий демо-ролик
 track: tech
-stage: tech
+stage: build
 branch: fix/25-html-player-polish
 pr:
 started: 2026-10-28
@@ -20,8 +20,8 @@ merged:
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Техника — [tech.md](tech.md)
-- [ ] План — [plan.md](plan.md)
+- [x] Техника — [tech.md](tech.md)
+- [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем (автономный режим: владелец смотрит после вливания)
 - [ ] Влито
