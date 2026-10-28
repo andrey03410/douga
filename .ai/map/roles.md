@@ -13,7 +13,7 @@
   - кабинет: `usageSummary` (агрегаты плюс бэкфилл размеров), `listArchiveRows`, `listRenderRows` (с курсором), `deleteRenderJob`;
   - админка: `listUsers`, `setUserRole`, `deleteUser`.
 - [`src/app/account/`](../../src/app/account/) — страница `/account`. `AccountManager` показывает квоты и сводки, списки грузит по запросу; пул выводится через `useMediaPool` и `MediaBrowser`.
-- [`src/app/api/account/`](../../src/app/api/account/) — `GET usage`, `GET archives`, `GET renders?cursor&limit`.
+- [`src/app/api/account/`](../../src/app/api/account/) — `GET usage`, `GET archives`, `GET renders?cursor&limit`, `GET publications`.
 - [`src/app/admin/`](../../src/app/admin/) — страница `/admin`, компонент `AdminUsers`: таблица пользователей, выбор роли, удаление.
 - [`src/app/api/admin/users/`](../../src/app/api/admin/users/) — `GET` списка, `PATCH` и `DELETE` для `[id]`, всё под правом `admin:users`.
 - [`src/mcp/actor.ts`](../../src/mcp/actor.ts) — актор MCP. Свежую роль на каждый вызов берёт `actor()` из [`src/server/studio/shared.ts`](../../src/server/studio/shared.ts).
@@ -42,7 +42,7 @@
 - Рендер:
   - `POST /api/tournaments/[id]/render` и `/api/projects/[id]/render` требуют `render:run`, иначе 403 «Рендер доступен только администратору»;
   - в студии `jobActor` требует `render:run` для `kind: "render"` при постановке задания и ещё раз, когда воркер его берёт;
-  - превью still/clip/audio доступны любому автору: не больше 4 активных заданий, а у ролей без `render:run` все результаты вместе не больше 512 MiB.
+  - превью still/clip/audio и публикация HTML-ролика доступны любому автору с `media:upload`: не больше 4 активных заданий, а у ролей без `render:run` результаты заданий и кэш нарезки `.html` — каждый не больше 512 МиБ. Гость по `/watch/<token>` не входит. `deleteUser` удаляет публикации до снимков. В кабинете список «Публикации» показывает `snapshot.bytes` и снимает ссылку. `usageSummary().studio.bytes` складывает уникальные файлы ревизий и байты кэша нарезки.
 - Страницы:
   - гость на `/` видит приветственный экран, пользователя с сессией `/` и вход перенаправляют на `/projects` («Мои видео»);
   - остальные страницы без сессии перенаправляют на `/` (студия — на `/login`), API отвечает 401;
@@ -53,7 +53,7 @@
   - блок «Студия» показывает сводку `usageSummary().studio`: проекты, ревизии, медиа ревизий, задания, снимки, объём результатов.
 - Админка:
   - менять роль или удалять самого себя нельзя: `SELF_CHANGE` даёт 403;
-  - `deleteUser` сначала в транзакции удаляет строки БД, потом файлы: `tournaments/<id>`, рендеры, `arts/<userId>`, `studio/<userId>`, `studio-jobs/<userId>`. Общие движки `studio-engines` не трогаются;
+  - `deleteUser` сначала в транзакции удаляет строки БД, потом файлы: `tournaments/<id>`, рендеры, `arts/<userId>`, `studio/<userId>`, `studio-jobs/<userId>`, `studio-exports/<userId>`. Общие движки `studio-engines` не трогаются;
   - активное SDK-задание блокирует удаление с `JOB_IN_USE` (409). Активное — по правилу `deleteStudioJob`: `queued`/`running` или `leaseUntil > now`. Завершённые задания транзакция удаляет сама, раньше снимков и проектов, потому что у них `onDelete: Restrict`;
   - email из `ADMIN_EMAILS` понизить нельзя: `setUserRole` бросает `ADMIN_BOOTSTRAP` → 409 с советом убрать email из `.env`. `listUsers` отдаёт флаг `bootstrapAdmin`, а админка показывает метку «из ADMIN_EMAILS» и не предлагает понижение.
 - Email: новые аккаунты хранят его обрезанным и в нижнем регистре, старые строки не переписываются. Любой поиск по email — вход (`authorize` → `verifyCredentials`), проверка дубля при регистрации, MCP `resolveActor` — идёт через `findUserByEmail`. Поиск — `lower(email) = ? OR email = ?` сырым SQL. Кандидаты упорядочены: сначала набранный точно, потом канонический в нижнем регистре, потом старые варианты регистра от старых к новым. `verifyCredentials` перебирает их, и вход решает пароль, так что старый `Bob@x` входит, даже если рядом живёт `bob@x`. `Foo@x` при живом `foo@x` не зарегистрировать. SQLite `lower()` сворачивает только ASCII: старый адрес с не-ASCII заглавной находится лишь при точном наборе.

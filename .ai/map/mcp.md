@@ -9,11 +9,12 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
   - пул и импорт: `list_pool` (отдаёт абсолютный `filePath`), `import_shikimori_poster`, `import_youtube_audio`, `list_local_media`/`import_local_media` (только из `MCP_LOCAL_MEDIA_DIRS`, до 50 файлов за вызов, в пул уходит копия);
   - прежний пикер (`VideoProject`, kind `picker`): `create_picker_project`, `add_round`/`set_round`/`delete_round`, `add_group`/`set_group`/`delete_group`, `add_tile`/`add_tile_from_shikimori`, `set_playlist`, `set_project`, `get_project`;
   - прежний ручной топ: `create_top_project`, `set_top_items` (атомарно заменяет все позиции, до 200), `get_project`.
-- [`src/mcp/studio-tools.ts`](../../src/mcp/studio-tools.ts) — `registerStudioTools`: 27 инструментов `video_*` и ресурсы `video://` (схемы, примеры, байты заданий, фрагменты ассетов). Схемы zod строгие. Ответ содержит `structuredContent` и тот же JSON текстом, ошибка — `{error:{code,diagnostics}}`. Группы:
+- [`src/mcp/studio-tools.ts`](../../src/mcp/studio-tools.ts) — `registerStudioTools`: 30 инструментов `video_*` и ресурсы `video://` (схемы, примеры, байты заданий, фрагменты ассетов). Схемы zod строгие. Ответ содержит `structuredContent` и тот же JSON текстом, ошибка — `{error:{code,diagnostics}}`. Группы:
   - справка: `capabilities`, `schema_get`, `examples`, `preset_list`/`preset_get`/`preset_save`;
   - проект и черновик: `project_create`/`project_list`/`project_get`, `document_get`, `draft_replace`/`draft_patch`, `preset_apply`, `project_validate`, `draft_commit`, `revision_restore`, `history_list`, `timeline_get`;
   - источники и медиа: `source_list`/`source_get`, `asset_list`/`asset_inspect`;
-  - очередь: `job_start`/`job_get`/`job_cancel`/`job_inspect`, `import_start`.
+  - очередь: `job_start`/`job_get`/`job_cancel`/`job_inspect`, `import_start`;
+  - HTML-ролик: `video_publish` (создать или обновить ссылку, абсолютный URL), `video_unpublish`, `video_publication_get`. База URL — `DOUGA_PUBLIC_URL`, по умолчанию `http://localhost:3000`, хвостовой слэш срезается.
 - [`src/mcp/actor.ts`](../../src/mcp/actor.ts) — `resolveActor()` по `MCP_ACTOR_EMAIL`.
 - [`src/mcp/compose.ts`](../../src/mcp/compose.ts) — `addTileFromShikimori`: импорт постера и карточка одним вызовом.
 - [`src/mcp/youtube.ts`](../../src/mcp/youtube.ts) — `import_youtube_audio`: запускает `DownloadJob` (yt-dlp, только звук) и опрашивает его до 180 с.
@@ -25,7 +26,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ (Claude 
 ## Данные
 - Своих таблиц у MCP нет, инструменты пишут в модели продукта ([schema](../../prisma/schema.prisma)):
   - прежние проекты: `VideoProject`, `PickerRound`, `PickerGroup`, `PickerTile`, `PickerPlaylistItem`, `RenderConfig`/`RenderItem` (ручной топ), `Art`, `DownloadJob`;
-  - студия: `StudioProject`, `StudioRevision`, `StudioPreset`, `StudioMutation`, `StudioJob`.
+  - студия: `StudioProject`, `StudioRevision`, `StudioPreset`, `StudioMutation`, `StudioJob`, `StudioPublication`.
 
 ## Как устроено
 - Актор: при старте `resolveActor()` ищет `User` по `MCP_ACTOR_EMAIL` через `findUserByEmail` ([roles.md](roles.md)), регистр не важен. Email должен совпадать с веб-аккаунтом. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1.
