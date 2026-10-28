@@ -129,7 +129,7 @@ export function StudioWorkspace({
     warning: boolean;
   } | null>(null);
   const [exportNote, setExportNote] = useState("");
-    [result, setResult] = useState<StudioJobView | null>(null);
+  const [result, setResult] = useState<StudioJobView | null>(null);
   const [fromFrame, setFromFrame] = useState(0),
     [durationFrames, setDurationFrames] = useState(90);
   const jobWindowCount = useRef(20);
