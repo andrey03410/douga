@@ -2,7 +2,7 @@
 id: 24
 title: HTML-плеер — ролик без рендера
 track: product
-stage: product
+stage: tech
 branch: feat/24-html-player
 pr:
 started: 2026-10-28
@@ -15,10 +15,13 @@ merged:
 страницы с собственным плеером. Её можно открыть по ссылке на сайте или скачать
 одним `.html`. Цель — смотреть сразу после сборки, без ожидания рендера.
 
+**Автономный режим** со стадии «техника» до вливания, исполнитель — Cursor. Слова владельца
+в [brief.md](brief.md#автономный-режим).
+
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Продукт — [product.md](product.md)
+- [x] Продукт — [product.md](product.md)
 - [ ] Техника — [tech.md](tech.md)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
