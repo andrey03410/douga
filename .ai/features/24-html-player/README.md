@@ -2,7 +2,7 @@
 id: 24
 title: HTML-плеер — ролик без рендера
 track: product
-stage: plan
+stage: build
 branch: feat/24-html-player
 pr:
 started: 2026-10-28
@@ -23,7 +23,7 @@ merged:
 - [x] Бриф — [brief.md](brief.md)
 - [x] Продукт — [product.md](product.md)
 - [x] Техника — [tech.md](tech.md)
-- [ ] План — [plan.md](plan.md)
+- [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем
 - [ ] Влито
