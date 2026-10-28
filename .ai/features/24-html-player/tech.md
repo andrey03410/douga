@@ -1,316 +1,522 @@
 # Техника
 
-> Вводные для исполнителя (Cursor, автономный режим). Их собрал агент Claude Code на коммите
-> `90c11a7`. Решения T01… ещё не приняты: исполнитель сверяет вводные с кодом, правит неверное,
-> принимает решения и записывает их здесь. Рекомендации ниже — отправная точка, не приказ.
+Решения приняты автономно 2026-10-28 по коду рабочей копии `feat/24-html-player`
+(база `90c11a7` плюс доки задачи). Вводные агента сверены с кодом; расхождения
+записаны в «Исходной системе». Внешние API сверены с документацией в этот же день,
+а не по памяти.
 
 ## Исходная система
 
-Факты собраны по коду на `90c11a7`. Номера строк могли сдвинуться, ориентируйся на имена функций.
+Карточки: [studio-sdk](../../map/studio-sdk.md), [roles](../../map/roles.md),
+[mcp](../../map/mcp.md), [render](../../map/render.md). Ниже только то, что
+прочитано в коде.
 
 ### Как превью студии получает медиа
 
-- Plan в режиме `"url"` содержит относительные адреса. Их строит `resolveAssets`
-  в `src/server/studio/assets.ts`:
-  - ревизия с каталогом версии (commit, freeze, смена источника) даёт
-    `/api/studio/media?path=<путь в storage>`;
-  - черновик без каталога даёт `/api/arts/<artId>`, `/api/tracks/<id>/audio`
-    и `/api/studio/builtin/<name>`;
-  - постеры всегда идут через `/api/studio/media?path=`.
-- `/api/studio/media` проверяет по порядку:
-  1. `userOr401`;
-  2. `actor()` с `media:upload`;
-  3. путь должен совпасть с `files[*].path` или `posterPath` ревизии или снимка этого пользователя
-     (`src/server/studio/http-media.ts`, `ownedStudioMedia`);
-  4. `safeFile` в `assets.ts` удерживает realpath внутри `storage/`.
+`resolveAssets` в `src/server/studio/assets.ts`:
 
-  Отдаёт `streamStudioFile`: он стримит файл и правильно разбирает Range,
-  включая суффиксный и выход за конец.
-- `StudioVideo.tsx`, функция `resolveAsset`: в `"static"` вызывает `staticFile(src)`,
-  в `"url"` берёт `src` как есть. Других различий по `assetMode` в композиции нет.
-- Весь `/api/studio/*` идёт через catch-all `src/app/api/studio/[[...path]]/route.ts` → `studioHttp`
-  (`src/server/studio/http.ts`), а тот первым делом вызывает `userOr401`. Публичный маршрут
-  поэтому должен жить вне `/api/studio/`. `middleware.ts` в проекте нет: страницы защищают себя
-  сами. Корневой `src/app/layout.tsx` рисует шапку `.topbar` на всех страницах и вызывает
-  `currentUser()`.
-- Проверка `Origin` у мутаций — `http-origin.ts`, сверка с `x-forwarded-host`/`host`.
+- Если передан `directory` (коммит или заморозка черновика), файл копируется в
+  каталог ревизии, а `src` становится `/api/studio/media?path=<путь>`.
+- Без каталога черновик получает `/api/arts/<id>`, `/api/tracks/<id>/audio`
+  или `/api/studio/builtin/<name>`.
+- Постер **всегда** идёт через `/api/studio/media?path=`, и у черновика тоже.
+  Вводная «постеры только у ревизии» неверна.
+- `files` — это `Record<string, StudioFile>` (`path`, `hash`, `bytes`,
+  необязательные `posterPath` / `posterHash` / `posterBytes`), не массив.
+  Так написано в `StudioFrozenRevision` (`src/server/studio/types.ts`).
+
+`/api/studio/media` (`studioHttp` → `ownedStudioMedia` → `streamStudioFile`):
+
+1. `userOr401`, затем `actor()` — у `actor` право `media:upload`;
+2. путь должен точно совпасть с `path` или `posterPath` в `assetsJson` ревизии,
+   в `payloadJson` снимка этого пользователя, либо с `Art.posterPath`;
+3. `safeFile` удерживает realpath внутри `storage/`.
+
+`streamStudioFile` стримит `createReadStream`, не читает файл целиком.
+Суффиксный Range `bytes=-N` берёт последние N байт. Конец за пределом файла
+обрезается. Пустой файл и неразборчивый Range дают 416.
+
+`mediaResponse` в `src/lib/api.ts` — другой путь (`/api/arts`, аудио треков).
+Он делает `readFile` целиком. `bytes=-N` превращается в `0..N`, а `end >= total`
+даёт 416 вместо обрезки. Публичный маршрут его не использует.
+
+`StudioVideo`: `resolveAsset` при `"static"` вызывает `staticFile`, при `"url"`
+возвращает `src` как есть. Других ветвей `assetMode` нет. Весь
+`/api/studio/*` идёт через catch-all и сразу вызывает `userOr401`.
+`middleware.ts` в проекте нет. Корневой `src/app/layout.tsx` на каждой странице
+рисует `.topbar` и вызывает `currentUser()`. Гость не редиректится:
+`currentUser` ловит отказ и возвращает `null`, в шапке остаётся «Войти».
+
+Проверка `Origin` у мутаций — `http-origin.ts`, сверка с `x-forwarded-host` / `host`.
 
 ### Снимок ревизии
 
-- `StudioSnapshot` содержит `id`, `projectId` (Cascade), `revisionId` (Restrict), `payloadJson`, `bytes`
-  и `createdAt`. В `payloadJson` лежит `StudioFrozenRevision` (`src/video/types.ts`):
-  `document`, `resolvedDocument`, `manifest`, `files[{path, hash, bytes, posterPath?…}]`, `plan`,
-  `validation`, `runtime`, `hash`. Пути `files` по комментарию в типах — только для сервера.
-- Файлы ревизии лежат в `storage/studio/<userId>/<projectId>/versions/<uuid>/<sha256><ext>`.
-  Это **полные копии** исходников из пула: ничего не нарезано и не перекодировано.
-  Снимок свои файлы не копирует, а использует каталог ревизии.
-- `freezeStudioProject` (`src/server/studio/revisions.ts`) **коммитит сохранённый на сервере черновик
-  новой ревизией** с reason `freeze`. Несохранённый локальный буфер редактора на сервер не попадает.
-- MP4-рендер (`src/server/studio/render.ts`):
-  1. копирует проверенный бандл движка;
-  2. кладёт файлы снимка в `serve/public/<digest><ext>`;
-  3. переписывает `src` и `posterSrc` плана на имя файла;
-  4. рендерит с `assetMode: "static"`.
-- Кто удаляет снимки:
-  - `deleteStudioSnapshot`;
-  - `deleteStudioJob`, когда удаляется последнее задание снимка;
-  - `releaseUnclaimedSnapshot` в `jobs.ts`: снимок без заданий удаляется;
-  - удаление проекта (оно отказывает, пока у проекта есть задания);
-  - `deleteUser` в `src/server/users.ts`: одна транзакция, задания → снимки → проекты.
+`StudioSnapshot`: `id`, `projectId` (Cascade), `revisionId` (Restrict),
+`payloadJson`, `bytes` (Float), `createdAt`. Отдельного `updatedAt` нет.
+В `payloadJson` лежит `StudioFrozenRevision`: документ, resolved-документ,
+манифест, `files` (словарь), план, validation, runtime, hash. Пути в `files`
+серверные.
 
-  Ревизию нельзя удалить, пока на неё ссылается снимок.
+Файлы ревизии: `storage/studio/<userId>/<projectId>/versions/<uuid>/<sha256><ext>`.
+Это полные копии исходников. Снимок файлы не копирует, он ссылается на каталог ревизии.
+
+`freezeStudioProject`:
+
+- без `revision` и при живом серверном черновике **коммитит** черновик новой
+  ревизией с reason `freeze`;
+- с явным `revision` берёт уже сохранённую ревизию и черновик не трогает.
+  Несохранённый локальный буфер редактора на сервер не попадает в обоих случаях.
+
+Так делают задания рендера: они вызывают freeze без номера ревизии, поэтому
+черновик коммитится. Для публикации это слишком: продукт публикует последнюю
+**сохранённую** ревизию и только предупреждает о несохранённых правках.
+
+MP4 (`src/server/studio/render.ts`): копия бандла движка, файлы снимка в
+`serve/public/<digest><ext>`, `src`/`posterSrc` переписываются на имя файла,
+рендер с `assetMode: "static"`.
+
+Кто удаляет снимки:
+
+- `releaseUnclaimedSnapshot` — если на снимок не ссылается ни одно задание;
+- `deleteStudioJob` — если это было последнее задание снимка;
+- `deleteStudioSnapshot` — отказ `JOB_IN_USE`, пока задания есть;
+- `deleteStudioProject` — отказ `JOB_IN_USE`, пока у проекта есть **любые**
+  задания, иначе удаляет снимки и проект. Публикация сегодня проект не держит,
+  потому что модели нет;
+- `deleteUser` — одна транзакция: активное задание даёт `JOB_IN_USE`, иначе
+  задания → снимки → проекты → пользователь. Файлы `studio/<userId>` и
+  `studio-jobs/<userId>` стираются после транзакции.
+
+`deleteStudioRevision` уже отвечает `REVISION_IN_USE`, если на ревизию ссылается
+хотя бы один снимок. Отдельного текста «опубликована» нет: у `StudioError`
+только код.
+
+Ревизию нельзя удалить, пока жив снимок (`onDelete: Restrict`).
 
 ### Как композиция играет в браузере
 
-- `StudioVideo` использует `Audio`, `Freeze`, `Img`, `Loop`, `OffthreadVideo`, `Sequence`, `staticFile`.
-  В плеере видео — немой `OffthreadVideo` (вне рендера Remotion рисует обычный HTML5 video)
-  с `trimBefore/trimAfter` внутри `Sequence`/`Loop`. Звук видео-карточки идёт отдельным cue.
-- У всех медиа уже стоят `pauseWhenBuffering: true` и `acceptableTimeShiftInSeconds: 2/fps`
-  (`src/remotion/studio-frame.ts`).
-- Громкость = `cue.volume × fadeIn × fadeOut × duck`, в окнах mute — 0. Ducking музыки под
-  primary/voice — в `src/video/audio.ts`.
-- Шрифт только системный: `"Arial", "Helvetica Neue", sans-serif` (константа `FONT`
-  в `StudioVideo.tsx`). `@font-face`, google-fonts и `delayRender` нет.
-- `StudioPreview.tsx` не задаёт `numberOfSharedAudioTags`, значит действует дефолт 4.x — 5.
+`StudioVideo` использует `Audio`, `Freeze`, `Img`, `Loop`, `OffthreadVideo`,
+`Sequence`, `staticFile`. В плеере видео — немой `OffthreadVideo` внутри
+`Sequence`/`Loop`, звук карточки — отдельный cue. У `Audio` и `OffthreadVideo`
+уже стоят `pauseWhenBuffering: true` и `acceptableTimeShiftInSeconds: 2/fps`
+(`playerMediaSync`). У `<Img>` пропа `pauseWhenLoading` нет. В Remotion 4.0
+у `<Img>` он по умолчанию выключен (документация `Img`, 2026-10-28).
+
+Громкость cue — в `src/video/audio.ts` (`volume × fade × duck`, mute-окна в 0).
+Шрифт только системный: `"Arial", "Helvetica Neue", sans-serif`. Часть текста
+с `fontWeight: 700`. `@font-face` нет.
+
+`StudioPreview.tsx` не задаёт `numberOfSharedAudioTags` (дефолт 4.0 — 5),
+включает встроенные `controls` и `loop`. Публичный плеер так не повторяет:
+у продукта нет повтора и нет встроенной панели.
 
 ### План и главы
 
-- `CompiledVideo.scenes[]` — `CompiledScene` с полями `id`, `kind` (`custom|top|picker|answer`),
-  `from` (абсолютный кадр), `durationInFrames`, `participantId?`, `roundId?` и `phases`
-  (`revealStartFrame?`, `timerStartFrame?`, `answerStartFrame?` — локальные кадры сцены).
-- Индекса раунда нет, сцены идут по порядку. Раунд с отдельной сценой ответа даёт две сцены
-  с одним `roundId`. Таймер — узел `type: "timer"` с `timerFrames`.
+`CompiledScene`: `id`, `kind` (`custom|top|picker|answer`), `from`,
+`durationInFrames`, `participantId?`, `roundId?`, `phases`
+(`revealStartFrame?`, `timerStartFrame?`, `answerStartFrame?` — кадры внутри сцены).
+Индекса раунда нет. Раунд с отдельной сценой ответа даёт две сцены с одним
+`roundId`. `CompiledAudio`: `from`, `durationInFrames`, `offsetFrames`,
+`loopFrames`. `CompiledMedia` у видео-узла: `offsetFrames`, `loopFrames`,
+`freezeAtFrame?`.
 
 ### Студия, задания, квоты, MCP
 
-- Панель «Задания» и кнопка «Финальный MP4» — в `src/app/studio/[id]/StudioWorkspace.tsx`.
-  Кнопки выключены при `busy`, грязном буфере или конфликте, отправляют `expectedVersion`.
-  Состояние берётся из `meta.revision`, `meta.hasDraft`, `buffer.dirty` и `previewRevision`.
-- Виды заданий: `still|clip|audio|render` и `import`. `studioJobLimits` — в `job-types.ts`.
-  Квота 512 МиБ на результаты заданий для ролей без `render:run`.
-- `usageSummary().studio` считает `bytes` по файлам ревизий (без дублей по пути) и `resultBytes`
-  по заданиям. Публикация поверх файлов ревизии новых байт не добавляет.
-- MCP: обёртка `register(name, desc, schema, fn)` в `src/mcp/studio-tools.ts`, все инструменты
-  с префиксом `video_`. Актор — `MCP_ACTOR_EMAIL`, права проверяют сервисы. Переменной
-  с публичным адресом сайта нет: из адресов в `.env.example` есть только `DATABASE_URL`
-  и `SHIKIMORI_BASE_URL`.
-- Бандлеры: `esbuild` 0.28 и `webpack` 5 есть только транзитивно (`@remotion/bundler`, `tsx`),
-  в `package.json` их нет. `engineId` — SHA-256 `package-lock.json` и файлов `src/remotion`,
-  `src/video`, `src/lib` (`src/server/studio/engine.ts`). `next.config.mjs` выносит из бандла
-  `@remotion/bundler`, `@remotion/renderer`, `ffmpeg-static` и `music-metadata`.
-- `mediaResponse` в `src/lib/api.ts` получает файл целиком (`readFile` на каждый запрос)
-  и неверно разбирает суффиксный Range `bytes=-N`. Для публичного маршрута бери логику
-  `streamStudioFile`, а не `mediaResponse`.
+Панель «Задания» и кнопка «Финальный MP4» — `StudioWorkspace.tsx`.
+Кнопки заданий выключены при `busy`, грязном буфере или конфликте
+(`unsafe`). Это правило заданий. Для публикации продукт просит предупреждение,
+а не блокировку.
 
-## Внешние ограничения (сверено с документацией 2026-10-28)
+`studioJobLimits.maxResultBytesPerAccount` — 512 МиБ результатов заданий для
+роли без `render:run`. `usageSummary().studio.bytes` суммирует байты файлов
+ревизий без дублей по пути. Отдельного потолка на это число нет. Публикация
+поверх тех же файлов новых байт не добавляет, пока мы не начнём хранить нарезку.
 
-### Remotion Player
+`actor()` уже требует `media:upload`. Роль `user` это право имеет, `render:run` — нет.
 
-Установлены `@remotion/player` и `remotion` версии 4.0.475, `esbuild` 0.28.0 (транзитивно,
-через `@remotion/bundler`). Источник — [Player API](https://www.remotion.dev/docs/player/player).
+MCP: вложенная `register` внутри `registerStudioTools` (`src/mcp/studio-tools.ts`),
+имена с префиксом `video_`. Актор — `MCP_ACTOR_EMAIL`. Публичного базового URL
+в `.env.example` нет.
 
-- Свои контролы можно сделать двумя путями: `controls={false}` и своя панель-сосед через
-  `PlayerRef`, либо `renderCustomControls` (с 4.0.418), `renderPlayPauseButton`,
-  `renderFullscreenButton`, `renderMuteButton`, `renderVolumeSlider`.
-  Встроенное автоскрытие — `hideControlsWhenPointerDoesntMove` (по умолчанию 3000 мс).
-- `PlayerRef`: `play()`, `pause()`, `toggle()`, `seekTo(frame)`, `getCurrentFrame()`, `isPlaying()`,
-  `mute()`/`unmute()`, `setVolume()`, `requestFullscreen()`/`exitFullscreen()`/`isFullscreen()`,
-  `getContainerNode()`. События: `frameupdate`, `timeupdate`, `seeked`, `play`, `pause`, `ended`,
-  `waiting`, `resume` (с 4.0.111), `fullscreenchange`, `error`, `mutechange`, `volumechange`.
-- Обложка: `renderPoster`, `showPosterWhenUnplayed`, `showPosterWhenPaused`,
-  `showPosterWhenBuffering`, `posterFillMode`.
-- [Лучшие практики](https://www.remotion.dev/docs/player/best-practices):
-  - `inputProps` мемоизировать;
-  - часто меняющееся состояние (текущее время) держать в соседнем компоненте, а не в родителе
-    `<Player>`, иначе плеер перерисовывается каждый кадр;
-  - событие клика передавать в `play(e)` / `toggle(e)`.
-- [Автоплей](https://www.remotion.dev/docs/player/autoplay):
-  - `autoPlay` со звуком браузер заблокирует, старт нужен по клику;
-  - в 4.x плеер держит `numberOfSharedAudioTags` = 5 общих `<audio>`, которые «прогреваются»
-    первым кликом. Если одновременно играет больше пяти `<Html5Audio>`, плеер **бросает ошибку**,
-    и число нужно поднять. Его нельзя менять после монтирования;
-  - Safari строже всех.
-- [Буферизация](https://www.remotion.dev/docs/player/buffer-state):
-  - `<Html5Audio>`, `<Html5Video>` и `<OffthreadVideo>` ставят плеер на паузу при недогрузке
-    только с `pauseWhenBuffering`, `<Img>` — с `pauseWhenLoading`. Компоненты `@remotion/media`
-    делают это сами;
-  - индикатор показывается через `bufferStateDelayInMilliseconds` (300 мс), его можно рисовать
-    в `renderPlayPauseButton` (параметр `isBuffering`) или через обложку при буферизации.
-- [`prefetch()`](https://www.remotion.dev/docs/prefetch) из `remotion` загружает ассет в память
-  (`blob-url` или `base64`), и компоненты сами подхватывают blob по исходному URL. Память
-  держится до `free()`. У blob пропадает расширение, поэтому нужен `contentType`. Если звук
-  в Safari заикается, советуют `base64`.
-- `acknowledgeRemotionLicense` убирает предупреждение о лицензии в консоли. Для личного проекта
-  лицензия бесплатная, но перед публичным деплоем стоит перечитать условия Remotion.
+`engineId` — SHA-256 `package-lock.json` и файлов `src/remotion`, `src/video`,
+`src/lib` (кроме `*.test.ts`). `next.config.mjs` выносит из серверного бандла
+`@remotion/bundler`, `@remotion/renderer`, `ffmpeg-static`, `music-metadata`.
 
-### Браузеры
+В `node_modules` стоят `remotion` и `@remotion/player` **4.0.475**, `esbuild`
+**0.28.0**. В `package.json` esbuild прямой зависимостью не объявлен: его
+поднимает `@remotion/bundler`. Диапазон Remotion в `package.json` — `^4.0.230`.
 
-- **Полный экран на iPhone.** По [WebKit bug 240312](https://bugs.webkit.org/show_bug.cgi?id=240312)
-  и [форуму Apple](https://developer.apple.com/forums/thread/133248?page=3) на iPhone полный экран
-  доступен только `<video>`, на iPad и в Safari для macOS с 16.4 работает Fullscreen API.
-  Свидетельств, что это поменялось в iOS 18, нет. По P10 там, где `document.fullscreenEnabled`
-  ложно, кнопку полного экрана прячем.
-- **Полный экран своей обёртки.** `PlayerRef.requestFullscreen()` разворачивает контейнер плеера.
-  Своя панель, если она лежит снаружи, в полный экран не попадёт. Разворачивать нужно общую
-  обёртку плеера и панели через `element.requestFullscreen()`.
-- **`file://`.** В Chrome `fetch()` по `file://` не работает, ES-модули из соседних файлов
-  блокируются CORS (страница с диска имеет origin `null`). Поэтому весь код — обычные inline
-  `<script>`, без `type="module"` с внешними импортами. Всё медиа, шрифты и данные лежат внутри
-  файла (`data:` или base64, раскрываемый в `Blob` + `URL.createObjectURL`), без запросов в сеть
-  и к соседним файлам. Источники — сообщения сообщества (например, [MDN: CORS request not HTTP](https://developer.mozilla.org/docs/Web/HTTP/CORS/Errors/CORSRequestNotHttp)),
-  поэтому исполнителю нужно проверить вживую: открыть файл из временной папки в Chrome
-  с выключенной сетью.
+`clipAudio` в `src/lib/audio.ts` режет звук **и накладывает фейды**. Для файла
+его брать нельзя: фейды уже есть в композиции. `clipVideo` перекодирует H.264
+без звука (`-ss` до `-i`). Менять `src/lib/audio.ts` значит сменить `engineId`
+и поведение MP4. Нарезка для HTML живёт отдельно.
 
-## Развилки (решает исполнитель)
+Грабли чёрного кадра — в [render.md](../../map/render.md): `clipVideo` оставляет
+запас около 0,5 с, иначе seek за конец файла даёт чёрную вспышку.
 
-Формат записи решения — как в скилле `feature`: вопрос → варианты → рекомендация → **решение**.
-Ниже рекомендации агента, решения исполнитель записывает сам.
+## Внешние ограничения
+
+Сверено 2026-10-28.
+
+### Remotion Player 4.0.475
+
+Источники: [Player](https://www.remotion.dev/docs/player/player),
+[buffer state](https://www.remotion.dev/docs/player/buffer-state),
+[`<Img>`](https://www.remotion.dev/docs/img).
+
+- Свои контролы: `controls={false}` и панель-сосед на `PlayerRef`.
+  `renderCustomControls` рисуется внутри чужой панели и не даёт правило
+  «на паузе видна всегда». Встроенное автоскрытие
+  (`hideControlsWhenPointerDoesntMove`, по умолчанию 3 с) тоже его не умеет.
+- `clickToPlay` и пробел встроенной панели работают только при `controls`.
+  У нас они выключены, клавиши свои.
+- `PlayerRef.play()` / `toggle()`: если старт из жеста, в метод передаётся
+  событие, иначе браузер блокирует звук. `initialFrame` после монтирования
+  не меняется. `numberOfSharedAudioTags` тоже: в 4.0 дефолт 5, лишняя
+  одновременно смонтированная `<Audio>` бросает ошибку. Ноль тегов значит
+  «у каждого звука свой элемент» и на iOS Safari хуже прогревается.
+- `requestFullscreen()` разворачивает контейнер самого плеера, не соседнюю
+  панель. Документация прямо говорит: на Safari iOS Fullscreen API нет,
+  метод не сработает.
+- Буферизация **не** переводит плеер в paused. Время останавливается, затем
+  событие `resume` продолжает само. Событие входа — `waiting`.
+  Свой `pause()` на `waiting` сломает «продолжает сам».
+- `<Img pauseWhenLoading>` ставит плеер на паузу загрузки. В 4.0 по умолчанию
+  выключено, в 5.0 будет включено. На покадровый рендер это не замена
+  `delayRender`: `<Img>` и так ждёт картинку перед кадром MP4.
+- `acknowledgeRemotionLicense` убирает предупреждение лицензии в консоли.
+  Для личного проекта лицензия бесплатная. Перед публичным деплоем условия
+  Remotion стоит перечитать.
+- `inputProps` мемоизировать. Текущее время держать не в родителе `<Player>`,
+  иначе плеер перерисовывается каждый кадр.
+
+### Next.js 14.2
+
+[Route groups](https://nextjs.org/docs/14/app/building-your-application/routing/route-groups):
+два корневых layout получаются только если убрать `app/layout.tsx` и
+перенести все страницы в группы. У каждой группы свои `<html>` и `<body>`.
+Переход между группами — полная перезагрузка.
+
+[Middleware](https://nextjs.org/docs/14/app/building-your-application/routing/middleware#setting-headers):
+с версии 13 можно подменить заголовки запроса через `NextResponse.next({ request: { headers } })`.
+`headers()` в серверном layout их видит. Matcher ограничивает, на каких путях
+middleware вообще запускается.
+
+### Браузер
+
+- Полный экран страницы на iPhone недоступен: WebKit отдаёт его только
+  `<video>` ([баг 240312](https://bugs.webkit.org/show_bug.cgi?id=240312)).
+  Документация Remotion говорит то же про свой `requestFullscreen`.
+  Где `document.fullscreenEnabled === false`, кнопку прячем (P10).
+- `file://`: Chrome не даёт `fetch` по `file://` и блокирует ES-модули с
+  соседних файлов (origin `null`, [MDN CORS request not HTTP](https://developer.mozilla.org/docs/Web/HTTP/CORS/Errors/CORSRequestNotHttp)).
+  Значит один файл, обычные inline-скрипты без `type="module"`, медиа внутри.
+- V8, 64-bit: `String::kMaxLength = (1 << 29) - 24` = 536 870 888 кодовых
+  единиц ([v8-primitive.h](https://v8docs.nodesource.com/node-24.1/d2/db3/classv8_1_1_string.html)).
+  Одна base64-строка на весь ролик упирается в этот предел и в память
+  вкладки. Каждый ассет — отдельный текстовый узел, не одна гигантская строка.
+
+## Решения
 
 ### T01. Модель публикации
 
-- Рекомендация:
-  - новая модель `StudioPublication`: `id`, `projectId` (unique — одна публикация на проект),
-    `userId`, `token` (unique, не меньше 128 бит из `crypto.randomBytes`, base64url), `snapshotId`
-    (FK на `StudioSnapshot`, Restrict), `revision`, `createdAt` и `updatedAt`;
-  - «Обновить» меняет `snapshotId`, токен остаётся. «Снять» удаляет строку, повторная публикация
-    создаёт новый токен;
-  - несуществующий и снятый токен показывают одно сообщение «Ролик снят с публикации»,
-    чтобы не выдавать, существовала ли ссылка.
-- После правки `schema.prisma` — `npx prisma db push && npx prisma generate` и перезапуск dev.
+- Вопрос: как хранить одну живую ссылку на проект?
+- Варианты:
+  - (а) `StudioPublication`: одна строка на проект, токен, снимок, номер ревизии;
+  - (б) много ссылок на проект, старые живут;
+  - (в) токен прямо в `StudioProject`.
+- Рекомендация агента: (а).
+- **Решение:** (а). Поля: `id`, `projectId` (unique), `userId`, `token` (unique),
+  `snapshotId`, `revision` (номер сохранённой ревизии), `createdAt`, `updatedAt`.
+  Все внешние ключи `onDelete: Restrict`. Каскад не используем: порядок
+  каскадов Prisma/SQLite при одновременном удалении снимка и публикации
+  ненадёжен, удаление явное в той же транзакции.
+  Токен — `crypto.randomBytes(16).toString("base64url")` (128 бит).
+  «Обновить» меняет `snapshotId` и `revision`, токен остаётся.
+  «Снять» удаляет строку. Новая публикация после снятия — новый токен.
+  Несуществующий и снятый токен идут одним кодом и одним текстом
+  «Ролик снят с публикации».
 
 ### T02. Что публикуется и как снимок не потеряется
 
-- Рекомендация:
-  - публикация делает `freezeStudioProject` по тем же правилам, что задание рендера: сохранённый
-    черновик коммитится ревизией `freeze`, грязный локальный буфер блокирует кнопку,
-    как у заданий;
-  - **обязательно** научить `releaseUnclaimedSnapshot`, `deleteStudioJob` и `deleteStudioSnapshot`
-    не удалять снимок, на который ссылается публикация. Иначе удаление последнего задания
-    убьёт живую ссылку;
-  - старый снимок после «Обновить» освобождается по тем же правилам;
-  - удаление проекта и `deleteUser` сначала удаляют публикации, потом снимки. Удаление проекта
-    из-за публикации не блокируется (P11);
-  - удаление ревизии, которая опубликована, отказывает с понятным текстом.
+- Вопрос: какую ревизию замораживать и кто имеет право удалить её снимок?
+- Варианты:
+  - (а) `freezeStudioProject` без номера, как задание рендера (черновик коммитится);
+  - (б) freeze с явным `revision: project.revision` — только сохранённая ревизия;
+  - (в) отдавать текущий черновик без снимка.
+- Рекомендация агента: (а) плюс защита снимка от удаления.
+- **Решение:** (б), потому что P12 публикует последнюю сохранённую ревизию
+  и лишь предупреждает о несохранённых правках. Freeze без номера закоммитил
+  бы серверный черновик — это другое поведение, его оставляем заданиям.
+  Если сохранённой готовой ревизии нет, публикация отвечает `VALIDATION_FAILED`.
+  Повторное «Обновить» при том же номере ревизии и том же hash снимка ничего
+  не создаёт.
+  `releaseUnclaimedSnapshot`, `deleteStudioJob` и `deleteStudioSnapshot`
+  не удаляют снимок, на который есть публикация. Снятие публикации и смена
+  снимка при обновлении отпускают старый снимок по прежним правилам
+  (если заданий не осталось).
+  `deleteStudioProject` и `deleteUser` сначала удаляют публикации этого
+  проекта или пользователя, потом снимки. Задания по-прежнему блокируют
+  удаление (`JOB_IN_USE`). Публикация сама удаление не блокирует (P11).
+  Удаление ревизии, у которой жив снимок публикации, уже даёт `REVISION_IN_USE`.
+  Новый код не вводим: у ошибки есть только код, клиенты на него опираются.
 
 ### T03. Публичная страница
 
-- Рекомендация:
-  - маршрут `src/app/watch/[token]/page.tsx`: серверный компонент находит публикацию по токену,
-    не вызывая `currentUser`/redirect, и отдаёт клиенту **только** `plan`. `document`, `manifest`
-    и пути `files` наружу не отдаются;
-  - `src` и `posterSrc` в плане переписываются на `/api/watch/<token>/media/<sha256><ext>`;
-  - шапку сайта убрать проще всего полноэкранным `position: fixed; inset: 0` слоем поверх
-    `.topbar`. Чище — route groups с отдельным root layout, но это переезд всех страниц.
-    Выбери и запиши;
-  - `<meta name="robots" content="noindex">`, `Referrer-Policy: no-referrer`, токен не логировать.
+- Вопрос: где страница и как убрать шапку, не перенося всё приложение?
+- Варианты:
+  - (а) route groups и второй корневой layout;
+  - (б) `position: fixed` поверх шапки;
+  - (в) middleware только на `/watch/:path*` ставит заголовок запроса,
+    корневой layout не рисует шапку.
+- Рекомендация агента: (б) проще, (а) чище.
+- **Решение:** (в). (а) по документации Next.js 14 требует убрать корневой
+  layout и перенести каждую страницу; переход между layout — полная
+  перезагрузка. (б) оставляет «Войти» в дереве доступности и в Tab.
+  (в) — документированный с версии 13 способ передать заголовок в серверный
+  layout, matcher не запускает middleware на остальных путях.
+  Маршрут `src/app/watch/[token]/page.tsx`. Сервер ищет публикацию по токену,
+  не вызывает `userOr401` и не редиректит. Клиенту уходят название и **план**,
+  в котором `src` и `posterSrc` переписаны на
+  `/api/watch/<token>/media/<sha256><ext>`. `document`, `manifest` и пути
+  `files` наружу не отдаются. Ответ не содержит `/api/studio`, `/api/arts`
+  и `studio/`.
+  `<meta name="robots" content="noindex">`, ответ `Referrer-Policy: no-referrer`
+  и `X-Robots-Tag: noindex`. Токен в логи приложения не пишем.
 
 ### T04. Публичная раздача медиа
 
-- Рекомендация:
-  - маршрут вне `/api/studio/`, например `src/app/api/watch/[token]/media/[file]/route.ts`;
-  - разрешены только файлы и постеры из `files` снимка публикации, сверка по хэшу,
-    затем `safeFile`;
-  - стриминг с Range по образцу `streamStudioFile`, без чтения файла целиком;
-  - `Cache-Control` такой, чтобы снятая ссылка не жила в кэше прокси (например, `private`).
+- Вопрос: как отдать файл гостю, не открывая `/api/studio` и не читая файл в память?
+- Варианты:
+  - (а) новый маршрут вне `/api/studio`, стрим как `streamStudioFile`;
+  - (б) ослабить `userOr401` у `/api/studio/media`;
+  - (в) `mediaResponse`.
+- Рекомендация агента: (а).
+- **Решение:** (а). `src/app/api/watch/[token]/media/[file]/route.ts`.
+  Имя файла — только `<64 hex><расширение>`. Совпадение по hash и расширению
+  с `path` или `posterPath` снимка этой публикации, затем `safeFile`.
+  Чужой пользователь, чужой снимок, снятый токен — 404, без различия «был / не был».
+  Тело отдаёт `streamStudioFile` (Range, в том числе суффикс, без `readFile`).
+  `Cache-Control: private, no-store`, чтобы снятая ссылка не оставалась в общем кэше.
 
 ### T05. Плеер-оболочка
 
-Один компонент для страницы и для файла.
-
-- Рекомендация:
-  - `controls={false}` и своя панель-сосед на `PlayerRef` (события `frameupdate`/`timeupdate`,
-    `waiting`/`resume`, `play`/`pause`, `fullscreenchange`). Встроенное автоскрытие не умеет
-    правило «на паузе видна всегда» и главы;
-  - полный экран — на общей обёртке, а не через `PlayerRef.requestFullscreen()`. Без
-    `document.fullscreenEnabled` кнопку прячем;
-  - `numberOfSharedAudioTags` = максимум одновременно звучащих cue по `plan.audio` с запасом.
-    Считать до монтирования: после него число не меняется, а превышение бросает ошибку;
-  - главы: первая сцена каждого нового `roundId` (пикер) или `participantId` (топ).
-    ⏮ на первой главе ведёт в 0;
-  - клик передаётся в `play(e)`/`toggle(e)` (`onClickCapture` ради Safari);
-  - индикатор загрузки — по `waiting`/`resume` или `isBuffering`.
+- Вопрос: какой плеер и на странице, и в файле?
+- Варианты:
+  - (а) один компонент, `controls={false}`, своя панель на `PlayerRef`;
+  - (б) встроенные контролы Remotion плюс главы снаружи;
+  - (в) вторая реализация анимации без Remotion.
+- Рекомендация агента: (а).
+- **Решение:** (а). Компонент `src/watch/WatchPlayer.tsx`. Его импортирует
+  страница и его же собирает esbuild в файл. `StudioPreview` не меняется (не входит
+  в продукт).
+  - `controls={false}`, `loop` не задаём, `acknowledgeRemotionLicense`.
+  - `numberOfSharedAudioTags` считается до монтирования: максимум одновременно
+    пересекающихся cue плана, но не меньше 5 (дефолт 4.0, чтобы не сузить
+    то, что уже играет в превью). Ноль cue — всё равно 5.
+  - `inputProps` мемоизированы. Время живёт в дочерней панели, не в родителе плеера.
+  - Старт: кадр 0 виден сразу (это обложка), поверх — название, длительность
+    и ▶. Клик передаёт событие в `play(e)`. `renderPoster` не используем:
+    он закрыл бы первый кадр.
+  - Полный экран — `requestFullscreen()` на общей обёртке плеера и панели.
+    `PlayerRef.requestFullscreen()` не вызываем. Кнопку не рисуем, если после
+    монтирования `document.fullscreenEnabled === false`.
+  - Главы: первая сцена каждого нового `roundId`, иначе первая сцена каждого
+    нового `participantId`. Сцена без обоих в главы не входит (интро и аутро).
+    Подписи — «Раунд N» или «Позиция N». ⏮: если от начала текущей главы
+    больше 1 с, перейти к её началу, иначе к предыдущей; на первой главе — к кадру 0.
+    ⏭ — к следующей или к концу, если следующей нет.
+  - Клавиши на окне страницы: Space, ←/→ (±5 с), F, M, PageUp (предыдущая глава),
+    PageDown (следующая). Не перехватывать, когда фокус в поле ввода, кроме
+    того что Space по кнопке гасится через `preventDefault`, чтобы не сработать
+    дважды. Стрелки, пока фокус на `<input type="range">` полосы, оставляем
+    браузеру.
+  - Прячем панель и курсор через 2500 мс без `pointermove` / касания, только
+    пока ролик играет и не показывает «загрузка». На паузе панель видна, таймер сброшен.
+  - «Загрузка» по событию `waiting`, не раньше чем через 300 мс (как
+    `bufferStateDelayInMilliseconds`), скрывается на `resume`. Свой `pause()`
+    не вызываем.
+  - У `<Img>` в `StudioVideo` добавляем `pauseWhenLoading`. Это правка
+    `src/remotion`: `engineId` изменится, MP4-рендер после неё обязателен
+    (пункт 12). Проп по документации управляет плеером, не заменой `delayRender`,
+    поэтому кадры MP4 меняться не должны. Других правок композиции нет.
 
 ### T06. Шрифты в файле
 
-Композиция и рендер используют системный Arial. На Windows и macOS он есть, поэтому паритет
-там получается сам. Встроить сам Arial нельзя по лицензии.
-
+- Вопрос: как выполнить P06 «шрифты внутри», не подменив Arial там, где он есть,
+  и не меняя пиксели MP4?
 - Варианты:
-  - (а) оставить системный стек: на Linux и Android будет замена;
-  - (б) встроить Arimo (Apache-2.0, метрически совместим с Arial) **после** Arial
-    в `font-family` только в HTML-оболочке. Тогда замена у машин без Arial предсказуема,
-    а у остальных ничего не меняется.
-- Рекомендация: (б), если вес шрифта приемлем. Решение и отступление от слов P06 «шрифты внутри»
-  записать.
+  - (а) системный стек как сейчас;
+  - (б) встроить Arimo (Apache-2.0, метрически совместим с Arial) в стек
+    композиции;
+  - (в) встроить Arimo только в оболочку плеера, после Arial, через CSS
+    с `!important` внутри `.watch-root`.
+- Рекомендация агента: (б), если вес приемлем.
+- **Решение:** (в). (б) меняет константу `FONT` в `StudioVideo` и тем самым
+  запасной шрифт MP4 на машине без Arial. (в) не трогает композицию: на Windows
+  и macOS первым находится Arial, как в MP4; на Linux и Android без Arial
+  берётся встроенный Arimo, а не случайный sans. Веса 400 и 700, потому что
+  композиция использует `fontWeight: 700`. Файлы woff2 и лицензия Apache-2.0
+  лежат в репозитории и попадают в `.html` как `data:`. В MP4 `@font-face` нет.
 
 ### T07. Сборка одного `.html`
 
-- Рекомендация:
-  - отдельная точка входа (плеер + оболочка + `StudioVideo`), собранная esbuild в один IIFE.
-    esbuild поставить прямой зависимостью и вынести в `serverComponentsExternalPackages`;
-  - бандл собирать лениво и кэшировать по хэшу исходников, как `engineId`. Либо собирать
-    при `npm run build`, но тогда он нужен и в `npm run dev`. Выбери и запиши;
-  - медиа кладётся отдельными блоками base64 (по одному на ассет) и при загрузке раскрывается
-    в `Blob` + `URL.createObjectURL` с правильным MIME. План переписывается на blob-адреса.
-    Одна гигантская строка недопустима: у V8 есть предел длины строки (по памяти агента,
-    около 2^29 символов — проверить);
-  - никаких внешних URL в файле. Тест — проверка собранного файла на отсутствие `http(s)://`
-    в ресурсах;
-  - файл собирается по запросу и отдаётся потоком или из временного каталога, который
-    удаляется. В квоту он не идёт, раз не хранится.
+- Вопрос: как собрать самодостаточный файл и в dev, и после `next build`?
+- Варианты:
+  - (а) esbuild IIFE, лениво, кэш по хэшу исходников;
+  - (б) собирать бандл только на `npm run build`;
+  - (в) отдать страницу сайта, сохранённую браузером.
+- Рекомендация агента: (а).
+- **Решение:** (а). `esbuild` объявляем прямой зависимостью той же 0.28.0,
+  что уже стоит в дереве, и добавляем в `serverComponentsExternalPackages`.
+  Это меняет `package-lock.json` и поэтому `engineId` — рендер проверяем.
+  Серверный код бандлер **не импортирует** `remotion`: esbuild читает
+  `src/watch/standalone.tsx` как файл. Иначе `server-boundary.test.ts` упадёт.
+  Бандл кэшируется в `storage/studio-player/<hash>.js`. Это общий кэш, не квота
+  пользователя.
+  Файл пишется потоком: оболочка, inline IIFE (не `type="module"`), каждый
+  ассет своим блоком `<script type="text/plain">` с base64, который при загрузке
+  становится `Blob` + `URL.createObjectURL` с нужным MIME. План переписывается
+  на эти blob-адреса. Внешних URL нет. Юнит-тест проверяет, что в файле нет
+  `src="http`, `href="http`, `url(http` и `fetch("http`.
+  Файл на диск как публикация не сохраняется и в квоту не входит. Временный
+  каталог, если он понадобится сборке, удаляется. Размер считается до
+  скачивания по длинам частей (base64 = 4 × ceil(n / 3)), без склейки одной
+  строки на весь ролик.
+  Потолок одного ассета — 500 000 000 символов base64, с запасом до предела V8.
+  Потолок всего файла — 400 МиБ: больше браузер открывает с диска плохо.
+  Код `EXPORT_TOO_LARGE`. Предупреждение в UI с 80 МиБ, скачивание при этом
+  ещё разрешено.
 
 ### T08. Нарезка медиа для файла
 
-Файлы ревизии — полные копии исходников, поэтому без нарезки пикер с видео весит сотни мегабайт.
-
-- Рекомендация:
-  - по плану вычислить используемые окна каждого файла (cue звука с trim, видео-узлы
-    с `trimBefore/trimAfter`/`Loop`), вырезать их с небольшим запасом ffmpeg-static
-    и сдвинуть смещения в плане;
-  - звук — AAC/m4a;
-  - видео — перекодирование H.264 для точного старта либо `-c copy` от ближайшего ключевого
-    кадра с пробой реального старта. Выбор между скоростью и точностью записать.
-    Грабли `clipVideo` и чёрных кадров — в `.ai/map/render.md`;
-  - картинки — как есть;
-  - результат нарезки кэшировать по хэшу снимка. Порог размера, после которого
-    предупреждаем или не собираем, выбрать по замеру и записать.
+- Вопрос: как уменьшить файл и не уехать от MP4 по времени?
+- Варианты:
+  - (а) класть полные копии ревизии;
+  - (б) вырезать используемые окна своим ffmpeg, звук AAC без фейдов,
+    видео перекодировать H.264;
+  - (в) видео резать `-c copy` от ключевого кадра.
+- Рекомендация агента: (б), выбор точности видео записать отдельно.
+- **Решение:** (б). Окна считаются по плану: cue (`offsetFrames` и
+  `loopFrames ?? durationInFrames`), видео-узел (то же плюс `freezeAtFrame`).
+  Близкие окна одного файла склеиваются. Запас 0,5 с с каждой стороны, где
+  источник позволяет, затем `offsetFrames` сдвигается на этот запас — тот же
+  приём, что спасает MP4 от чёрного кадра.
+  Если неиспользуемые голова и хвост короче 0,5 с, файл копируется как есть
+  и смещения не меняются.
+  Звук: AAC в `.m4a`, без фильтров фейда (`clipAudio` не вызываем).
+  Видео: перекодирование H.264 `veryfast`, crf 20, `yuv420p`, `+faststart`,
+  без звука, `-ss` **после** `-i` (точный seek). `-c copy` не берём:
+  старт с ключевого кадра сдвигает картинку относительно MP4.
+  Картинки копируются как есть.
+  Кэш: `storage/studio-exports/<userId>/<revisionId>/` и строка
+  `StudioExportCache` (user, project, revision, key, bytes). Повторная сборка
+  той же ревизии ffmpeg не запускает. Удаление ревизии, проекта и аккаунта
+  стирает и строки, и каталог.
+  Нарезка не живёт в `src/lib` и `engineId` из-за неё не меняется.
 
 ### T09. API и UI
 
-- Рекомендация:
-  - мутации публикации (опубликовать или обновить, снять) и `GET` статуса — внутри `studioHttp`
-    (`/api/studio/projects/<id>/publication`), с проверкой `Origin`;
-  - скачивание файла — `GET /api/studio/projects/<id>/export.html` с `Content-Disposition`,
-    имя по названию проекта, как у `renderDownloadDisposition`. Размер до скачивания —
-    отдельной оценкой или заранее собранным файлом. Выбери и запиши;
-  - блок «Публикация» в панели «Задания» `StudioWorkspace.tsx`. Ссылку для копирования
-    собирать из `window.location.origin`;
-  - в `/account` — секция «Публикации» по образцу ленивых списков `AccountManager.tsx`
-    с размером (байты файлов снимка) и снятием.
+- Вопрос: где мутации, как показать размер до скачивания и куда поставить кнопки?
+- Варианты:
+  - (а) мутации в `studioHttp`, оценка размера отдельным GET, блок рядом с заданиями,
+    список в кабинете;
+  - (б) скачивание только после публикации;
+  - (в) размер оценивать формулой без нарезки.
+- Рекомендация агента: (а), между оценкой и заранее собранным файлом выбрать.
+- **Решение:** (а), размер точный. Нарезка выполняется на оценке и кэшируется,
+  скачивание только стримит уже посчитанные части.
+  - `GET/POST/DELETE /api/studio/projects/<id>/publication` внутри `studioHttp`,
+    мутации с проверкой `Origin`. POST публикует или обновляет.
+  - `GET .../export.html?estimate=1` → `{ bytes, warning }`.
+    `GET .../export.html` стримит файл с `Content-Disposition`. Имя — как у
+    рендера (ASCII-запасной `douga-<id>.html` и `filename*` по названию),
+    но функция своя, в `src/lib` её не кладём.
+  - Скачивание не требует публикации и не коммитит черновик: берётся та же
+    сохранённая ревизия, что и для ссылки.
+  - В панели «Задания», рядом с кнопками рендера, блок «Ролик без рендера»:
+    «Опубликовать», затем «Копировать ссылку», «Открыть», «Обновить публикацию»
+    (только если сохранённая ревизия новее опубликованной), «Снять с публикации»,
+    «Скачать .html» с размером. Ссылка собирается из `window.location.origin`.
+  - Если буфер грязный, есть серверный черновик или конфликт, показываем:
+    «Несохранённые правки в ролик не попадут». Кнопки публикации и скачивания
+    при этом **не** гасим (в отличие от заданий). Гасим их только пока нет
+    готовой сохранённой ревизии или идёт запрос.
+  - В `/account` секция «Публикации» по образцу ленивых списков: название,
+    ревизия, размер (`snapshot.bytes` — медиа, которые раздаёт ссылка) и «Снять».
 
 ### T10. MCP
 
-- Рекомендация:
-  - `video_publish` (опубликовать или обновить, вернуть ссылку и ревизию), `video_unpublish`,
-    по желанию — чтение статуса;
-  - публичного адреса процесс MCP не знает. Добавить `DOUGA_PUBLIC_URL` (по умолчанию
-    `http://localhost:3000`) в `.env.example` и README.
+- Вопрос: какие инструменты и откуда брать абсолютную ссылку?
+- Варианты:
+  - (а) `video_publish` (создать или обновить), `video_unpublish`, чтение статуса;
+    база URL из `DOUGA_PUBLIC_URL`, по умолчанию `http://localhost:3000`;
+  - (б) только сайт;
+  - (в) ссылка относительная, без переменной окружения.
+- Рекомендация агента: (а).
+- **Решение:** (а). Инструменты зовут те же сервисы, что HTTP. В ответе
+  `video_publish` есть абсолютный `url`, номер ревизии и флаг, обновилась
+  ли существующая ссылка. Переменная пишется в `.env.example` и `README.md`.
+  Хвост `/` у базы срезается. Токен в лог MCP не пишем.
 
 ### T11. Права и квоты
 
-- Рекомендация:
-  - публиковать может автор с `media:upload` через `actor()`/`owned`, а не `render:run`;
-  - квоту отдельно не считать: байты файлов ревизии уже учтены в `usageSummary().studio.bytes`.
-    Если для файла появится постоянный кэш нарезки — учесть и его.
+- Вопрос: кто публикует и какие байты считать квотой?
+- Варианты:
+  - (а) `media:upload`, новые байты только у кэша нарезки, потолок как у
+    результатов заданий;
+  - (б) только `render:run`;
+  - (в) прибавлять к `studio.bytes` ещё раз файлы ревизии.
+- Рекомендация агента: публикует автор с `media:upload`; квоту на файлы ревизии
+  не удваивать; постоянный кэш нарезки учесть.
+- **Решение:** (а). `owned()` уже вызывает `actor()` и проверяет `media:upload`.
+  `render:run` не требуется.
+  Файлы ревизии уже входят в `usageSummary().studio.bytes`. Повторно их не
+  прибавляем. Байты `StudioExportCache` прибавляются к `studio.bytes`, чтобы
+  кабинет их показывал.
+  Для роли без `render:run` сумма кэша нарезки не больше
+  `studioJobLimits.maxResultBytesPerAccount` (512 МиБ). Иначе
+  `EXPORT_QUOTA_EXCEEDED` (HTTP 429, как остальные `QUOTA`). Админ без этого
+  потолка, как и для результатов заданий. Сам `.html` не хранится и в сумму
+  не входит. Файлы ревизии в этот потолок не входят: они уже лежат на диске
+  ради студии, и упёршийся в них автор не смог бы скачать ролик вообще.
+
+### T12. Порог веса файла
+
+- Вопрос: когда предупреждать и когда отказывать в сборке?
+- Варианты:
+  - (а) всегда собирать;
+  - (б) предупреждение с 80 МиБ, отказ со 400 МиБ и с 500 000 000 символов
+    base64 на один ассет;
+  - (в) отказ уже с 80 МиБ.
+- Рекомендация: (б). P06 просит предупреждать о тяжёлом ролике и оставляет
+  порог отказа на технику.
+- **Решение:** (б). Числа — в T07. После живого замера пикера с видео-карточкой
+  порог можно сдвинуть только записью в `verify.md`, если файл либо не
+  открывается заметно раньше 400 МиБ, либо собирается приемлемо и тяжелее.
+
+### T13. Загрузка с запасом
+
+- Вопрос: как выполнить «медиа с запасом вперёд», не меняя тайминг MP4?
+- Варианты:
+  - (а) `premountFor` на `Sequence` внутри `StudioVideo`;
+  - (б) `prefetch()` из оболочки по URL картинок и постеров в момент клика ▶,
+    дальше полагаться на `pauseWhenBuffering` / `pauseWhenLoading`.
+- Рекомендация: (б). `premountFor` участвует и в рендере.
+- **Решение:** (б). Видео и звук уже ставят плеер на буферизацию. Картинки
+  догоняет `pauseWhenLoading` плюс prefetch на старте. Новых эффектов и
+  сдвигов кадров нет.
 
 ## Меняемые зоны
 
-- [studio-sdk.md](../../map/studio-sdk.md) — публикация, снимки, HTTP, UI, экспорт.
-- [roles.md](../../map/roles.md) — право публикации, публичная страница без входа, удаление аккаунта.
-- [mcp.md](../../map/mcp.md) — новые инструменты и `DOUGA_PUBLIC_URL`.
-- [render.md](../../map/render.md) — если меняются `src/remotion` или нарезка через `src/lib/audio.ts`.
-- [media.md](../../map/media.md) — если меняется `mediaResponse` или отдача файлов.
-- [dev-env.md](../../map/dev-env.md) — если появляется новая зависимость или переменная окружения.
+- [studio-sdk.md](../../map/studio-sdk.md) — публикация, защита снимка, HTTP, UI, экспорт, кэш нарезки.
+- [roles.md](../../map/roles.md) — публикация при `media:upload`, страница без входа, квота кэша, удаление аккаунта.
+- [mcp.md](../../map/mcp.md) — `video_publish`, `video_unpublish`, `video_publication_get`, `DOUGA_PUBLIC_URL`.
+- [dev-env.md](../../map/dev-env.md) — зависимость `esbuild`, переменная `DOUGA_PUBLIC_URL`.
+- [render.md](../../map/render.md) — только если в `StudioVideo` останется `pauseWhenLoading`: одна строка, что проп плеерный и MP4 не переписывался.
+- [media.md](../../map/media.md) — не меняем `mediaResponse`. Карточку не трогаем, пока публичная раздача живёт отдельно.
+- Классические конструкторы, `PickerVideo`, `TopVideo`, `/projects/<id>`,
+  `/tournaments/<id>/render` — не трогаем.
 
 ## Как доказать готовность
 
@@ -356,4 +562,5 @@
     файлы публикации уходят, ссылка мертва.
 12. **Рендер не сломан.** После правок в `src/remotion`, `src/video` или `src/lib` студийный
     MP4-рендер того же проекта проходит (`npm run studio:worker -- --once --job <id>`),
-    кадры и звук в порядке.
+    кадры и звук в порядке. В этой задаче `engineId` меняют `pauseWhenLoading` у `<Img>`
+    и `package-lock.json` из-за прямой зависимости `esbuild`. `src/lib` и `src/video` не менять.
