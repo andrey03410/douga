@@ -24,7 +24,7 @@ merged:
 - [x] Продукт — [product.md](product.md)
 - [x] Техника — [tech.md](tech.md)
 - [x] План — [plan.md](plan.md)
-- [ ] Реализация и QG — [verify.md](verify.md)
+- [x] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем
 - [ ] Влито
 
