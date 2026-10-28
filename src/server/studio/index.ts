@@ -15,6 +15,16 @@ export {
 export * from "./revisions";
 export * from "./presets";
 export { getStudioManifest } from "./assets";
+export {
+  publishStudioProject,
+  unpublishStudioProject,
+  findPublicationByToken,
+  getStudioPublication,
+  listStudioPublications,
+  publicWatchUrl,
+} from "./publication";
+export { loadPublicWatch, publicWatchMedia } from "./watch-public";
+export { estimateStudioExport, streamStudioExport } from "./export-html";
 
 export * from "./job-types";
 export {

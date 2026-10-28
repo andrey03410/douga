@@ -287,9 +287,10 @@ export async function deleteStudioRevision(
     for (const dir of new Set(
       Object.values(assets.files).map((f) => path.dirname(f.path)),
     ))
-      if (dir.startsWith(`studio/${row.userId}/${id}/versions/`))
+        if (dir.startsWith(`studio/${row.userId}/${id}/versions/`))
         await cleanupDirectory(dir);
   }
+  await cleanupDirectory(`studio-exports/${row.userId}/${id}/${old.id}`);
   return result;
 }
 /** Job FK protects the frozen revision until its result is explicitly released. */
@@ -302,6 +303,8 @@ export async function deleteStudioSnapshot(userId: string, snapshotId: string) {
   await prisma.$transaction(async (db) => {
     if (await db.studioJob.count({ where: { snapshotId } }))
       throw new StudioError("JOB_IN_USE");
+    if (await db.studioPublication.count({ where: { snapshotId } }))
+      throw new StudioError("PUBLICATION_IN_USE");
     await db.studioSnapshot.delete({ where: { id: snapshotId } });
   });
 }

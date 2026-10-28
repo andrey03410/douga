@@ -151,8 +151,11 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
       if(file.posterPath) studioFiles.set(file.posterPath,file.posterBytes??0);
     }
   }
-  const studioJobs = await prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}});
-  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)};
+  const [studioJobs, exportCache] = await Promise.all([
+    prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}}),
+    prisma.studioExportCache.aggregate({where:{userId},_sum:{bytes:true}}),
+  ]);
+  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)+(exportCache._sum.bytes??0)};
   return {
     studio,
     role: user.role,
@@ -351,12 +354,14 @@ export async function deleteUser(actorId: string, targetId: string) {
     if (activeJobs) throw new Error("JOB_IN_USE");
     // Jobs reference snapshots and projects with onDelete: Restrict.
     await tx.studioJob.deleteMany({ where: { userId: targetId } });
+    await tx.studioPublication.deleteMany({ where: { userId: targetId } });
     await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
     await tx.studioProject.deleteMany({where:{userId:targetId}});
     await tx.user.delete({where:{id:targetId}});
   });
   await removePath(path.join("studio",targetId));
   await removePath(path.join("studio-jobs",targetId));
+  await removePath(path.join("studio-exports",targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
   }

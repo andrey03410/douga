@@ -15,7 +15,7 @@
 - [`src/lib/ytdlp.ts`](../../src/lib/ytdlp.ts) — `ensureYtDlp` ищет бинарник по порядку: `YTDLP_PATH`, затем `storage/bin/yt-dlp`, иначе скачивает релиз с GitHub.
 - [`scripts/studio-worker.ts`](../../scripts/studio-worker.ts) — цикл очереди SDK, флаги `--once` и `--job ID`.
 - [`scripts/verify-studio.mjs`](../../scripts/verify-studio.mjs) — проверка задания SDK через настоящий MCP ([studio-sdk.md](studio-sdk.md)).
-- [`next.config.mjs`](../../next.config.mjs) — Remotion, `ffmpeg-static` и `music-metadata` исключены из серверного бандла.
+- [`next.config.mjs`](../../next.config.mjs) — Remotion, `ffmpeg-static`, `music-metadata` и `esbuild` исключены из серверного бандла. `esbuild` — прямая зависимость: им собирается офлайн-плеер.
 - [`tsconfig.mcp.json`](../../tsconfig.mcp.json) — для процессов под tsx подменяет `server-only` стабом [`src/test/server-only-stub.ts`](../../src/test/server-only-stub.ts).
 
 ## Переменные `.env`
@@ -29,7 +29,7 @@
   - `SHIKIMORI_BASE_URL` — домен сервиса периодически переезжает;
   - `SHIKIMORI_USER_AGENT`;
   - `SHIKIMORI_RETRY_MS` — тестовый хук, сокращает паузы между повторами.
-- MCP: `MCP_ACTOR_EMAIL` ([mcp.md](mcp.md)) и `MCP_LOCAL_MEDIA_DIRS` (папки через `:`, `~/` поддерживается; если пусто, доступа к диску нет).
+- MCP: `MCP_ACTOR_EMAIL` ([mcp.md](mcp.md)), `MCP_LOCAL_MEDIA_DIRS` (папки через `:`, `~/` поддерживается; если пусто, доступа к диску нет) и `DOUGA_PUBLIC_URL` — база ссылки `/watch/…`, которую возвращает `video_publish`.
 - Как читается `.env`: Next загружает его сам, `studio:worker` и `mcp` — через флаг `--env-file-if-exists`. Явно переданные переменные окружения важнее. Скрипты `scripts/e2e-*.mjs` берут адрес сервера из `BASE`.
 
 ## Данные

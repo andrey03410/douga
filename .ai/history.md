@@ -29,3 +29,4 @@
 | 21 | 2026-10-27 | Три демо SDK, `CardStyle.gradient`/`shadow` | [26](specs/26-sdk-visual-demos.md) | [план](phases/phase-21-sdk-demos-plan.md) · [приёмка](phases/phase-21-verification.md) |
 | 22 | 2026-10-27 | Переименование в Douga, карта знаний, стадии задач, скиллы | [фича 22](features/22-douga/README.md) | там же |
 | 23 | 2026-10-27 | Хвосты: SSRF в yt-dlp, восстановление рендеров, роли и email, чистка; автономный режим стадий | [фича 23](features/23-followups/README.md) | там же |
+| 24 | 2026-10-28 | HTML-плеер студии: ссылка `/watch` и один офлайн-файл, MP4 остаётся | [фича 24](features/24-html-player/README.md) | там же |

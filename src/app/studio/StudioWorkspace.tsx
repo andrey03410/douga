@@ -5,6 +5,7 @@ import { readLoadedJobWindow } from "./job-feed";
 import type { CompiledVideo } from "@/video";
 import type { StudioJobView } from "@/server/studio/job-types";
 import type { StudioProjectView } from "@/server/studio/types";
+import { formatBytes } from "@/lib/domain/permissions";
 import type { studioProjectMetadata } from "@/server/studio/queries";
 import {
   acceptRemote,
@@ -117,8 +118,18 @@ export function StudioWorkspace({
   const [jobs, setJobs] = useState<Page<StudioJobView>>({
       items: [],
       nextCursor: null,
-    }),
-    [result, setResult] = useState<StudioJobView | null>(null);
+    });
+  const [publication, setPublication] = useState<{
+    token: string;
+    revision: number;
+    bytes: number;
+  } | null>(null);
+  const [exportInfo, setExportInfo] = useState<{
+    bytes: number;
+    warning: boolean;
+  } | null>(null);
+  const [exportNote, setExportNote] = useState("");
+  const [result, setResult] = useState<StudioJobView | null>(null);
   const [fromFrame, setFromFrame] = useState(0),
     [durationFrames, setDurationFrames] = useState(90);
   const jobWindowCount = useRef(20);
@@ -152,6 +163,37 @@ export function StudioWorkspace({
       setBusy(false);
     }
   }
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const row = await studioRequest<{
+          token: string;
+          revision: number;
+          bytes: number;
+        }>(`${base}/publication`);
+        if (!cancelled) setPublication(row);
+      } catch (e) {
+        if (!cancelled && (e as Error).message === "NOT_FOUND")
+          setPublication(null);
+      }
+      try {
+        const estimate = await studioRequest<{
+          bytes: number;
+          warning: boolean;
+        }>(`${base}/export.html?estimate=1`);
+        if (!cancelled) {
+          setExportInfo(estimate);
+          setExportNote("");
+        }
+      } catch (e) {
+        if (!cancelled) setExportNote((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [base, meta.revision]);
   useEffect(() => {
     if (busy) return;
     let active = true,
@@ -929,6 +971,115 @@ export function StudioWorkspace({
           Устойчивая очередь. Каждое задание закрепляет свою ревизию. Для
           выполнения нужен отдельный <code>npm run studio:worker</code>.
         </p>
+        <div className="studio-toolbar">
+          <h3 style={{ margin: 0 }}>Ролик без рендера</h3>
+        </div>
+        {buffer?.dirty || buffer?.conflict || meta.hasDraft ? (
+          <p className="muted">
+            Несохранённые правки в ролик не попадут. Публикуется последняя
+            сохранённая ревизия.
+          </p>
+        ) : null}
+        <div className="studio-toolbar">
+          {publication ? (
+            <>
+              <button
+                className="btn secondary"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const url = `${window.location.origin}/watch/${publication.token}`;
+                    await navigator.clipboard.writeText(url);
+                    setNotice("Ссылка скопирована");
+                  })
+                }
+              >
+                Копировать ссылку
+              </button>
+              <a
+                className="btn ghost"
+                href={`/watch/${publication.token}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Открыть
+              </a>
+              {publication.revision < meta.revision ? (
+                <button
+                  className="btn secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const row = await studioRequest<{
+                        token: string;
+                        revision: number;
+                        bytes: number;
+                      }>(`${base}/publication`, "POST", {
+                        expectedVersion: meta.version,
+                        idempotencyKey: crypto.randomUUID(),
+                      });
+                      setPublication(row);
+                      setNotice("Публикация обновлена");
+                    })
+                  }
+                >
+                  Обновить публикацию
+                </button>
+              ) : null}
+              <button
+                className="btn ghost"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await studioRequest(`${base}/publication`, "DELETE", {
+                      idempotencyKey: crypto.randomUUID(),
+                    });
+                    setPublication(null);
+                    setNotice("Ролик снят с публикации");
+                  })
+                }
+              >
+                Снять с публикации
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn secondary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const row = await studioRequest<{
+                    token: string;
+                    revision: number;
+                    bytes: number;
+                  }>(`${base}/publication`, "POST", {
+                    expectedVersion: meta.version,
+                    idempotencyKey: crypto.randomUUID(),
+                  });
+                  setPublication(row);
+                  setNotice("Ссылка готова");
+                })
+              }
+            >
+              Опубликовать
+            </button>
+          )}
+          {exportInfo ? (
+            <a className="btn" href={`/api/studio/${base}/export.html`}>
+              Скачать .html · {formatBytes(exportInfo.bytes)}
+              {exportInfo.warning ? " · большой файл" : ""}
+            </a>
+          ) : (
+            <span className="muted">
+              {exportNote || "Считаем размер .html…"}
+            </span>
+          )}
+        </div>
+        {publication ? (
+          <p className="muted">
+            /watch/{publication.token} · ревизия {publication.revision}
+          </p>
+        ) : null}
         <details>
           <summary>Создать задание из сохранённого кода</summary>
           <p className="muted">

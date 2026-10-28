@@ -24,6 +24,11 @@ const mime: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
 };
+export function studioMimeType(fileName: string): string {
+  return (
+    mime[path.extname(fileName).toLowerCase()] ?? "application/octet-stream"
+  );
+}
 /** Exact persisted file ledger membership, never prefix authorization. */
 export async function ownedStudioMedia(userId: string, relative: string) {
   await actor(userId);

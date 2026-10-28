@@ -14,7 +14,7 @@
 - [`src/server/render-jobs.ts`](../../src/server/render-jobs.ts) — `failStaleRenderJobs`: задания, оборванные перезапуском, переходят в failed
 - [`src/app/components/FragmentPreview.tsx`](../../src/app/components/FragmentPreview.tsx) — «Старт отсюда» и «▶ Фрагмент»
 - API: `POST /api/tournaments/[id]/render` и [`POST /api/projects/[id]/render`](../../src/app/api/projects/[id]/render/route.ts) (запуск; `GET` — список заданий), [`render-jobs/[id]`](../../src/app/api/render-jobs/[id]/route.ts) (статус, `DELETE`), [`render-jobs/[id]/download`](../../src/app/api/render-jobs/[id]/download/route.ts)
-- Студия: [`src/server/studio/render.ts`](../../src/server/studio/render.ts) и [`engine.ts`](../../src/server/studio/engine.ts) — тот же Remotion, но своя очередь
+- Студия: [`src/server/studio/render.ts`](../../src/server/studio/render.ts) и [`engine.ts`](../../src/server/studio/engine.ts) — тот же Remotion, но своя очередь. У `<Img>` в `StudioVideo` стоит `pauseWhenLoading`: это пауза плеера при загрузке картинки, покадровый MP4 по-прежнему ждёт кадр через `delayRender`. Нарезка офлайн-`.html` живёт отдельно и не вызывает `clipAudio` (тот накладывает свои фейды).
 - Конфиг: [`next.config.mjs`](../../next.config.mjs) выносит `@remotion/bundler`, `@remotion/renderer`, `ffmpeg-static` из серверного бандла Next
 
 ## Данные

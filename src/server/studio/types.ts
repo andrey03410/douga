@@ -95,6 +95,19 @@ export const deleteStudioResourceSchema = z
     expectedVersion: z.number().int().positive().optional(),
   })
   .strict();
+export const publishStudioProjectSchema = z
+  .object({
+    expectedVersion: z.number().int().positive().optional(),
+    idempotencyKey: key.optional(),
+  })
+  .strict();
+export type PublishStudioProjectInput = z.infer<
+  typeof publishStudioProjectSchema
+>;
+export const unpublishStudioProjectSchema = deleteStudioResourceSchema;
+export type UnpublishStudioProjectInput = z.infer<
+  typeof unpublishStudioProjectSchema
+>;
 export type DeleteStudioResourceInput = z.infer<
   typeof deleteStudioResourceSchema
 >;

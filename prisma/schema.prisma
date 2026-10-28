@@ -28,6 +28,8 @@ model User {
   studioPresets StudioPreset[]
   studioMutations StudioMutation[]
   studioJobs StudioJob[]
+  studioPublications StudioPublication[]
+  studioExportCaches StudioExportCache[]
 }
 
 // ---- Phase 1: tournament ----
@@ -378,6 +380,8 @@ model StudioProject {
   references StudioAssetReference[]
   snapshots StudioSnapshot[]
   jobs StudioJob[]
+  publications StudioPublication[]
+  exportCaches StudioExportCache[]
 }
 model StudioRevision {
   id String @id @default(cuid())
@@ -392,6 +396,7 @@ model StudioRevision {
   assetsJson String?
   createdAt DateTime @default(now())
   snapshots StudioSnapshot[]
+  exportCaches StudioExportCache[]
   @@unique([projectId,revision])
 }
 model StudioAssetReference {
@@ -418,8 +423,43 @@ model StudioSnapshot {
   revision StudioRevision @relation(fields:[revisionId],references:[id],onDelete:Restrict)
   payloadJson String
   jobs StudioJob[]
+  publications StudioPublication[]
   bytes Float
   createdAt DateTime @default(now())
+}
+/// One public link per studio project. The token is the capability.
+/// Restrict on every FK: callers delete the row before the snapshot or the project.
+model StudioPublication {
+  id String @id @default(cuid())
+  projectId String @unique
+  project StudioProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  token String @unique
+  snapshotId String
+  snapshot StudioSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  revision Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+  @@index([snapshotId])
+}
+/// Sliced media kept so a repeat HTML download does not re-encode. Disposable.
+model StudioExportCache {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project StudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revisionId String
+  revision StudioRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  key String @unique
+  bytes Float
+  relativePath String
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([projectId])
+  @@index([revisionId])
 }
 model StudioPreset {
   id String @id @default(cuid())

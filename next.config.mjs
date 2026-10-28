@@ -7,6 +7,7 @@ const nextConfig = {
       "@remotion/renderer",
       "ffmpeg-static",
       "music-metadata",
+      "esbuild",
     ],
   },
 };
