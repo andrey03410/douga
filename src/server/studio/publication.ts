@@ -5,7 +5,7 @@ import { StudioError } from "./errors";
 import { freezeStudioProject } from "./revisions";
 import { getStudioProject } from "./projects";
 import { releaseSnapshotIfFree } from "./snapshots";
-import { hash, owned, receipt, replay, requestHash, type Db } from "./shared";
+import { actor, hash, owned, receipt, replay, requestHash, type Db } from "./shared";
 import type { StudioFrozenRevision } from "./types";
 import { publishStudioProjectSchema, type PublishStudioProjectInput } from "./types";
 import { unpublishStudioProjectSchema, type UnpublishStudioProjectInput } from "./types";
@@ -54,12 +54,37 @@ async function present(
   };
 }
 
+export function publicWatchUrl(token: string): string {
+  const base = (process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(
+    /\/+$/,
+    "",
+  );
+  return `${base}/watch/${encodeURIComponent(token)}`;
+}
+
 export async function findPublicationByToken(
   token: string,
 ): Promise<StudioPublicationView | null> {
   const row = await prisma.studioPublication.findUnique({ where: { token } });
   if (!row) return null;
   return present(prisma, row, false);
+}
+
+export async function listStudioPublications(userId: string) {
+  await actor(userId);
+  const rows = await prisma.studioPublication.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    include: { snapshot: true, project: { select: { title: true } } },
+  });
+  return rows.map((row) => ({
+    projectId: row.projectId,
+    title: row.project.title,
+    revision: row.revision,
+    bytes: row.snapshot.bytes,
+    token: row.token,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
 }
 
 export async function getStudioPublication(

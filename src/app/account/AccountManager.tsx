@@ -120,8 +120,12 @@ export function AccountManager() {
   const [poolOpen, setPoolOpen] = useState(false);
   const [archivesOpen, setArchivesOpen] = useState(false);
   const [rendersOpen, setRendersOpen] = useState(false);
+  const [publicationsOpen, setPublicationsOpen] = useState(false);
   const [archives, setArchives] = useState<ArchiveRow[] | null>(null);
   const [renders, setRenders] = useState<RenderRow[] | null>(null);
+  const [publications, setPublications] = useState<
+    { projectId: string; title: string; revision: number; bytes: number }[] | null
+  >(null);
   const [rendersCursor, setRendersCursor] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -167,6 +171,17 @@ export function AccountManager() {
   useEffect(() => {
     if (rendersOpen && renders === null) void loadRenders();
   }, [rendersOpen, renders, loadRenders]);
+
+  const loadPublications = useCallback(async () => {
+    const res = await fetch("/api/account/publications", { cache: "no-store" });
+    const d = await res.json().catch(() => ({}));
+    setPublications(res.ok ? (d.publications ?? []) : []);
+    if (!res.ok) setError(d.error ?? "Не удалось загрузить публикации");
+  }, []);
+
+  useEffect(() => {
+    if (publicationsOpen && publications === null) void loadPublications();
+  }, [publicationsOpen, publications, loadPublications]);
 
   async function remove(kind: "tournament" | "render", id: string, title: string) {
     const what =
@@ -240,6 +255,69 @@ export function AccountManager() {
       </div>
 
       {error ? <div className="error">{error}</div> : null}
+
+      <div className="panel">
+        <PanelHead
+          title="Публикации"
+          summary={publications ? `${publications.length}` : "ссылки на ролики"}
+          open={publicationsOpen}
+          disabled={false}
+          onToggle={() => setPublicationsOpen((v) => !v)}
+        />
+        {publicationsOpen ? (
+          publications === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : publications.length === 0 ? (
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Публикаций нет.
+            </p>
+          ) : (
+            publications.map((row) => (
+              <div
+                key={row.projectId}
+                className="row"
+                style={{ justifyContent: "space-between", marginTop: 10 }}
+              >
+                <span>
+                  {row.title} · ревизия {row.revision} · {fmtBytes(row.bytes)}
+                </span>
+                <button
+                  className="btn ghost"
+                  disabled={busyId === row.projectId}
+                  onClick={() =>
+                    void (async () => {
+                      if (!confirm(`Снять «${row.title}» с публикации?`)) return;
+                      setBusyId(row.projectId);
+                      setError(null);
+                      try {
+                        const res = await fetch(
+                          `/api/studio/projects/${row.projectId}/publication`,
+                          {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+                          },
+                        );
+                        const d = await res.json().catch(() => ({}));
+                        if (!res.ok) throw new Error(d.error ?? "Не удалось снять");
+                        setPublications((prev) =>
+                          prev?.filter((item) => item.projectId !== row.projectId) ?? null,
+                        );
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusyId(null);
+                      }
+                    })()
+                  }
+                >
+                  Снять
+                </button>
+              </div>
+            ))
+          )
+        ) : null}
+      </div>
 
       <div className="panel">
         <PanelHead

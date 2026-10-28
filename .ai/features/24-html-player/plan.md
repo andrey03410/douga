@@ -99,7 +99,7 @@
   `server-boundary.test.ts`). Готово, когда эти тесты зелёные, а файл
   собирается потоком, без одной строки на весь ролик.
 
-- [ ] **6. Студия и кабинет.** Файлы: `src/app/studio/[id]/StudioWorkspace.tsx`,
+- [x] **6. Студия и кабинет.** Файлы: `src/app/studio/[id]/StudioWorkspace.tsx`,
   `src/app/account/AccountManager.tsx`, `src/app/api/account/publications/route.ts`,
   список публикаций в `src/server/users.ts` или `publication.ts`.
   Тесты: HTTP списка отдаёт только публикации владельца, размер равен

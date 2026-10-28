@@ -20,6 +20,8 @@ export {
   unpublishStudioProject,
   findPublicationByToken,
   getStudioPublication,
+  listStudioPublications,
+  publicWatchUrl,
 } from "./publication";
 export { loadPublicWatch, publicWatchMedia } from "./watch-public";
 export { estimateStudioExport, streamStudioExport } from "./export-html";

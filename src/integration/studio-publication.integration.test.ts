@@ -208,6 +208,31 @@ describe("studio publication", () => {
     ).toBeNull();
   });
 
+  it("lists only the author's publications with the snapshot size", async () => {
+    const created = await project();
+    const pub = await studio.publishStudioProject(owner, created.id, {
+      idempotencyKey: randomUUID(),
+    });
+    const mine = await studio.listStudioPublications(owner);
+    expect(mine).toContainEqual(
+      expect.objectContaining({
+        projectId: created.id,
+        revision: pub.revision,
+        bytes: pub.bytes,
+      }),
+    );
+    expect(mine.every((row) => row.projectId !== "foreign")).toBe(true);
+    expect(await studio.listStudioPublications(other)).toEqual([]);
+    await studio.unpublishStudioProject(owner, created.id, {
+      idempotencyKey: randomUUID(),
+    });
+    expect(
+      (await studio.listStudioPublications(owner)).some(
+        (row) => row.projectId === created.id,
+      ),
+    ).toBe(false);
+  });
+
   it("deletes an account that still has a publication", async () => {
     const victim = await prisma.user.create({
       data: { email: `pub-${randomUUID()}@test.local`, passwordHash: "x" },
