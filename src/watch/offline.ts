@@ -49,14 +49,31 @@ function cueWindow(cue: CompiledVideo["audio"][number]) {
   return { start: cue.offsetFrames, end: cue.offsetFrames + Math.max(1, length) };
 }
 
+/** The part of the source a window reaches: past the end of a short source, nothing plays. */
+function withinSource(
+  asset: ResolvedAsset,
+  window: { start: number; end: number },
+  fps: number,
+) {
+  const source = sourceFrames(asset, fps);
+  if (!Number.isFinite(source)) return window;
+  const start = Math.min(window.start, source - 1);
+  return { start, end: Math.max(start + 1, Math.min(window.end, source)) };
+}
+
 function nodeRole(asset: ResolvedAsset): SliceRole {
   return asset.kind === "image" ? "still" : asset.kind === "audio" ? "audio" : "visual";
 }
 
 function usages(plan: CompiledVideo): Usage[] {
   const found: Usage[] = [];
-  const push = (asset: ResolvedAsset, role: SliceRole, start: number, end: number) => {
+  const push = (
+    asset: ResolvedAsset,
+    role: SliceRole,
+    window: { start: number; end: number },
+  ) => {
     if (!asset.hash) return;
+    const { start, end } = withinSource(asset, window, plan.fps);
     found.push({
       hash: asset.hash,
       role,
@@ -65,15 +82,15 @@ function usages(plan: CompiledVideo): Usage[] {
       sourceFrames: sourceFrames(asset, plan.fps),
     });
   };
-  for (const cue of plan.audio) {
-    const { start, end } = cueWindow(cue);
-    push(cue.asset, "audio", start, end);
-  }
+  for (const cue of plan.audio) push(cue.asset, "audio", cueWindow(cue));
   for (const scene of plan.scenes)
     for (const node of scene.nodes) {
       if (!node.media) continue;
-      const { start, end } = nodeWindow(node.media, node.durationInFrames);
-      push(node.media.asset, nodeRole(node.media.asset), start, end);
+      push(
+        node.media.asset,
+        nodeRole(node.media.asset),
+        nodeWindow(node.media, node.durationInFrames),
+      );
     }
   return found;
 }
@@ -159,22 +176,28 @@ function sliceFor(
 
 export const posterSliceId = (digest: string) => `poster:${digest}`;
 
-/** Sources whose poster frame the plan shows while their video loads. */
+/** Sources whose poster frame a video node shows while it loads. A sound shows none. */
 export function posterHashes(plan: CompiledVideo): string[] {
   const found = new Set<string>();
-  const add = (asset: ResolvedAsset) => {
-    if (asset.posterSrc && asset.hash) found.add(asset.hash);
-  };
-  for (const cue of plan.audio) add(cue.asset);
   for (const scene of plan.scenes)
-    for (const node of scene.nodes) if (node.media) add(node.media.asset);
+    for (const node of scene.nodes) {
+      const asset = node.media?.asset;
+      if (asset?.posterSrc && asset.hash) found.add(asset.hash);
+    }
   return [...found];
 }
 
 /** Point the asset at its slice; returns the offset inside the slice. */
-function retarget(asset: ResolvedAsset, slice: MediaSlice, offsetFrames: number, fps: number) {
+function retarget(
+  asset: ResolvedAsset,
+  slice: MediaSlice,
+  offsetFrames: number,
+  fps: number,
+  sound: boolean,
+) {
   asset.src = `slice:${slice.id}`;
-  if (asset.posterSrc) asset.posterSrc = `slice:${posterSliceId(slice.hash)}`;
+  if (asset.posterSrc && sound) delete asset.posterSrc;
+  else if (asset.posterSrc) asset.posterSrc = `slice:${posterSliceId(slice.hash)}`;
   if (slice.whole) return offsetFrames;
   asset.durationSec = (slice.endFrame - slice.startFrame) / fps;
   return offsetFrames - slice.startFrame;
@@ -186,16 +209,17 @@ export function applySlices(plan: CompiledVideo): CompiledVideo {
   const next = structuredClone(plan);
   for (const cue of next.audio) {
     if (!cue.asset.hash) continue;
-    const slice = sliceFor(slices, cue.asset.hash, "audio", cueWindow(cue));
-    cue.offsetFrames = retarget(cue.asset, slice, cue.offsetFrames, next.fps);
+    const window = withinSource(cue.asset, cueWindow(cue), next.fps);
+    const slice = sliceFor(slices, cue.asset.hash, "audio", window);
+    cue.offsetFrames = retarget(cue.asset, slice, cue.offsetFrames, next.fps, true);
   }
   for (const scene of next.scenes)
     for (const node of scene.nodes) {
       const media = node.media;
       if (!media?.asset.hash) continue;
-      const window = nodeWindow(media, node.durationInFrames);
+      const window = withinSource(media.asset, nodeWindow(media, node.durationInFrames), next.fps);
       const slice = sliceFor(slices, media.asset.hash, nodeRole(media.asset), window);
-      media.offsetFrames = retarget(media.asset, slice, media.offsetFrames, next.fps);
+      media.offsetFrames = retarget(media.asset, slice, media.offsetFrames, next.fps, false);
       if (media.freezeAtFrame != null && !slice.whole)
         media.freezeAtFrame -= slice.startFrame;
     }

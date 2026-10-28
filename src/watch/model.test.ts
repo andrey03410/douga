@@ -223,9 +223,14 @@ describe("keys and control visibility", () => {
     const seekBar = { tagName: "INPUT", type: "range" };
     expect(keyAction(key("ArrowRight"), seekBar)).toBe("seek-forward");
     expect(keyAction(key("Space"), seekBar)).toBe("toggle");
+    // Up and down on the seek bar step like left and right, not by one frame.
+    expect(keyAction(key("ArrowUp"), seekBar)).toBe("seek-forward");
+    expect(keyAction(key("ArrowDown"), seekBar)).toBe("seek-back");
+    expect(keyAction(key("ArrowUp"), body)).toBeNull();
     const volume = { tagName: "INPUT", type: "range", nativeArrows: true };
     expect(keyAction(key("ArrowRight"), volume)).toBeNull();
     expect(keyAction(key("ArrowLeft"), volume)).toBeNull();
+    expect(keyAction(key("ArrowUp"), volume)).toBeNull();
     expect(keyAction(key("KeyM"), volume)).toBe("mute");
     expect(keyAction(key("Space"), { tagName: "BUTTON" })).toBe("toggle");
   });
@@ -286,7 +291,7 @@ describe("cover frame", () => {
 });
 
 describe("preload window", () => {
-  it("prefetches sound that starts ahead and decodes stills of every scene in reach", () => {
+  it("warms sound that starts ahead and decodes stills of every scene in reach", () => {
     const video = plan({
       durationInFrames: 900,
       audio: [

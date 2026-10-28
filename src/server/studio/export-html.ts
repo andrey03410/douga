@@ -112,7 +112,12 @@ async function buildPlayer() {
 }
 
 async function playerBundle() {
-  if (bundleCache && (await inputsKey(bundleCache.inputs)) === bundleCache.key)
+  // A production server runs one build of the sources, so the bundle never goes stale.
+  if (
+    bundleCache &&
+    (process.env.NODE_ENV === "production" ||
+      (await inputsKey(bundleCache.inputs)) === bundleCache.key)
+  )
     return bundleCache.js;
   bundling ??= buildPlayer().finally(() => {
     bundling = undefined;
@@ -187,8 +192,20 @@ async function prepare(userId: string, projectId: string) {
     plan: JSON.parse(revision.planJson) as CompiledVideo,
     files: stored.files ?? {},
   });
+  try {
+    return await assemble(projectId, project.document.title, sliced);
+  } catch (error) {
+    sliced.release();
+    throw error;
+  }
+}
+
+async function assemble(
+  projectId: string,
+  title: string,
+  sliced: Awaited<ReturnType<typeof materializeSlices>>,
+) {
   const [bundle, css] = await Promise.all([playerBundle(), fontCss()]);
-  const title = project.document.title;
   const prefix = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>${css}</style></head><body><div class="watch-root"><div id="root"><p class="watch-boot" role="status">Загрузка…</p></div></div><script type="application/json" id="douga-plan">${jsonForScript(sliced.plan)}</script>`;
   // A function replacer: a title with "$&" or "$1" must stay as typed.
   const boot = BOOT.replace("__TITLE__", () => jsonForScript(title));
@@ -222,6 +239,7 @@ async function prepare(userId: string, projectId: string) {
     suffix,
     assets,
     disposition: htmlContentDisposition(projectId, title),
+    release: sliced.release,
   };
 }
 
@@ -237,34 +255,48 @@ async function* htmlParts(prepared: Awaited<ReturnType<typeof prepare>>) {
 
 export async function estimateStudioExport(userId: string, projectId: string) {
   const prepared = await prepare(userId, projectId);
+  prepared.release();
   return { bytes: prepared.bytes, warning: prepared.warning };
 }
 
-export async function streamStudioExport(userId: string, projectId: string) {
+/** `head`: the headers of the download without its body. */
+export async function streamStudioExport(
+  userId: string,
+  projectId: string,
+  options: { head?: boolean } = {},
+) {
   const prepared = await prepare(userId, projectId);
+  const headers = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": String(prepared.bytes),
+    "Content-Disposition": prepared.disposition,
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (options.head) {
+    prepared.release();
+    return new Response(null, { headers });
+  }
   const parts = htmlParts(prepared);
   // pull: the next chunk is read from disk only when the client has taken the last one.
+  // The cuts stay held until the last chunk, an error or a cancelled download.
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const next = await parts.next();
-        if (next.done) controller.close();
-        else controller.enqueue(next.value);
+        if (next.done) {
+          prepared.release();
+          controller.close();
+        } else controller.enqueue(next.value);
       } catch (error) {
+        prepared.release();
         controller.error(error);
       }
     },
     async cancel() {
+      prepared.release();
       await parts.return(undefined);
     },
   });
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Length": String(prepared.bytes),
-      "Content-Disposition": prepared.disposition,
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  return new Response(body, { headers });
 }

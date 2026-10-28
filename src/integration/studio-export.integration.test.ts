@@ -351,7 +351,9 @@ describe("html export", () => {
     await studio.estimateStudioExport(owner, created.id);
     expect(await cacheRows(created.id)).toEqual(first);
 
-    // Longer windows: new cuts, and the old ones leave the disk.
+    // Moved windows while a download of the old ones still streams: new cuts appear,
+    // the old ones stay until that download ends, then leave the disk.
+    const reading = await studio.streamStudioExport(owner, created.id);
     await commit((doc) => {
       doc.settings.top = {
         ...doc.settings.top,
@@ -359,10 +361,61 @@ describe("html export", () => {
       };
     });
     await studio.estimateStudioExport(owner, created.id);
+    expect(await cacheRows(created.id)).toHaveLength(4);
+    const streamed = Buffer.from(await reading.arrayBuffer());
+    expect(streamed.length).toBe(Number(reading.headers.get("content-length")));
+    await studio.estimateStudioExport(owner, created.id);
     const longer = await cacheRows(created.id);
     expect(longer).toHaveLength(2);
     expect(longer.some((row) => first.some((old) => old.key === row.key))).toBe(false);
     for (const old of first) await expect(stat(absPath(old.relativePath))).rejects.toThrow();
+
+    // Near the quota, cuts the project no longer needs do not count against new ones.
+    const spare = await studio.createStudioProject(owner, {
+      document: createVideoDocument({
+        kind: "top",
+        title: "Квота",
+        participants: [{ id: "object", label: "Стул" }],
+      }),
+      idempotencyKey: randomUUID(),
+    });
+    const sum = async (where: { userId?: string; projectId?: string }) =>
+      (await prisma.studioExportCache.aggregate({ where, _sum: { bytes: true } }))._sum
+        .bytes ?? 0;
+    const stale = await sum({ projectId: created.id });
+    await prisma.studioExportCache.create({
+      data: {
+        userId: owner,
+        projectId: spare.id,
+        key: `quota-${randomUUID()}`,
+        bytes: studioJobLimits.maxResultBytesPerAccount - (await sum({ userId: owner })) - 0.6 * stale,
+        relativePath: `studio-exports/${owner}/quota-marker`,
+      },
+    });
+    try {
+      await commit((doc) => {
+        doc.settings.top = {
+          ...doc.settings.top,
+          snippet: { mode: "manual", startSec: 2, durationSec: 1 },
+        };
+      });
+      await studio.estimateStudioExport(owner, created.id);
+      expect((await cacheRows(created.id)).map((row) => row.key).sort()).toEqual(
+        first.map((row) => row.key).sort(),
+      );
+    } finally {
+      await prisma.studioExportCache.deleteMany({ where: { projectId: spare.id } });
+    }
+    await commit((doc) => {
+      doc.settings.top = {
+        ...doc.settings.top,
+        snippet: { mode: "manual", startSec: 3, durationSec: 1 },
+      };
+    });
+    await studio.estimateStudioExport(owner, created.id);
+    expect((await cacheRows(created.id)).map((row) => row.key)).toEqual(
+      longer.map((row) => row.key),
+    );
 
     // A cut that vanished from disk is cut again.
     await rm(absPath(longer[0].relativePath));

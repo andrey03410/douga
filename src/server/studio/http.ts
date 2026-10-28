@@ -227,7 +227,7 @@ export async function studioHttp(
         if (read && action === "export.html") {
           if (url.searchParams.get("estimate") === "1")
             return json(await studio.estimateStudioExport(uid, id));
-          return studio.streamStudioExport(uid, id);
+          return studio.streamStudioExport(uid, id, { head: req.method === "HEAD" });
         }
         if (req.method === "PUT" && action === "draft")
           return json(

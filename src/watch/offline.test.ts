@@ -84,6 +84,20 @@ describe("slice windows", () => {
     );
   });
 
+  it("stops a window at the end of a source shorter than its node", () => {
+    // 6 s clip from 2 s on a 5 s node without a loop: the last second runs past the file.
+    const node = videoNode();
+    node.media!.asset.durationSec = 6;
+    node.media!.offsetFrames = 60;
+    node.durationInFrames = 150;
+    const video = plan({ fps: 30, scenes: [scene([node])] });
+    expect(mediaSlices(video)).toEqual([
+      expect.objectContaining({ role: "visual", startFrame: 45, endFrame: 180, whole: false }),
+    ]);
+    const sliced = applySlices(video);
+    expect(sliced.scenes[0].nodes[0].media?.offsetFrames).toBe(15);
+  });
+
   it("merges windows that sit less than a second apart", () => {
     const video = plan({
       audio: [
@@ -117,6 +131,18 @@ describe("slice roles", () => {
     expect(audio.id).not.toBe(picture.id);
   });
 
+  it("embeds the poster of a video picture, not of a sound cut from the same kind of file", () => {
+    const sound = cue({ id: "card-sound", hash: hashB, offsetFrames: 90, durationInFrames: 30 });
+    sound.asset = { ...sound.asset, kind: "video", hasAudio: true, posterSrc: "/api/studio/media?path=p.jpg" };
+    const onlySound = plan({ audio: [sound] });
+    expect(posterHashes(onlySound)).toEqual([]);
+    const sliced = applySlices(onlySound);
+    expect(sliced.audio[0].asset.posterSrc).toBeUndefined();
+    expect(offlineMediaUnresolved(sliced, new Set(mediaSlices(onlySound).map((s) => s.id)))).toBe(false);
+    const withPicture = plan({ audio: [sound], scenes: [scene([videoNode({ hash: hashB })])] });
+    expect(posterHashes(withPicture)).toEqual([hashB]);
+  });
+
   it("keeps stills whole and shares one whole file between roles", () => {
     const still = imageNode("/api/studio/media?path=x.png");
     const node = videoNode({ hash: hashB });
@@ -130,6 +156,10 @@ describe("slice roles", () => {
       `whole:${"c".repeat(64)}`,
     ]);
     expect(slices.find((s) => s.hash === "c".repeat(64))?.role).toBe("still");
+    // The picture keeps its poster even though the whole file also carries the sound.
+    expect(applySlices(video).scenes[0].nodes[1].media?.asset.posterSrc).toBe(
+      `slice:${posterSliceId(hashB)}`,
+    );
   });
 });
 

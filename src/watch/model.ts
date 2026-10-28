@@ -153,6 +153,9 @@ export function keyAction(key: KeyInput, target: KeyTarget): KeyAction | null {
     const type = (target.type ?? "text").toLowerCase();
     if (type === "range") {
       if (target.nativeArrows && key.code.startsWith("Arrow")) return null;
+      // Natively up and down would move the seek bar by a single frame.
+      if (key.code === "ArrowUp") return "seek-forward";
+      if (key.code === "ArrowDown") return "seek-back";
     } else if (type !== "button" && type !== "submit" && type !== "checkbox") {
       return null;
     }
@@ -196,7 +199,7 @@ export function coverFrame(plan: CompiledVideo): number {
 const fetchable = (src: string) => src.startsWith("/") || /^https?:\/\//.test(src);
 
 export interface UpcomingMedia {
-  /** Sound to prefetch: Remotion then swaps it for a blob URL. */
+  /** Sound to fetch into the HTTP cache before its cue mounts. */
   sounds: string[];
   /** Stills and posters to decode ahead, from any source including blob URLs. */
   stills: string[];
@@ -204,9 +207,9 @@ export interface UpcomingMedia {
 
 /**
  * What to load before the playhead reaches it. Sound counts only when it starts after
- * `afterFrame`: Remotion swaps a prefetched source for its blob URL, and swapping a
- * cue that already plays would reload it. Stills are decoded in place, so a scene
- * already on screen counts too. Video streams and is never listed.
+ * `afterFrame`: a cue that already plays is streamed by its own tag. Stills are
+ * decoded in place, so a scene already on screen counts too. Video streams and is
+ * never listed.
  */
 export function upcomingMedia(
   plan: CompiledVideo,

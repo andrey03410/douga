@@ -4,7 +4,6 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject, SyntheticEvent } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { AnyZodObject } from "zod";
-import { prefetch } from "remotion";
 import { StudioVideo } from "@/remotion/StudioVideo";
 import { imageDecoded, markImageDecoded } from "@/remotion/image-ready";
 import type { CompiledVideo } from "@/video";
@@ -47,6 +46,7 @@ const WATCH_CSS = `
 .watch-cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;background:rgba(5,7,12,.45);color:#fff;text-align:center;cursor:pointer}
 .watch-cover-play{display:grid;place-items:center;width:76px;height:76px;border:0;border-radius:999px;background:rgba(8,12,20,.78);color:#fff;cursor:pointer}
 .watch-loading{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:8px 14px;border-radius:999px;background:rgba(8,12,20,.78);color:#fff;font-size:14px;pointer-events:none}
+.watch-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .watch-controls{position:absolute;left:0;right:0;bottom:0;padding:18px 10px 4px;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#fff;transition:opacity .2s}
 .watch-stage.is-idle .watch-controls{opacity:0;pointer-events:none}
 .watch-row{display:flex;align-items:center;gap:2px}
@@ -341,21 +341,20 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
     setMuted(player.isMuted());
     if (player.getVolume() > 0) state.lastVolume = player.getVolume();
 
-    const prefetched = new Set<string>();
+    const warmed = new Set<string>();
+    const warming = new AbortController();
     // Decoded pictures stay in the memory cache while something holds them.
     const stills = new Map<string, HTMLImageElement>();
     const warm = (afterFrame: number) => {
       const ahead = upcomingMedia(plan, afterFrame, PREFETCH_HORIZON_SEC * plan.fps);
       for (const url of ahead.sounds) {
-        if (prefetched.has(url)) continue;
-        prefetched.add(url);
-        try {
-          void prefetch(url, { method: "blob-url" })
-            .waitUntilDone()
-            .catch(() => {});
-        } catch {
-          // A cue that cannot be prefetched still streams once it is premounted.
-        }
+        if (warmed.has(url)) continue;
+        warmed.add(url);
+        // Only fills the HTTP cache (public media are immutable). The <audio> keeps
+        // its src, so nothing reloads under a cue that is already playing.
+        void fetch(url, { signal: warming.signal })
+          .then((response) => response.body?.pipeTo(new WritableStream()))
+          .catch(() => {});
       }
       for (const url of ahead.stills) {
         if (stills.has(url) || imageDecoded(url)) continue;
@@ -445,6 +444,7 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => {
+      warming.abort();
       stills.clear();
       window.clearTimeout(loadingTimer);
       window.clearInterval(hideTimer);
@@ -487,11 +487,10 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
         }}
       >
         <WatchCanvas playerRef={playerRef} plan={plan} />
-        {loading ? (
-          <div className="watch-loading" role="status">
-            Загрузка…
-          </div>
-        ) : null}
+        {/* Always in the tree: a live region added together with its text is often not read. */}
+        <div className={loading ? "watch-loading" : "watch-sr"} role="status">
+          {loading ? "Загрузка…" : ""}
+        </div>
         {started ? null : (
           <div className="watch-cover" onClick={(event) => actions.play(event)}>
             <button type="button" className="watch-cover-play" aria-label="Воспроизвести">
@@ -570,6 +569,7 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
               className="watch-range watch-volume"
               type="range"
               aria-label="Громкость"
+              aria-valuetext={`${Math.round(level * 100)}%`}
               data-native-arrows="true"
               min={0}
               max={1}

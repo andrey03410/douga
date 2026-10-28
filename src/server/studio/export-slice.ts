@@ -122,7 +122,7 @@ interface CutInput {
   sourcePath: string;
 }
 
-type Cut = Omit<ExportAsset, "id"> & { key: string };
+type Cut = Omit<ExportAsset, "id">;
 
 const present = (relative: string) =>
   safeFile(relative).then(
@@ -133,7 +133,6 @@ const present = (relative: string) =>
 async function placeCut(key: string, input: CutInput): Promise<Cut> {
   const { userId, projectId, slice } = input;
   const found = (row: { relativePath: string; bytes: number }): Cut => ({
-    key,
     mime: studioMimeType(row.relativePath),
     relativePath: row.relativePath,
     bytes: row.bytes,
@@ -193,12 +192,9 @@ async function placeCut(key: string, input: CutInput): Promise<Cut> {
   }
 }
 
-const cutting = new Map<string, Promise<Cut>>();
-
-/** The same window of a project is cut once, even by two exports at the same time. */
-function cut(input: CutInput): Promise<Cut> {
+function cutKey(input: CutInput) {
   const { slice } = input;
-  const key = hash(
+  return hash(
     [
       input.projectId,
       slice.hash,
@@ -209,18 +205,51 @@ function cut(input: CutInput): Promise<Cut> {
       ENCODER,
     ].join(":"),
   );
-  const running = cutting.get(key);
-  if (running) return running;
-  const task = placeCut(key, input).finally(() => cutting.delete(key));
-  cutting.set(key, task);
-  return task;
 }
 
-/** Drop the project's cuts this export does not use. Rows a parallel export added stay. */
-async function pruneCuts(projectId: string, keep: Set<string>, since: Date) {
-  const stale = await prisma.studioExportCache.findMany({
-    where: { projectId, key: { notIn: [...keep] }, createdAt: { lt: since } },
+/**
+ * Keys of cuts an unfinished export still streams. Exports run only in the site
+ * process, so an in-memory count is enough.
+ */
+const reading = new Map<string, number>();
+
+function hold(keys: readonly string[]) {
+  for (const key of keys) reading.set(key, (reading.get(key) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    for (const key of keys) {
+      const left = (reading.get(key) ?? 1) - 1;
+      if (left > 0) reading.set(key, left);
+      else reading.delete(key);
+    }
+  };
+}
+
+/** One export of a project prepares at a time, so pruning never races a placement. */
+const turns = new Map<string, Promise<void>>();
+
+function inTurn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+  const run = (turns.get(projectId) ?? Promise.resolve()).then(work);
+  const done = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  turns.set(projectId, done);
+  void done.then(() => {
+    if (turns.get(projectId) === done) turns.delete(projectId);
   });
+  return run;
+}
+
+/** Drop the project's cuts this export does not use, unless a download still reads them. */
+async function pruneCuts(projectId: string, keep: ReadonlySet<string>) {
+  const stale = (
+    await prisma.studioExportCache.findMany({
+      where: { projectId, key: { notIn: [...keep] } },
+    })
+  ).filter((row) => !reading.has(row.key));
   if (!stale.length) return;
   await prisma.studioExportCache.deleteMany({
     where: { id: { in: stale.map((row) => row.id) } },
@@ -231,41 +260,53 @@ async function pruneCuts(projectId: string, keep: Set<string>, since: Date) {
 /**
  * The files the offline export embeds. Stills and sources used whole are read from
  * the revision itself; only ffmpeg cuts are cached and count against the quota.
+ * `release` must be called once the export has read them.
  */
-export async function materializeSlices(input: {
+export function materializeSlices(input: {
   userId: string;
   projectId: string;
   plan: CompiledVideo;
   files: Record<string, StudioFile>;
-}): Promise<{ plan: CompiledVideo; assets: ExportAsset[] }> {
-  const startedAt = new Date();
-  const assets: ExportAsset[] = [];
-  const keep = new Set<string>();
-  for (const slice of mediaSlices(input.plan)) {
-    const source = fileFor(input.files, slice.hash);
-    if (!source) throw new StudioError("ASSET_FILE_MISSING");
-    if (slice.whole || slice.role === "still") {
-      assets.push(await directAsset(slice.id, source.path));
-      continue;
-    }
-    const { key, ...placed } = await cut({
-      userId: input.userId,
-      projectId: input.projectId,
-      fps: input.plan.fps,
-      slice: slice as CutInput["slice"],
-      sourcePath: source.path,
+}): Promise<{ plan: CompiledVideo; assets: ExportAsset[]; release: () => void }> {
+  return inTurn(input.projectId, async () => {
+    const slices = mediaSlices(input.plan).map((slice) => {
+      const source = fileFor(input.files, slice.hash);
+      if (!source) throw new StudioError("ASSET_FILE_MISSING");
+      if (slice.whole || slice.role === "still") return { slice, source, cut: null };
+      const cut: CutInput = {
+        userId: input.userId,
+        projectId: input.projectId,
+        fps: input.plan.fps,
+        slice: slice as CutInput["slice"],
+        sourcePath: source.path,
+      };
+      return { slice, source, cut: { input: cut, key: cutKey(cut) } };
     });
-    keep.add(key);
-    assets.push({ id: slice.id, ...placed });
-  }
-  for (const digest of posterHashes(input.plan)) {
-    const posterPath = fileFor(input.files, digest)?.posterPath;
-    if (!posterPath) throw new StudioError("ASSET_FILE_MISSING");
-    assets.push(await directAsset(posterSliceId(digest), posterPath));
-  }
-  await pruneCuts(input.projectId, keep, startedAt);
-  const offline = applySlices(input.plan);
-  if (offlineMediaUnresolved(offline, new Set(assets.map((asset) => asset.id))))
-    throw new StudioError("EXPORT_MEDIA_UNRESOLVED");
-  return { plan: offline, assets };
+    const keys = slices.flatMap(({ cut }) => (cut ? [cut.key] : []));
+    // Old cuts go first, so they never count against the quota of the new ones.
+    await pruneCuts(input.projectId, new Set(keys));
+    const release = hold(keys);
+    try {
+      const assets: ExportAsset[] = [];
+      for (const { slice, source, cut } of slices) {
+        if (!cut) {
+          assets.push(await directAsset(slice.id, source.path));
+          continue;
+        }
+        assets.push({ id: slice.id, ...(await placeCut(cut.key, cut.input)) });
+      }
+      for (const digest of posterHashes(input.plan)) {
+        const posterPath = fileFor(input.files, digest)?.posterPath;
+        if (!posterPath) throw new StudioError("ASSET_FILE_MISSING");
+        assets.push(await directAsset(posterSliceId(digest), posterPath));
+      }
+      const offline = applySlices(input.plan);
+      if (offlineMediaUnresolved(offline, new Set(assets.map((asset) => asset.id))))
+        throw new StudioError("EXPORT_MEDIA_UNRESOLVED");
+      return { plan: offline, assets, release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  });
 }
