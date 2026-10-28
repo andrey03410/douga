@@ -208,7 +208,7 @@ describe("html export", () => {
     });
     const left = await make("Левый");
     const right = await make("Правый");
-    let releaseFirst: (() => void) | null = null;
+    const releaseFirst: { current: (() => void) | null } = { current: null };
     let entered = 0;
     const firstInside = new Promise<void>((resolve) => {
       exportCommitGate.wait = async () => {
@@ -216,7 +216,7 @@ describe("html export", () => {
         if (entered === 1) {
           resolve();
           await new Promise<void>((done) => {
-            releaseFirst = done;
+            releaseFirst.current = done;
           });
         }
       };
@@ -234,7 +234,7 @@ describe("html export", () => {
       ]);
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(entered).toBe(1);
-      releaseFirst?.();
+      releaseFirst.current?.();
       const settled = await pending;
       const denied = settled.filter((item) => item.status === "rejected");
       expect(denied).toHaveLength(1);
@@ -251,7 +251,7 @@ describe("html export", () => {
       expect(total).toBeLessThanOrEqual(studioJobLimits.maxResultBytesPerAccount);
     } finally {
       exportCommitGate.wait = null;
-      releaseFirst?.();
+      releaseFirst.current?.();
     }
   });
 });
