@@ -2,11 +2,11 @@
 id: 25
 title: HTML-плеер — перепроверка и доводка, общий демо-ролик
 track: tech
-stage: review
+stage: merged
 branch: fix/25-html-player-polish
 pr: https://github.com/andrey03410/douga/pull/6
 started: 2026-10-28
-merged:
+merged: 2026-10-28
 ---
 
 # 25. HTML-плеер — перепроверка и доводка, общий демо-ролик
@@ -24,7 +24,7 @@ merged:
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем (автономный режим: владелец смотрит после вливания)
-- [ ] Влито
+- [x] Влито
 
 ## Хвосты
 
