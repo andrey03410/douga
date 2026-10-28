@@ -287,9 +287,10 @@ export async function deleteStudioRevision(
     for (const dir of new Set(
       Object.values(assets.files).map((f) => path.dirname(f.path)),
     ))
-      if (dir.startsWith(`studio/${row.userId}/${id}/versions/`))
+        if (dir.startsWith(`studio/${row.userId}/${id}/versions/`))
         await cleanupDirectory(dir);
   }
+  await cleanupDirectory(`studio-exports/${row.userId}/${id}/${old.id}`);
   return result;
 }
 /** Job FK protects the frozen revision until its result is explicitly released. */
