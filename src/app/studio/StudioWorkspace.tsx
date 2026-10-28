@@ -40,6 +40,19 @@ type Asset = {
   sizeBytes: number | null;
 };
 type Page<T> = { items: T[]; nextCursor: string | null };
+/** Codes the «Ролик без рендера» block can meet, in words the author can act on. */
+const ERROR_TEXT: Record<string, string> = {
+  EXPORT_TOO_LARGE:
+    "Файл .html вышел бы больше 400 МБ. Сократите ролик или сделайте MP4-рендер.",
+  EXPORT_QUOTA_EXCEEDED:
+    "Закончилось место под нарезки для .html. Удалите ненужные проекты студии.",
+  EXPORT_SLICE_FAILED: "Не удалось нарезать медиа для .html. Попробуйте ещё раз.",
+  EXPORT_MEDIA_UNRESOLVED: "Не все медиа удалось встроить в .html.",
+  ASSET_FILE_MISSING: "Файл медиа пропал из хранилища. Импортируйте его заново.",
+  VALIDATION_FAILED:
+    "Сохранённая ревизия не проходит проверку. Исправьте ошибки и сохраните её.",
+};
+const errorText = (code: string) => ERROR_TEXT[code] ?? code;
 export async function studioRequest<T>(
   path: string,
   method = "GET",
@@ -155,7 +168,7 @@ export function StudioWorkspace({
       setError(
         message === "VERSION_CONFLICT"
           ? "Конфликт версий. Ваш текст сохранён в редакторе. Откройте серверную версию для сравнения или явно загрузите её."
-          : message,
+          : errorText(message),
       );
       if (message === "VERSION_CONFLICT")
         setBuffer((b) => (b ? { ...b, conflict: true } : b));
@@ -165,6 +178,9 @@ export function StudioWorkspace({
   }
   useEffect(() => {
     let cancelled = false;
+    // The link of the previous revision must not stay up while the new size is counted.
+    setExportInfo(null);
+    setExportNote("");
     void (async () => {
       try {
         const row = await studioRequest<{
@@ -187,7 +203,7 @@ export function StudioWorkspace({
           setExportNote("");
         }
       } catch (e) {
-        if (!cancelled) setExportNote((e as Error).message);
+        if (!cancelled) setExportNote(errorText((e as Error).message));
       }
     })();
     return () => {
