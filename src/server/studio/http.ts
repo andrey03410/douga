@@ -199,7 +199,9 @@ export async function studioHttp(
           });
         }
         if (action === "publication") {
-          const raw = req.method === "GET" || req.method === "HEAD" ? {} : await req.json().catch(() => ({}));
+          // An empty body means no options; a broken one is MALFORMED_JSON, as elsewhere.
+          const text = read ? "" : await req.text();
+          const raw = text.trim() ? JSON.parse(text) : {};
           if (read) {
             const row = await studio.getStudioPublication(uid, id);
             if (!row) throw new studio.StudioError("NOT_FOUND");

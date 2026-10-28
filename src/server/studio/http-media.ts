@@ -64,22 +64,27 @@ export async function ownedStudioMedia(userId: string, relative: string) {
       select: { id: true },
     }));
   if (!allowed) throw new StudioError("NOT_FOUND");
-  return {
-    path: await safeFile(relative),
-    mimeType:
-      mime[path.extname(relative).toLowerCase()] ?? "application/octet-stream",
-  };
+  return { path: await safeFile(relative), mimeType: studioMimeType(relative) };
 }
 /** Stream with backpressure; complete files can exceed the MCP inline byte limit. */
 export async function streamStudioFile(
   req: Request,
-  file: { path: string; mimeType: string; name?: string; hash?: string },
+  file: {
+    path: string;
+    mimeType: string;
+    name?: string;
+    hash?: string;
+    /** The URL names the content, so the browser may keep it for good. */
+    immutable?: boolean;
+  },
 ) {
   const total = (await stat(file.path)).size;
   const headers = new Headers({
     "Content-Type": file.mimeType,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "private, no-store",
+    "Cache-Control": file.immutable
+      ? "private, max-age=31536000, immutable"
+      : "private, no-store",
     "X-Content-Type-Options": "nosniff",
   });
   if (file.hash) headers.set("ETag", `"${file.hash}"`);

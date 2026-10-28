@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -37,6 +37,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  vi.unstubAllEnvs();
   await client?.close();
   for (const id of [owner, other]) {
     if (!id) continue;
@@ -62,7 +63,7 @@ describe("video_publish over MCP", () => {
         "video_publication_get",
       ]),
     );
-    process.env.DOUGA_PUBLIC_URL = "http://127.0.0.1:3999/";
+    vi.stubEnv("DOUGA_PUBLIC_URL", "http://127.0.0.1:3999/");
     const created = await studio.createStudioProject(owner, {
       document: createVideoDocument({
         kind: "top",

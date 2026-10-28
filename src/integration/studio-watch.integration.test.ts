@@ -6,7 +6,9 @@ import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video";
 import * as studio from "@/server/studio";
-import { middleware } from "@/middleware";
+import type { NextConfig } from "next";
+import { getMiddlewareMatchers } from "next/dist/build/analysis/get-page-static-info";
+import { config, middleware } from "@/middleware";
 import { WATCH_CHROME, withWatchChrome } from "@/watch/chrome";
 
 let owner: string;
@@ -135,7 +137,11 @@ describe("public watch", () => {
     expect(suffix.status).toBe(206);
     expect(suffix.headers.get("content-range")).toBe("bytes 7-9/10");
     expect(suffix.headers.get("content-length")).toBe("3");
-    expect(suffix.headers.get("cache-control")).toContain("private");
+    // The name carries the file hash, so the bytes behind it never change.
+    expect(suffix.headers.get("cache-control")).toBe(
+      "private, max-age=31536000, immutable",
+    );
+    expect(suffix.headers.get("etag")).toBe(`"${hash}"`);
     expect(await suffix.text()).toBe("789");
     const otherProject = await studio.createStudioProject(other, {
       document: doc(),
@@ -201,5 +207,24 @@ describe("public watch", () => {
       new NextRequest("http://localhost/projects"),
     );
     expect(projects.headers.get("referrer-policy")).toBeNull();
+  });
+
+  it("runs the middleware on every page, so a forged bare header is dropped", async () => {
+    const matchers = getMiddlewareMatchers(config.matcher, {} as NextConfig);
+    const runs = (pathname: string) =>
+      matchers.some((matcher) => new RegExp(matcher.regexp).test(pathname));
+    for (const page of ["/", "/projects", "/studio/abc", "/watch/abc"])
+      expect(runs(page), page).toBe(true);
+    for (const skipped of ["/_next/static/chunk.js", "/favicon.ico", "/api/studio/projects"])
+      expect(runs(skipped), skipped).toBe(false);
+    const forged = await middleware(
+      new NextRequest("http://localhost/projects", {
+        headers: { [WATCH_CHROME]: "bare" },
+      }),
+    );
+    expect(forged.headers.get("x-middleware-override-headers")).not.toContain(
+      WATCH_CHROME,
+    );
+    expect(forged.headers.get(`x-middleware-request-${WATCH_CHROME}`)).toBeNull();
   });
 });

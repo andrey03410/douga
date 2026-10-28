@@ -262,6 +262,50 @@ describe("studio publication", () => {
     }
   });
 
+  it("serialises two first publishes of one project onto one link", async () => {
+    const created = await project();
+    let entered = 0;
+    publishTestHooks.beforeWrite = async () => {
+      entered += 1;
+      // The first writer holds its transaction open; the second must wait for it.
+      if (entered === 1) await new Promise((resolve) => setTimeout(resolve, 300));
+    };
+    try {
+      const [a, b] = await Promise.all([
+        studio.publishStudioProject(owner, created.id, { idempotencyKey: randomUUID() }),
+        studio.publishStudioProject(owner, created.id, { idempotencyKey: randomUUID() }),
+      ]);
+      expect(a.token).toBe(b.token);
+      expect([a.updated, b.updated].sort()).toEqual([false, true]);
+      expect(
+        await prisma.studioPublication.count({ where: { projectId: created.id } }),
+      ).toBe(1);
+    } finally {
+      publishTestHooks.beforeWrite = null;
+    }
+  });
+
+  it("refuses to unpublish against a stale project version", async () => {
+    const created = await project();
+    await studio.publishStudioProject(owner, created.id, { idempotencyKey: randomUUID() });
+    const current = await studio.getStudioProject(owner, created.id);
+    await expect(
+      studio.unpublishStudioProject(owner, created.id, {
+        expectedVersion: current.version + 1,
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow("VERSION_CONFLICT");
+    expect(
+      await prisma.studioPublication.findUnique({ where: { projectId: created.id } }),
+    ).not.toBeNull();
+    expect(
+      await studio.unpublishStudioProject(owner, created.id, {
+        expectedVersion: current.version,
+        idempotencyKey: randomUUID(),
+      }),
+    ).toEqual({ removed: true, projectId: created.id });
+  });
+
   it("deletes an account that still has a publication", async () => {
     const victim = await prisma.user.create({
       data: { email: `pub-${randomUUID()}@test.local`, passwordHash: "x" },
