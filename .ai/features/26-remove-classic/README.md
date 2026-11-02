@@ -2,7 +2,7 @@
 id: 26
 title: Удаление классических конструкторов — видео только через SDK и агента
 track: product
-stage: tech
+stage: plan
 branch: feat/26-remove-classic
 pr:
 started: 2026-11-02
@@ -25,7 +25,7 @@ MCP-инструменты, композиции Remotion, модели вмес
 
 - [x] Бриф — [brief.md](brief.md)
 - [x] Продукт — [product.md](product.md) (автономно, без гейта «продукт ок»)
-- [ ] Техника — [tech.md](tech.md)
+- [x] Техника — [tech.md](tech.md) (автономно, без гейта «техника ок»)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем
