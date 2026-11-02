@@ -549,8 +549,8 @@ it("creates neutral projects, binds owned media, edits with CAS/idempotency, val
     { projectId: p.id, expectedVersion: restored.version },
     "FORBIDDEN",
   );
-  const pool = await call("list_pool", {});
-  expect(pool.arts).toEqual(expect.any(Array));
+  const pool = await raw("list_pool", {});
+  expect(pool.isError).toBe(true);
   await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
 });
 
