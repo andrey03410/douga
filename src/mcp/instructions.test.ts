@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileVideo, type AssetManifest } from "@/video";
+import { compileVideo, getBuiltinPreset, type AssetManifest } from "@/video";
 import { MCP_INSTRUCTIONS, MCP_TOOL_NAMES } from "./instructions";
 import { videoExamples } from "./studio-tools";
 
@@ -7,6 +7,9 @@ describe("MCP instructions", () => {
   it("fits in 3 KB and names the tournament and manual paths", () => {
     expect(Buffer.byteLength(MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(3072);
     expect(MCP_INSTRUCTIONS).toContain("video_source_list");
+    // sourceId is a factory option: video_project_create refuses it without presetId
+    expect(MCP_INSTRUCTIONS).toMatch(/presetId[^\n]*sourceId/);
+    expect(getBuiltinPreset("top.classic.wide")?.kind).toBe("top");
     expect(MCP_INSTRUCTIONS).toContain('source.kind:"manual"');
     expect(MCP_INSTRUCTIONS).toContain("picker.*");
     expect(new Set(MCP_TOOL_NAMES).size).toBe(46);

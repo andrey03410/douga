@@ -1,7 +1,3 @@
-/**
- * Shown to every MCP client at initialize. Kept short on purpose: the agent
- * should see the three video paths without reading all 46 tool descriptions.
- */
 /** The only tools the stdio server registers. Studio tools are listed in source order. */
 export const MCP_TOOL_NAMES = [
   "shikimori_find_studio",
@@ -52,9 +48,13 @@ export const MCP_TOOL_NAMES = [
   "video_job_inspect",
 ] as const;
 
+/**
+ * Shown to every MCP client at initialize. Kept short on purpose: the agent
+ * should see the three video paths without reading all 46 tool descriptions.
+ */
 export const MCP_INSTRUCTIONS = [
   "Видео в Douga собирается только инструментами video_*. Нужен запущенный `npm run studio:worker`. Финальный рендер video_job_start с kind:\"render\" доступен только админу; клип — kind:\"clip\".",
-  "Топ по турниру: video_source_list (поиск по названию) → video_project_create (sourceId или документ с source.kind:\"tournament\") → оформление (video_preset_apply или video_draft_patch) → video_project_validate → video_draft_commit → video_job_start.",
+  "Топ по турниру: video_source_list (турниры владельца с названиями) → video_project_create с presetId топа из video_preset_list (например top.classic.wide) и sourceId турнира → оформление (video_preset_apply или video_draft_patch) → video_project_validate → video_draft_commit → video_job_start.",
   "Свой топ без турнира: положите звук и картинки в пул (import_youtube_audio, import_local_media, import_shikimori_poster или video_import_start). artId из пула — это assetId привязки {kind:\"pool\", assetId}. Документ: source.kind:\"manual\", у участников rank и media. Фрагмент — settings.top.snippet; режим active сам находит громкое место. Дальше те же validate, commit и job.",
   "Пикер: пресеты picker.* и пример picker-groups в video_examples.",
   "Правки документа идут через CAS: передавайте expectedVersion. Повтор того же шага — с тем же idempotencyKey.",

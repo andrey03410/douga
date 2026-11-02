@@ -22,7 +22,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
 - Актор: при старте `resolveActor()` ищет пользователя по `MCP_ACTOR_EMAIL`. Если переменной или аккаунта нет, процесс пишет причину в stderr и завершается с кодом 1
 - Каждый вызов заново читает роль. Чужой id даёт `NOT_FOUND`. Квоты пула — из `quotasFor(role)`
 - Три рецепта из инструкции:
-  - топ по турниру: `video_source_list` → `video_project_create` → оформление → `video_project_validate` → `video_draft_commit` → `video_job_start`;
+  - топ по турниру: `video_source_list` → `video_project_create` с `presetId` топа и `sourceId` (без `presetId` `sourceId` не принимается) → оформление → `video_project_validate` → `video_draft_commit` → `video_job_start`;
   - свой топ: медиа в пул, документ `source.kind:"manual"`, участники с `rank` и привязками `pool`, фрагмент `active`;
   - пикер: пресеты `picker.*` и `video_examples`
 - Правки идут через CAS по `expectedVersion`. Повтор того же шага — с тем же `idempotencyKey`
