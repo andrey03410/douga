@@ -31,7 +31,7 @@ export function ResultsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(destination: "stay" | "studio" | "legacy") {
+  async function save(destination: "stay" | "studio") {
     setBusy(true);
     setError(null);
     try {
@@ -40,8 +40,6 @@ export function ResultsPanel({
           router.push(
             `/studio/new?sourceId=${encodeURIComponent(tournamentId)}`,
           );
-        else if (destination === "legacy")
-          router.push(`/tournaments/${tournamentId}/render`);
         else router.refresh();
       });
     } catch (err) {
@@ -105,18 +103,14 @@ export function ResultsPanel({
         >
           Создать видео через SDK →
         </button>
-        <button
-          className="btn ghost"
-          onClick={() => save("legacy")}
-          disabled={busy}
-        >
-          Открыть прежний рендер
-        </button>
       </div>
+      <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+        Видео оформляет агент через MCP и находит этот турнир по названию.
+      </p>
       {error ? <div className="error">{error}</div> : null}
       {completed ? (
         <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-          Можно вручную переставить позиции стрелками ↑ ↓ перед рендером.
+          Можно вручную переставить позиции стрелками ↑ ↓.
         </p>
       ) : null}
 

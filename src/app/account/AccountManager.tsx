@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { pluralRu } from "@/lib/domain/art-usage";
 import { MediaBrowser, fmtBytes } from "@/app/components/MediaBrowser";
+import { ImportSources } from "@/app/components/ImportSources";
 import { useMediaPool } from "@/app/components/useMediaPool";
 
 // The cabinet used to render every archive, every pool media and every render in
@@ -335,6 +336,14 @@ export function AccountManager() {
           disabled={data.pool.count === 0}
           onToggle={() => setPoolOpen((v) => !v)}
         />
+        <div style={{ marginTop: 12 }}>
+          <ImportSources
+            onImported={() => {
+              void pool.reload();
+              void reload();
+            }}
+          />
+        </div>
         {data.pool.count === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>Пул пуст.</p>
         ) : poolOpen ? (

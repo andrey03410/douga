@@ -1,5 +1,5 @@
-// E2E HTTP flow against a running server: login -> upload -> compare -> finalize
-// -> render config. Uses a manual cookie jar over global fetch.
+// E2E HTTP flow against a running server: login -> upload -> compare -> finalize.
+// Uses a manual cookie jar over global fetch.
 import { readFile } from "node:fs/promises";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -102,16 +102,6 @@ async function finalize(id) {
   assert(res.status === 200 && data.topSize === 3, "finalized with top-3");
 }
 
-async function renderConfig(id) {
-  const res = await jfetch(`/api/tournaments/${id}/render/config`);
-  const data = await res.json();
-  assert(res.status === 200, "render config ensured");
-  assert(data.config.items.length === 3, `config has 3 items (top-3)`);
-  assert(data.previewPlan.segments.length === 3, "preview plan has 3 segments");
-  assert(data.previewPlan.durationInFrames > 0, "preview plan has duration");
-  assert(data.previewPlan.segments[2].rank === 1, "desc order: #1 is last");
-}
-
 console.log("LOGIN");
 await login();
 console.log("CREATE TOURNAMENT");
@@ -120,6 +110,4 @@ console.log("COMPARISONS");
 await runComparisons(id);
 console.log("FINALIZE");
 await finalize(id);
-console.log("RENDER CONFIG");
-await renderConfig(id);
 console.log("\nE2E OK ✅  tournament=" + id);
