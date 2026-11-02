@@ -34,11 +34,3 @@ export function trackPath(tournamentId: string, trackId: string, ext: string): s
 export function artPath(userId: string, artId: string, ext: string): string {
   return path.join("arts", userId, `${artId}${ext}`);
 }
-
-export function renderOutputPath(jobId: string): string {
-  return path.join("renders", `${jobId}.mp4`);
-}
-
-export function clipPath(jobId: string, trackId: string): string {
-  return path.join("renders", "tmp", jobId, `${trackId}.aac`);
-}

@@ -311,7 +311,7 @@ describe("admin user management", () => {
     await setUserRole(adminId, userId, "user"); // restore fixture
   });
 
-  it("deleteUser wipes tournaments and the pool without touching storage/renders", async () => {
+  it("deleteUser wipes tournaments and the pool and leaves unrelated mp4 files", async () => {
     const victim = await prisma.user.create({
       data: { email: EMAIL_VICTIM, passwordHash: "x" },
     });
