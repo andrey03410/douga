@@ -199,8 +199,18 @@ describe("MCP server end-to-end", () => {
 
     const user = await call("shikimori_find_user", { user: "andrey03410" });
     expect(user).toMatchObject({ id: 1270120, nickname: "andrey03410" });
+    await expect(call("shikimori_find_user", { user: "nope-nope" })).rejects.toThrow(
+      /USER_NOT_FOUND/,
+    );
+
+    // only the anime this user rated 8+
     const list = await call("shikimori_user_anime_list", { user: "andrey03410", minScore: 8 });
-    expect(list.items[0]).toMatchObject({ id: 1535, userScore: 10 });
+    expect(list.total).toBe(2);
+    expect(list.countsByStatus).toMatchObject({ completed: 1, dropped: 1 });
+    expect(list.matched).toBe(1);
+    expect(list.items[0]).toMatchObject({
+      id: 1535, label: "Тетрадь смерти", userScore: 10, status: "completed",
+    });
     const fav = await call("shikimori_user_favourites", { user: "andrey03410" });
     expect(fav.characters[0]).toMatchObject({
       id: 17, posterPath: "/system/characters/original/17.jpg",
@@ -212,6 +222,7 @@ describe("MCP server end-to-end", () => {
     expect(listed.files.map((f: { name: string }) => f.name)).toEqual([
       "01. calm.mp3", "02. calmer.mp3", "bg.jpg",
     ]);
+    expect(listed.files[0].kind).toBe("audio");
     await expect(call("list_local_media", { dir: secretsDir })).rejects.toThrow(/PATH_NOT_ALLOWED/);
 
     const imported = await call("import_local_media", {
@@ -229,9 +240,14 @@ describe("MCP server end-to-end", () => {
     expect(existsSync(`${ostDir}/01. calm.mp3`)).toBe(true);
 
     const tracks = imported.items.filter((i: { kind: string }) => i.kind === "audio");
+    expect(tracks[0].label).toBe("01. calm");
+    expect(tracks[0].durationSec).toBeGreaterThan(0.5);
+
+    // the pool is browsable, so an agent can reuse what is already there
     const pool = await call("list_pool", { kind: "audio", query: "calm" });
     expect(pool.arts.map((a: { id: string }) => a.id).sort()).toEqual(
       tracks.map((t: { artId: string }) => t.artId).sort(),
     );
+    expect(pool.arts[0].filePath).toContain("arts/");
   }, 60_000);
 });

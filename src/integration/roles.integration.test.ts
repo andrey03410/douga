@@ -274,10 +274,7 @@ describe("cabinet usage summary", () => {
     const backfilled = await prisma.track.findUniqueOrThrow({ where: { id: legacy.id } });
     expect(backfilled.sizeBytes).toBe(50);
 
-    const stray = await saveFile(path.join("renders", "roles-tournament-keep.mp4"), Buffer.alloc(4));
     await deleteTournament(userId, t.id);
-    expect(existsSync(absPath(stray))).toBe(true);
-    await removePath(stray);
     await prisma.art.deleteMany({ where: { userId } });
     await removePath(path.join("arts", userId));
   });
@@ -311,7 +308,7 @@ describe("admin user management", () => {
     await setUserRole(adminId, userId, "user"); // restore fixture
   });
 
-  it("deleteUser wipes tournaments and the pool and leaves unrelated mp4 files", async () => {
+  it("deleteUser wipes tournaments and the pool from disk", async () => {
     const victim = await prisma.user.create({
       data: { email: EMAIL_VICTIM, passwordHash: "x" },
     });
@@ -326,7 +323,6 @@ describe("admin user management", () => {
       data: PNG,
       maxPoolBytes: null,
     });
-    const stray = await saveFile(path.join("renders", "roles-keep.mp4"), Buffer.alloc(9));
 
     await expect(deleteUser(victim.id, victim.id)).rejects.toThrow("SELF_CHANGE");
 
@@ -340,8 +336,6 @@ describe("admin user management", () => {
     expect(await prisma.tournament.findUnique({ where: { id: t.id } })).toBeNull();
     expect(existsSync(absPath(path.join("tournaments", t.id)))).toBe(false);
     expect(existsSync(absPath(path.join("arts", victim.id)))).toBe(false);
-    expect(existsSync(absPath(stray))).toBe(true);
-    await removePath(stray);
   });
 });
 

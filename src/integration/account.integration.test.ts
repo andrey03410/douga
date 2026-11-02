@@ -83,7 +83,7 @@ describe("usageSummary", () => {
   });
 
   it("backfills track sizes it finds missing", async () => {
-    const rel = "renders/account-legacy.mp3";
+    const rel = `tournaments/${tournamentId}/account-legacy.mp3`;
     await saveFile(rel, Buffer.alloc(70, 2));
     const legacy = await prisma.track.create({
       data: { tournamentId, title: "Legacy", filePath: rel, order: 9, sizeBytes: null },
