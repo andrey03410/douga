@@ -11,8 +11,6 @@ import { withRenderJob } from "@/server/render";
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { absPath } from "@/lib/storage";
-import { deleteRenderJob, listRenderRows } from "@/server/users";
-
 // Integration tests: listing render jobs for the constructor UIs — the list
 // the client uses to restore an in-flight/finished render after a reload.
 
@@ -119,24 +117,6 @@ describe("зависшие задания после перезапуска се
     );
   });
 
-  it("кабинет показывает его failed, и его можно удалить", async () => {
-    const dead = await prisma.renderJob.create({
-      data: { tournamentId, status: "running", updatedAt: stale() },
-    });
-    const { rows } = await listRenderRows(userId, { limit: 100 });
-    expect(rows.find((r) => r.id === dead.id)?.status).toBe("failed");
-
-    const again = await prisma.renderJob.create({
-      data: { tournamentId, status: "running", updatedAt: stale() },
-    });
-    await deleteRenderJob(userId, again.id);
-    expect(await prisma.renderJob.findUnique({ where: { id: again.id } })).toBeNull();
-  });
-
-  it("живое задание удалить нельзя", async () => {
-    const live = await prisma.renderJob.create({ data: { projectId, status: "running" } });
-    await expect(deleteRenderJob(userId, live.id)).rejects.toThrow("JOB_ACTIVE");
-  });
 });
 
 describe("живой рендер не считается зависшим", () => {

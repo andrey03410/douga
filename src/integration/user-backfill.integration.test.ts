@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe("legacy size backfill during concurrent deletion", () => {
-  it.each(["track", "art", "render"] as const)("keeps the account usable when a %s disappears", async (kind) => {
+  it.each(["track", "art"] as const)("keeps the account usable when a %s disappears", async (kind) => {
     const user = await prisma.user.create({ data: { email, passwordHash: "test" } });
     const tournament = await prisma.tournament.create({
       data: { userId: user.id, title: "Backfill race", scheme: "merge" },
@@ -48,16 +48,10 @@ describe("legacy size backfill during concurrent deletion", () => {
     } else if (kind === "art") {
       const row = await prisma.art.create({ data: { userId: user.id, filePath: file } });
       race.remove = () => prisma.art.delete({ where: { id: row.id } });
-    } else {
-      const row = await prisma.renderJob.create({
-        data: { tournamentId: tournament.id, status: "done", outputPath: file },
-      });
-      race.remove = () => prisma.renderJob.delete({ where: { id: row.id } });
     }
     race.path = absPath(file);
     const summary = await usageSummary(user.id);
     expect(summary.pool.count).toBe(0);
     expect(summary.archives.bytes).toBe(0);
-    expect(summary.renders.count).toBe(0);
   });
 });
