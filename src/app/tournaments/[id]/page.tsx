@@ -84,15 +84,6 @@ export default async function TournamentOverview({
             initialTopSize={t.topSize ?? Math.min(10, t.tracks.length)}
             completed={t.status === "completed"}
           />
-          {t.status === "completed" ? (
-            <div className="panel">
-              <h2>Рендер</h2>
-              <p className="muted">Соберите видео-топ в конструкторе.</p>
-              <a className="btn" href={`/tournaments/${t.id}/render`}>
-                Открыть конструктор рендера →
-              </a>
-            </div>
-          ) : null}
         </>
       )}
     </div>

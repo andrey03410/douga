@@ -16,7 +16,6 @@ import {
 import {
   usageSummary,
   listArchiveRows,
-  deleteRenderJob,
   listUsers,
   setUserRole,
   deleteUser,
@@ -280,32 +279,6 @@ describe("cabinet usage summary", () => {
     await removePath(path.join("arts", userId));
   });
 
-  it("deleteRenderJob removes the output file and refuses active jobs", async () => {
-    const t = await createTournament(
-      userId,
-      { title: "Jobs", scheme: "merge", blindMode: false },
-      makeTracks(),
-      { maxTournaments: 1 },
-    );
-    const outRel = await saveFile(path.join("renders", "it-job.mp4"), Buffer.alloc(10));
-    const done = await prisma.renderJob.create({
-      data: { tournamentId: t.id, status: "done", outputPath: outRel },
-    });
-    const running = await prisma.renderJob.create({
-      data: { tournamentId: t.id, status: "running" },
-    });
-
-    await expect(deleteRenderJob(userId, running.id)).rejects.toThrow("JOB_ACTIVE");
-    await expect(deleteRenderJob(adminId, done.id)).rejects.toThrow("NOT_FOUND"); // foreign
-
-    expect(existsSync(absPath(outRel))).toBe(true);
-    await deleteRenderJob(userId, done.id);
-    expect(existsSync(absPath(outRel))).toBe(false);
-    expect(await prisma.renderJob.findUnique({ where: { id: done.id } })).toBeNull();
-
-    await prisma.renderJob.delete({ where: { id: running.id } });
-    await deleteTournament(userId, t.id);
-  });
 });
 
 describe("admin user management", () => {
@@ -335,7 +308,7 @@ describe("admin user management", () => {
     await setUserRole(adminId, userId, "user"); // restore fixture
   });
 
-  it("deleteUser wipes tournaments, pool and render outputs from disk", async () => {
+  it("deleteUser wipes tournaments and the pool from disk", async () => {
     const victim = await prisma.user.create({
       data: { email: EMAIL_VICTIM, passwordHash: "x" },
     });
@@ -350,10 +323,6 @@ describe("admin user management", () => {
       data: PNG,
       maxPoolBytes: null,
     });
-    const outRel = await saveFile(path.join("renders", "victim-job.mp4"), Buffer.alloc(9));
-    const job = await prisma.renderJob.create({
-      data: { tournamentId: t.id, status: "done", outputPath: outRel },
-    });
 
     await expect(deleteUser(victim.id, victim.id)).rejects.toThrow("SELF_CHANGE");
 
@@ -365,10 +334,8 @@ describe("admin user management", () => {
 
     expect(await prisma.user.findUnique({ where: { id: victim.id } })).toBeNull();
     expect(await prisma.tournament.findUnique({ where: { id: t.id } })).toBeNull();
-    expect(await prisma.renderJob.findUnique({ where: { id: job.id } })).toBeNull();
     expect(existsSync(absPath(path.join("tournaments", t.id)))).toBe(false);
     expect(existsSync(absPath(path.join("arts", victim.id)))).toBe(false);
-    expect(existsSync(absPath(outRel))).toBe(false);
   });
 });
 

@@ -3,13 +3,9 @@ import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { createEngine } from "@/lib/domain/engines";
 import { toDomainComparisonsRaw } from "./helpers";
-import { assemblePlanItems, type AssembleItem } from "@/lib/render-assemble";
-import { buildVideoPlan } from "@/lib/domain/video-plan";
-
-// Integration test: drives the real Prisma schema (SQLite) through a full Phase 1
-// tournament and a Phase 2 render-config assembly. Uses an isolated connection to
-// the dev database and cleans up after itself. Pure ffmpeg/Remotion steps are not
-// exercised here (covered by domain unit tests).
+// Integration test: drives the real Prisma schema (SQLite) through a full
+// tournament. Uses an isolated connection to the dev database and cleans up
+// after itself.
 
 // vitest.config sets DATABASE_URL (TEST_DATABASE_URL or prisma/dev.db): same DB as the services.
 const DB_URL = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
@@ -27,7 +23,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe("Phase 1 + Phase 2 integration", () => {
+describe("tournament integration", () => {
   it("runs a tournament to completion and persists a ranking + render config", async () => {
     const user = await prisma.user.create({
       data: { email: TEST_EMAIL, passwordHash: "x" },
@@ -105,48 +101,5 @@ describe("Phase 1 + Phase 2 integration", () => {
     expect(reloaded?.rankings.map((r) => idToTitle.get(r.trackId))).toEqual([
       "A", "B", "C", "D", "E",
     ]);
-
-    // Phase 2: create a render config for top-N and assemble a video plan
-    const top = reloaded!.rankings.filter((r) => r.rank <= topSize);
-    const config = await prisma.renderConfig.create({
-      data: {
-        tournamentId: tournament.id,
-        introText: "Test Top",
-        items: {
-          create: top.map((r) => ({
-            trackId: r.trackId,
-            rank: r.rank,
-            clipMode: "active_snippet",
-            snippetLenSec: 30,
-          })),
-        },
-      },
-      include: { items: { include: { track: true }, orderBy: { rank: "asc" } } },
-    });
-
-    const assembleItems: AssembleItem[] = config.items.map((it) => ({
-      trackId: it.trackId!,
-      rank: it.rank,
-      title: it.track!.title,
-      artist: it.track!.artist,
-      customLabel: it.customLabel,
-      clipMode: it.clipMode as "manual" | "active_snippet",
-      clipStartSec: it.clipStartSec,
-      clipEndSec: it.clipEndSec,
-      snippetLenSec: it.snippetLenSec,
-      durationSec: it.track!.durationSec,
-      visual: null,
-      audioRef: `/api/tracks/${it.trackId}/audio`,
-    }));
-    const plan = buildVideoPlan(
-      { order: "desc", introEnabled: true, introText: "Test Top", outroEnabled: true, outroText: null },
-      assemblePlanItems(assembleItems, { defaultClipSec: 30 }),
-    );
-
-    expect(plan.segments).toHaveLength(3);
-    // desc order -> worst-of-top (#3) first, #1 last
-    expect(plan.segments.map((s) => s.rank)).toEqual([3, 2, 1]);
-    expect(plan.segments[2].label).toBe("1 - A");
-    expect(plan.durationInFrames).toBeGreaterThan(0);
   });
 });

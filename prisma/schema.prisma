@@ -23,7 +23,6 @@ model User {
   createdAt    DateTime     @default(now())
   tournaments  Tournament[]
   arts         Art[]
-  projects     VideoProject[]
   studioProjects StudioProject[]
   studioPresets StudioPreset[]
   studioMutations StudioMutation[]
@@ -58,8 +57,6 @@ model Tournament {
   comparisons  Comparison[]
   batches      ComparisonBatch[]
   rankings     Ranking[]
-  renderConfig RenderConfig?
-  renderJobs   RenderJob[]
 }
 
 model Track {
@@ -77,7 +74,6 @@ model Track {
   sizeBytes    Float?
 
   studioReferences StudioAssetReference[]
-  renderItems RenderItem[]
 }
 
 // Phase 18: one comparison screen. A group ranking lands as C(k,2) rows, and
@@ -119,122 +115,6 @@ model Ranking {
   @@unique([tournamentId, trackId])
 }
 
-// ---- Phase 6: standalone video projects (manual top / picker) ----
-
-model VideoProject {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title  String
-  kind   String // "top" | "picker"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Picker defaults; rounds inherit unless they override.
-  revealSec       Float   @default(4)
-  hideAfterReveal Boolean @default(false)
-  timerSec        Float   @default(5)
-  tickSound       Boolean @default(true)
-  bgArtId         String?
-  bgArt           Art?    @relation("ProjectBg", fields: [bgArtId], references: [id], onDelete: SetNull)
-  bgMusicArtId    String?
-  bgMusicArt      Art?    @relation("ProjectBgMusic", fields: [bgMusicArtId], references: [id], onDelete: SetNull)
-  // "landscape" | "portrait" — default tile orientation; rounds inherit unless overridden.
-  tileOrientation String  @default("landscape")
-
-  // Picker bookends (title/final cards, same idea as RenderConfig.intro*/outro*
-  // for tops). Off by default so existing pickers keep their exact timeline;
-  // freshly created pickers get them switched on with texts.
-  introEnabled Boolean @default(false)
-  introText    String?
-  outroEnabled Boolean @default(false)
-  outroText    String?
-
-  rounds       PickerRound[]
-  playlist     PickerPlaylistItem[]
-  renderConfig RenderConfig?
-  renderJobs   RenderJob[]
-}
-
-// Ordered background-music playlist of a picker project: plays through the
-// whole video with crossfades, looping when exhausted. Rounds with their own
-// bgMusicArtId mute it for their duration (the timeline keeps running).
-model PickerPlaylistItem {
-  id        String       @id @default(cuid())
-  projectId String
-  project   VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  order     Int
-  artId     String
-  art       Art          @relation("PlaylistArt", fields: [artId], references: [id], onDelete: Cascade)
-}
-
-model PickerRound {
-  id        String       @id @default(cuid())
-  projectId String
-  project   VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  order     Int
-  prompt     String?
-  showPrompt Boolean @default(true)
-  // "always" | "finale" | "never" — when tile labels are visible.
-  labelsMode String  @default("finale")
-  // Null = inherit the project default.
-  revealSec       Float?
-  hideAfterReveal Boolean?
-  timerSec        Float?
-  bgArtId      String?
-  bgArt        Art?    @relation("RoundBg", fields: [bgArtId], references: [id], onDelete: SetNull)
-  bgMusicArtId String?
-  bgMusicArt   Art?    @relation("RoundBgMusic", fields: [bgMusicArtId], references: [id], onDelete: SetNull)
-  // "landscape" | "portrait" override, or null = inherit the project default.
-  tileOrientation String?
-  // "single" (2-9 standalone tiles) | "groups" (block against block, spec 16).
-  mode String @default("single")
-
-  tiles  PickerTile[]
-  groups PickerGroup[]
-}
-
-// A block of a group-comparison round: 1-5 cards, up to 3 blocks per round.
-model PickerGroup {
-  id       String      @id @default(cuid())
-  roundId  String
-  round    PickerRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  order    Int
-  // null = the frame shows the positional name («Блок А/Б/В»).
-  label    String?
-  // The winning block of the round; at most one per round, and optional.
-  isAnswer Boolean     @default(false)
-
-  tiles PickerTile[]
-}
-
-model PickerTile {
-  id      String      @id @default(cuid())
-  roundId String
-  round   PickerRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  // Set in group rounds: which block the card belongs to (null in single mode).
-  groupId String?
-  group   PickerGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  order   Int
-  artId   String
-  art     Art    @relation(fields: [artId], references: [id], onDelete: Cascade)
-  label     String?
-  isAnswer  Boolean @default(false)
-  // Play the tile video's own sound during its reveal window (video with audio only).
-  playSound Boolean @default(true)
-  // "cover" | "fill" | "contain" — how the art fills the tile rect.
-  fitMode   String  @default("cover")
-  // Footage start offset for video tiles.
-  startSec  Float?
-  // Non-destructive 16:9 crop, same semantics as RenderItem.artCrop*.
-  cropX Float?
-  cropY Float?
-  cropW Float?
-  cropH Float?
-}
-
-// ---- Phase 2: render ----
-
 // Pool media: images, videos and (phase 6) audio. Kept named "Art" for
 // compatibility; kind distinguishes them.
 model Art {
@@ -251,75 +131,8 @@ model Art {
   // File size on disk (see Track.sizeBytes); drives the pool quota check.
   sizeBytes   Float?
   createdAt DateTime @default(now())
-  // Set when the art is assigned to a render item; drives the "recent" picker block.
-  lastUsedAt DateTime?
 
   studioReferences StudioAssetReference[]
-  renderItems      RenderItem[]
-  audioRenderItems RenderItem[]   @relation("RenderItemAudio")
-  pickerTiles      PickerTile[]
-  projectBgs       VideoProject[] @relation("ProjectBg")
-  projectMusics    VideoProject[] @relation("ProjectBgMusic")
-  roundBgs         PickerRound[]  @relation("RoundBg")
-  roundMusics      PickerRound[]  @relation("RoundBgMusic")
-  playlistItems    PickerPlaylistItem[] @relation("PlaylistArt")
-}
-
-model RenderConfig {
-  id             String   @id @default(cuid())
-  // Exactly one owner: a tournament OR a standalone "top" project (validated
-  // in the service layer; SQLite has no check constraints via Prisma).
-  tournamentId   String?  @unique
-  tournament     Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  projectId      String?  @unique
-  project        VideoProject? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  orientation    String   @default("16x9")
-  order          String   @default("desc") // "desc" (N->1) | "asc" (1->N)
-  template       String   @default("default")
-  defaultClipSec Float    @default(30)
-  introEnabled   Boolean  @default(true)
-  introText      String?
-  outroEnabled   Boolean  @default(true)
-  outroText      String?
-  updatedAt      DateTime @updatedAt
-
-  items RenderItem[]
-}
-
-model RenderItem {
-  id             String  @id @default(cuid())
-  renderConfigId String
-  renderConfig   RenderConfig @relation(fields: [renderConfigId], references: [id], onDelete: Cascade)
-  // Audio source of the position: a tournament track (tournament tops) OR a
-  // pool audio/sounded-video (manual tops). Exactly one is set.
-  trackId        String?
-  track          Track?  @relation(fields: [trackId], references: [id], onDelete: Cascade)
-  audioArtId     String?
-  audioArt       Art?    @relation("RenderItemAudio", fields: [audioArtId], references: [id], onDelete: Cascade)
-  rank           Int
-  artId          String?
-  art            Art?    @relation(fields: [artId], references: [id], onDelete: SetNull)
-  clipMode       String  @default("active_snippet") // "manual" | "active_snippet" | "full"
-  clipStartSec   Float?
-  clipEndSec     Float?
-  snippetLenSec  Float?
-  // Cached active-snippet start (sec), computed via RMS analysis. null = needs (re)compute.
-  resolvedStartSec Float?
-  customLabel    String?
-  // Non-destructive per-position crop: normalized rect (0..1 fractions of the source
-  // image) with a 16:9 aspect in source pixels. All four set, or all null (= auto cover).
-  artCropX Float?
-  artCropY Float?
-  artCropW Float?
-  artCropH Float?
-  // Audio source: "track" (default) or "media" (the attached pool video's own audio;
-  // valid only when the attached media is a video with an audio stream).
-  audioSource String @default("track")
-  // When the attached video is visual-only (audioSource = "track"): footage start
-  // offset in seconds. null = 0.
-  mediaStartSec Float?
-
-  @@unique([renderConfigId, trackId])
 }
 
 // Background URL-import job (yt-dlp): downloads a video/audio into the pool.
@@ -339,25 +152,7 @@ model DownloadJob {
   updatedAt DateTime @updatedAt
 }
 
-model RenderJob {
-  id             String   @id @default(cuid())
-  // Exactly one owner: tournament or project (service-validated).
-  tournamentId   String?
-  tournament     Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  projectId      String?
-  project        VideoProject? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status         String   @default("queued") // "queued" | "running" | "done" | "failed"
-  progress       Float    @default(0)
-  outputPath     String?
-  // Size of the finished MP4; the cabinet sums these instead of stat()-ing every
-  // file on each page load. null = never measured (lazily backfilled).
-  outputBytes    Float?
-  error          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-// Studio v1: additive, independent of legacy VideoProject.
+// Studio v1.
 model StudioProject {
   id String @id @default(cuid())
   userId String

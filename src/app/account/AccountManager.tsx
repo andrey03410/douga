@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { pluralRu } from "@/lib/domain/art-usage";
 import { MediaBrowser, fmtBytes } from "@/app/components/MediaBrowser";
+import { ImportSources } from "@/app/components/ImportSources";
 import { useMediaPool } from "@/app/components/useMediaPool";
 
 // The cabinet used to render every archive, every pool media and every render in
@@ -16,14 +17,6 @@ interface ArchiveRow {
   status: string;
   trackCount: number;
   sizeBytes: number;
-}
-interface RenderRow {
-  id: string;
-  ownerId: string;
-  title: string;
-  status: string;
-  sizeBytes: number;
-  hasOutput: boolean;
 }
 interface KindTotals {
   count: number;
@@ -39,10 +32,8 @@ interface UsageDto {
   };
   pool: KindTotals & { byKind: Record<"image" | "video" | "audio", KindTotals> };
   archives: KindTotals;
-  renders: KindTotals & { ready: number };
   archiveBytes: number;
   poolBytes: number;
-  renderBytes: number;
   /** AI Video SDK: projects with their revision media, and queue jobs with results. */
   studio: {
     projects: number;
@@ -58,10 +49,6 @@ const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
   in_progress: "В процессе",
   completed: "Завершён",
-  queued: "В очереди",
-  running: "Рендерится",
-  done: "Готов",
-  failed: "Ошибка",
 };
 
 function QuotaLine({ used, max, label }: { used: number; max: number | null; label: string }) {
@@ -119,15 +106,12 @@ export function AccountManager() {
 
   const [poolOpen, setPoolOpen] = useState(false);
   const [archivesOpen, setArchivesOpen] = useState(false);
-  const [rendersOpen, setRendersOpen] = useState(false);
   const [publicationsOpen, setPublicationsOpen] = useState(false);
   const [archives, setArchives] = useState<ArchiveRow[] | null>(null);
-  const [renders, setRenders] = useState<RenderRow[] | null>(null);
   const [publications, setPublications] = useState<
     { projectId: string; title: string; revision: number; bytes: number; token: string }[]
     | null
   >(null);
-  const [rendersCursor, setRendersCursor] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const res = await fetch("/api/account/usage", { cache: "no-store" });
@@ -153,25 +137,9 @@ export function AccountManager() {
     if (!res.ok) setError(d.error ?? "Не удалось загрузить архивы");
   }, []);
 
-  const loadRenders = useCallback(async (cursor?: string) => {
-    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    const res = await fetch(`/api/account/renders${qs}`, { cache: "no-store" });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(d.error ?? "Не удалось загрузить рендеры");
-      return;
-    }
-    setRenders((prev) => (cursor ? [...(prev ?? []), ...d.renders] : d.renders));
-    setRendersCursor(d.nextCursor ?? null);
-  }, []);
-
   useEffect(() => {
     if (archivesOpen && archives === null) void loadArchives();
   }, [archivesOpen, archives, loadArchives]);
-
-  useEffect(() => {
-    if (rendersOpen && renders === null) void loadRenders();
-  }, [rendersOpen, renders, loadRenders]);
 
   const loadPublications = useCallback(async () => {
     const res = await fetch("/api/account/publications", { cache: "no-store" });
@@ -184,27 +152,17 @@ export function AccountManager() {
     if (publicationsOpen && publications === null) void loadPublications();
   }, [publicationsOpen, publications, loadPublications]);
 
-  async function remove(kind: "tournament" | "render", id: string, title: string) {
-    const what =
-      kind === "tournament"
-        ? `архив «${title}» со всеми треками, сравнениями и рендерами`
-        : `рендер «${title}»`;
-    if (!confirm(`Удалить ${what}? Файлы будут стёрты с сервера.`)) return;
+  async function removeArchive(id: string, title: string) {
+    if (!confirm(`Удалить архив «${title}» со всеми треками и сравнениями? Файлы будут стёрты с сервера.`)) return;
     setBusyId(id);
     setError(null);
     try {
-      const url = kind === "tournament" ? `/api/tournaments/${id}` : `/api/render-jobs/${id}`;
-      const res = await fetch(url, { method: "DELETE" });
+      const res = await fetch(`/api/tournaments/${id}`, { method: "DELETE" });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Не удалось удалить");
       }
-      if (kind === "tournament") {
-        setArchives((prev) => prev?.filter((a) => a.id !== id) ?? null);
-        setRenders(null); // its renders went with it
-      } else {
-        setRenders((prev) => prev?.filter((r) => r.id !== id) ?? null);
-      }
+      setArchives((prev) => prev?.filter((a) => a.id !== id) ?? null);
       await reload();
     } catch (e) {
       setError((e as Error).message);
@@ -359,7 +317,7 @@ export function AccountManager() {
                   <button
                     className="btn ghost"
                     disabled={busyId === t.id}
-                    onClick={() => void remove("tournament", t.id, t.title)}
+                    onClick={() => void removeArchive(t.id, t.title)}
                   >
                     Удалить
                   </button>
@@ -378,65 +336,19 @@ export function AccountManager() {
           disabled={data.pool.count === 0}
           onToggle={() => setPoolOpen((v) => !v)}
         />
+        <div style={{ marginTop: 12 }}>
+          <ImportSources
+            onImported={() => {
+              void pool.reload();
+              void reload();
+            }}
+          />
+        </div>
         {data.pool.count === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>Пул пуст.</p>
         ) : poolOpen ? (
           <div style={{ marginTop: 12 }}>
-            <MediaBrowser pool={pool} view="rows" emptyText="Пул пуст." />
-          </div>
-        ) : null}
-      </div>
-
-      <div className="panel">
-        <PanelHead
-          title="Рендеры"
-          summary={`${data.renders.count} · готовых ${data.renders.ready} · ${fmtBytes(
-            data.renders.bytes,
-          )}`}
-          open={rendersOpen}
-          disabled={data.renders.count === 0}
-          onToggle={() => setRendersOpen((v) => !v)}
-        />
-        {data.renders.count === 0 ? (
-          <p className="muted" style={{ marginBottom: 0 }}>Готовых рендеров нет.</p>
-        ) : rendersOpen ? (
-          <div style={{ marginTop: 10 }}>
-            {renders === null ? (
-              <p className="muted">Загрузка…</p>
-            ) : (
-              <>
-                {renders.map((r) => (
-                  <div className="list-item" key={r.id}>
-                    <div>
-                      <span style={{ fontWeight: 600 }}>{r.title}</span>
-                      <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                        {STATUS_LABEL[r.status] ?? r.status}
-                        {r.hasOutput ? ` · ${fmtBytes(r.sizeBytes)}` : ""}
-                      </div>
-                    </div>
-                    <div className="row" style={{ gap: 8 }}>
-                      {r.hasOutput ? (
-                        <a className="btn ghost" href={`/api/render-jobs/${r.id}/download`}>
-                          ⬇ Скачать
-                        </a>
-                      ) : null}
-                      <button
-                        className="btn ghost"
-                        disabled={busyId === r.id}
-                        onClick={() => void remove("render", r.id, r.title)}
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {rendersCursor ? (
-                  <button className="btn ghost" onClick={() => void loadRenders(rendersCursor)}>
-                    Показать ещё
-                  </button>
-                ) : null}
-              </>
-            )}
+            <MediaBrowser pool={pool} />
           </div>
         ) : null}
       </div>

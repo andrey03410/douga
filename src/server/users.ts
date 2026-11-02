@@ -4,7 +4,6 @@ import { stat } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { can, isAssignableRole, quotasFor } from "@/lib/domain/permissions";
-import { failStaleRenderJobs } from "@/server/render-jobs";
 import { BOOTSTRAP_ROLE, isBootstrapAdmin } from "@/server/roles";
 import { activeJobStatuses } from "@/server/studio/job-types";
 
@@ -20,9 +19,8 @@ async function fileSize(relative: string): Promise<number> {
 }
 
 /**
- * Backfill sizeBytes for rows created before phase 5 — and, since phase 17,
- * outputBytes for renders finished before it (best-effort, persisted so the
- * stat() cost is paid once per row instead of on every cabinet visit).
+ * Backfill sizeBytes for rows created before phase 5 (best-effort, persisted so
+ * the stat() cost is paid once per row instead of on every cabinet visit).
  */
 async function backfillSizes(userId: string): Promise<void> {
   const tracks = await prisma.track.findMany({
@@ -45,20 +43,6 @@ async function backfillSizes(userId: string): Promise<void> {
       data: { sizeBytes: await fileSize(a.filePath) },
     });
   }
-  const jobs = await prisma.renderJob.findMany({
-    where: {
-      outputBytes: null,
-      outputPath: { not: null },
-      OR: [{ tournament: { userId } }, { project: { userId } }],
-    },
-    select: { id: true, outputPath: true },
-  });
-  for (const j of jobs) {
-    await prisma.renderJob.updateMany({
-      where: { id: j.id, outputBytes: null },
-      data: { outputBytes: await fileSize(j.outputPath as string) },
-    });
-  }
 }
 
 interface KindTotals {
@@ -73,11 +57,9 @@ export interface UsageSummary {
   /** Pool totals with a per-kind split (images/videos/audio). */
   pool: KindTotals & { byKind: Record<"image" | "video" | "audio", KindTotals> };
   archives: KindTotals;
-  renders: KindTotals & { ready: number };
   /** Legacy aliases the quota lines are drawn from. */
   archiveBytes: number;
   poolBytes: number;
-  renderBytes: number;
   tournamentCount: number;
 }
 
@@ -129,18 +111,6 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
     bytes: trackAgg._sum.sizeBytes ?? 0,
   };
 
-  const ownJobs = { OR: [{ tournament: { userId } }, { project: { userId } }] };
-  const [renderCount, readyCount, renderAgg] = await Promise.all([
-    prisma.renderJob.count({ where: ownJobs }),
-    prisma.renderJob.count({ where: { ...ownJobs, outputPath: { not: null } } }),
-    prisma.renderJob.aggregate({ where: ownJobs, _sum: { outputBytes: true } }),
-  ]);
-  const renders = {
-    count: renderCount,
-    ready: readyCount,
-    bytes: renderAgg._sum.outputBytes ?? 0,
-  };
-
   const studioProjects = await prisma.studioProject.findMany({where:{userId},include:{revisions:{select:{assetsJson:true}},_count:{select:{snapshots:true}}}});
   const studioFiles = new Map<string,number>();
   for(const project of studioProjects) for(const revision of project.revisions) {
@@ -162,10 +132,8 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
     quotas: quotasFor(user.role),
     pool,
     archives,
-    renders,
     archiveBytes: archives.bytes,
     poolBytes: pool.bytes,
-    renderBytes: renders.bytes,
     tournamentCount,
   };
 }
@@ -197,71 +165,6 @@ export async function listArchiveRows(userId: string): Promise<ArchiveRow[]> {
     sizeBytes: t.tracks.reduce((sum, tr) => sum + (tr.sizeBytes ?? 0), 0),
     createdAt: t.createdAt,
   }));
-}
-
-export interface RenderRow {
-  id: string;
-  ownerId: string;
-  title: string;
-  status: string;
-  sizeBytes: number;
-  hasOutput: boolean;
-  createdAt: Date;
-}
-
-const RENDER_PAGE = 20;
-
-/** Renders for the cabinet list, newest first, cursor-paged. */
-export async function listRenderRows(
-  userId: string,
-  opts: { cursor?: string; limit?: number } = {},
-): Promise<{ rows: RenderRow[]; nextCursor: string | null }> {
-  const limit = Math.min(Math.max(1, opts.limit ?? RENDER_PAGE), 100);
-  await failStaleRenderJobs(userId);
-  const jobs = await prisma.renderJob.findMany({
-    where: { OR: [{ tournament: { userId } }, { project: { userId } }] },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    include: {
-      tournament: { select: { id: true, title: true } },
-      project: { select: { id: true, title: true } },
-    },
-    take: limit + 1,
-    ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-  });
-
-  const page = jobs.slice(0, limit);
-  const rows: RenderRow[] = [];
-  for (const j of page) {
-    let bytes = j.outputBytes;
-    if (bytes === null && j.outputPath) {
-      // finished before phase 17: measure once and remember
-      bytes = await fileSize(j.outputPath);
-      await prisma.renderJob.update({ where: { id: j.id }, data: { outputBytes: bytes } });
-    }
-    rows.push({
-      id: j.id,
-      ownerId: j.tournament?.id ?? j.project?.id ?? "",
-      title: j.tournament?.title ?? j.project?.title ?? "—",
-      status: j.status,
-      sizeBytes: bytes ?? 0,
-      hasOutput: Boolean(j.outputPath),
-      createdAt: j.createdAt,
-    });
-  }
-  return { rows, nextCursor: jobs.length > limit ? page[page.length - 1].id : null };
-}
-
-/** Delete a finished render job the user owns, including its MP4. */
-export async function deleteRenderJob(userId: string, jobId: string) {
-  await failStaleRenderJobs(userId);
-  const job = await prisma.renderJob.findFirst({
-    where: { id: jobId, OR: [{ tournament: { userId } }, { project: { userId } }] },
-  });
-  if (!job) throw new Error("NOT_FOUND");
-  if (job.status === "running" || job.status === "queued") throw new Error("JOB_ACTIVE");
-  if (job.outputPath) await removePath(job.outputPath);
-  await removePath(path.join("renders", "tmp", job.id));
-  await prisma.renderJob.delete({ where: { id: job.id } });
 }
 
 // ---- Admin: user management ----
@@ -320,11 +223,11 @@ export async function setUserRole(actorId: string, targetId: string, role: strin
 }
 
 /**
- * Delete a user with everything they own on disk: tournament media, render
- * outputs/temp, the media pool directory, Studio revision media and job
- * results. DB rows go via cascade, except the Restrict-guarded Studio rows,
- * which are deleted explicitly. Refused with JOB_IN_USE while a Studio job is
- * active (same rule as deleteStudioJob); finished jobs go with the account.
+ * Delete a user with everything they own on disk: tournament media, the media
+ * pool directory, Studio revision media and job results. DB rows go via
+ * cascade, except the Restrict-guarded Studio rows, which are deleted
+ * explicitly. Refused with JOB_IN_USE while a Studio job is active (same rule
+ * as deleteStudioJob); finished jobs go with the account.
  */
 export async function deleteUser(actorId: string, targetId: string) {
   if (actorId === targetId) throw new Error("SELF_CHANGE");
@@ -332,17 +235,10 @@ export async function deleteUser(actorId: string, targetId: string) {
   if(!can(actor?.role,"admin:users")) throw new Error("FORBIDDEN");
   const target = await prisma.user.findUnique({
     where: { id: targetId },
-    include: {
-      tournaments: { include: { renderJobs: true } },
-      projects: { include: { renderJobs: true } },
-    },
+    include: { tournaments: true },
   });
   if (!target) throw new Error("NOT_FOUND");
 
-  const jobs = [
-    ...target.tournaments.flatMap((t) => t.renderJobs),
-    ...target.projects.flatMap((p) => p.renderJobs),
-  ];
   // Delete references and rows atomically before releasing any user bytes.
   await prisma.$transaction(async tx => {
     const activeJobs = await tx.studioJob.count({
@@ -364,10 +260,6 @@ export async function deleteUser(actorId: string, targetId: string) {
   await removePath(path.join("studio-exports",targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
-  }
-  for (const job of jobs) {
-    if (job.outputPath) await removePath(job.outputPath);
-    await removePath(path.join("renders", "tmp", job.id));
   }
   await removePath(path.join("arts", targetId));
 

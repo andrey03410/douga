@@ -11,13 +11,13 @@ generator client {
 }
 
 /// a comment line
-model VideoProject {
+model Shelf {
   id           String   @id @default(cuid())
   title        String
   // added in phase 12
   introEnabled Boolean  @default(false)
   introText    String?
-  rounds       PickerRound[]
+  rounds       ShelfItem[]
 
   @@index([userId])
 }
@@ -27,37 +27,37 @@ enum Ignored {
   B
 }
 
-model PickerRound {
+model ShelfItem {
   id      String @id @default(cuid())
-  project VideoProject @relation(fields: [projectId], references: [id])
+  project Shelf @relation(fields: [projectId], references: [id])
 }
 `;
 
 describe("schemaModelFields", () => {
   it("collects field names per model, skipping comments and block attributes", () => {
     const models = schemaModelFields(SCHEMA);
-    expect([...models.keys()]).toEqual(["VideoProject", "PickerRound"]);
-    expect(models.get("VideoProject")).toEqual([
+    expect([...models.keys()]).toEqual(["Shelf", "ShelfItem"]);
+    expect(models.get("Shelf")).toEqual([
       "id",
       "title",
       "introEnabled",
       "introText",
       "rounds",
     ]);
-    expect(models.get("PickerRound")).toEqual(["id", "project"]);
+    expect(models.get("ShelfItem")).toEqual(["id", "project"]);
   });
 });
 
 describe("missingClientFields", () => {
   const client = [
-    { name: "VideoProject", fields: [{ name: "id" }, { name: "title" }, { name: "rounds" }] },
-    { name: "PickerRound", fields: [{ name: "id" }, { name: "project" }] },
+    { name: "Shelf", fields: [{ name: "id" }, { name: "title" }, { name: "rounds" }] },
+    { name: "ShelfItem", fields: [{ name: "id" }, { name: "project" }] },
   ];
 
   it("lists schema fields the generated client does not know", () => {
     expect(missingClientFields(SCHEMA, client)).toEqual([
-      { model: "VideoProject", field: "introEnabled" },
-      { model: "VideoProject", field: "introText" },
+      { model: "Shelf", field: "introEnabled" },
+      { model: "Shelf", field: "introText" },
     ]);
   });
 
@@ -70,7 +70,7 @@ describe("missingClientFields", () => {
   it("is empty when the client matches the schema", () => {
     const fresh = [
       {
-        name: "VideoProject",
+        name: "Shelf",
         fields: [
           { name: "id" },
           { name: "title" },
@@ -79,7 +79,7 @@ describe("missingClientFields", () => {
           { name: "rounds" },
         ],
       },
-      { name: "PickerRound", fields: [{ name: "id" }, { name: "project" }] },
+      { name: "ShelfItem", fields: [{ name: "id" }, { name: "project" }] },
     ];
     expect(missingClientFields(SCHEMA, fresh)).toEqual([]);
   });
@@ -88,7 +88,7 @@ describe("missingClientFields", () => {
 describe("staleClientHint", () => {
   const validationError = Object.assign(
     new Error(
-      "\nInvalid `prisma.videoProject.update()` invocation:\n\n{\n  data: {\n" +
+      "\nInvalid `prisma.shelf.update()` invocation:\n\n{\n  data: {\n" +
         "    introEnabled: true,\n    ~~~~~~~~~~~~\n?   title?: String\n  }\n}\n\n" +
         "Unknown argument `introEnabled`. Available options are marked with ?.",
     ),

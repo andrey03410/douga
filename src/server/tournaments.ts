@@ -328,7 +328,6 @@ export async function finalize(t: LoadedTournament, topSize: number) {
     });
   }
 
-  await syncRenderConfigToRanking(t.id);
   return { topSize: clampedTop };
 }
 
@@ -358,66 +357,12 @@ export async function reorderRanking(
       }),
     ),
   );
-  await syncRenderConfigToRanking(tournamentId);
 }
 
-/**
- * Keep the render config's items aligned with the current top-N ranking: update
- * ranks, add newly-included tracks, drop excluded ones, preserving per-item
- * settings (clip/art) for tracks that remain.
- */
-async function syncRenderConfigToRanking(tournamentId: string) {
-  const config = await prisma.renderConfig.findUnique({
-    where: { tournamentId },
-    include: { items: true },
-  });
-  if (!config) return;
-
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    include: { rankings: { orderBy: { rank: "asc" } } },
-  });
-  if (!tournament) return;
-
-  const topSize = tournament.topSize ?? tournament.rankings.length;
-  const desired = tournament.rankings.filter((r) => r.rank <= topSize);
-  const desiredIds = new Set(desired.map((r) => r.trackId));
-  const existing = new Map(config.items.map((it) => [it.trackId, it]));
-
-  const ops = [];
-  for (const r of desired) {
-    const item = existing.get(r.trackId);
-    if (item) {
-      if (item.rank !== r.rank) {
-        ops.push(prisma.renderItem.update({ where: { id: item.id }, data: { rank: r.rank } }));
-      }
-    } else {
-      ops.push(
-        prisma.renderItem.create({
-          data: {
-            renderConfigId: config.id,
-            trackId: r.trackId,
-            rank: r.rank,
-            clipMode: "active_snippet",
-            snippetLenSec: 30,
-          },
-        }),
-      );
-    }
-  }
-  for (const it of config.items) {
-    if (!desiredIds.has(it.trackId!)) {
-      ops.push(prisma.renderItem.delete({ where: { id: it.id } }));
-    }
-  }
-  if (ops.length) await prisma.$transaction(ops);
-}
-
-/** Delete a tournament the user owns, including its stored media and renders. */
+/** Delete a tournament the user owns, including its stored media. */
 export async function deleteTournament(userId: string, tournamentId: string) {
   const t = await prisma.tournament.findFirst({
     where: { id: tournamentId, userId },
-    include: { renderJobs: true },
   });
   if (!t) throw new Error("NOT_FOUND");
 
@@ -427,9 +372,4 @@ export async function deleteTournament(userId: string, tournamentId: string) {
     await tx.tournament.delete({where:{id:tournamentId}});
   });
   await removePath(path.join("tournaments", tournamentId));
-  for (const job of t.renderJobs) {
-    await removePath(path.join("renders", `${job.id}.mp4`));
-    await removePath(path.join("renders", "tmp", job.id));
-  }
-
 }

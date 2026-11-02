@@ -9,8 +9,8 @@
 - [`src/lib/domain/shikimori.ts`](../../src/lib/domain/shikimori.ts) — чистый маппинг ответов (аниме, персонаж, юзер, запись списка, избранное, роли, профили) и SSRF-гарды `isSafeImagePath`/`isSafePosterUrl`/`resizeImagePath`.
 - [`src/server/shikimori.ts`](../../src/server/shikimori.ts) — сервисы: `search`, `findStudio`, `studioAnimes`, `animeCharacters`, `animeProfile`, `characterProfile`, `personProfile`, `findUser`, `userAnimeList`, `userFavourites`, `userHistory`, `importPoster`.
 - [`src/app/api/shikimori/search/route.ts`](../../src/app/api/shikimori/search/route.ts), [`import/route.ts`](../../src/app/api/shikimori/import/route.ts) — HTTP для UI; оба требуют `media:upload`, коды ошибок переводятся в русские сообщения.
-- [`src/app/components/ImportSources.tsx`](../../src/app/components/ImportSources.tsx) — `ShikimoriSource`: таб «Shikimori» (рядом «Файлы» и «Ссылка»). Ввод с дебаунсом 300 мс, прошлый запрос отменяется, в выдаче мини-постер и факты, кнопка «⬇ В пул». Открывается из [`ArtGalleryModal`](../../src/app/tournaments/[id]/render/ArtGalleryModal.tsx) в конструкторах топа и пикера.
-- MCP-инструменты `shikimori_*`, `import_shikimori_poster`, `add_tile_from_shikimori` лежат в [`src/mcp/server.ts`](../../src/mcp/server.ts) и [`src/mcp/compose.ts`](../../src/mcp/compose.ts), см. [mcp.md](mcp.md).
+- [`src/app/components/ImportSources.tsx`](../../src/app/components/ImportSources.tsx) — `ShikimoriSource`: таб «Shikimori» (рядом «Файлы» и «Ссылка»). Ввод с дебаунсом 300 мс, прошлый запрос отменяется, в выдаче мини-постер и факты, кнопка «⬇ В пул». Таб открыт в блоке пула кабинета `/account`.
+- MCP-инструменты `shikimori_*` и `import_shikimori_poster` лежат в [`src/mcp/server.ts`](../../src/mcp/server.ts), см. [mcp.md](mcp.md).
 
 ## Данные
 - Своих моделей нет. Постер становится `Art` с `kind=image` через `createArt` ([schema](../../prisma/schema.prisma)): файл `shikimori-<type>-<id>.<ext>`, квота пула роли учитывается (`POOL_QUOTA`).
@@ -56,8 +56,8 @@
 
 ## Как проверить
 - Юнит-тесты: `npx vitest run src/lib/domain/shikimori.test.ts src/lib/domain/rate-limit.test.ts src/lib/shikimori-queue.test.ts`.
-- Интеграционные тесты: `npx vitest run src/integration/shikimori.integration.test.ts src/integration/mcp-compose.integration.test.ts`. Вместо Shikimori — локальный HTTP-стенд через `SHIKIMORI_BASE_URL`, база — реальная `prisma/dev.db`.
-- Вживую: в конструкторе пикера `/projects/<id>` откройте модалку медиа → «Shikimori». Поиск должен показать превью, «⬇ В пул» — добавить карточку в пул. Через MCP то же проверяется вызовами `shikimori_search` → `import_shikimori_poster`.
+- Интеграционные тесты: `npx vitest run src/integration/shikimori.integration.test.ts src/integration/mcp.e2e.test.ts`. Вместо Shikimori — локальный HTTP-стенд через `SHIKIMORI_BASE_URL`, база — реальная `prisma/dev.db`.
+- Вживую: в кабинете `/account` откройте блок пула → «Shikimori». Поиск должен показать превью, «⬇ В пул» — добавить картинку в пул. Через MCP то же проверяется вызовами `shikimori_search` → `import_shikimori_poster`.
 
 ## История
 - [спека 09](../specs/09-shikimori-import.md) — поиск с живым превью и синхронный импорт постера в пул.

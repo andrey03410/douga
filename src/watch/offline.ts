@@ -1,4 +1,4 @@
-import { downloadTitleStem } from "@/lib/domain/render-jobs";
+import { downloadTitleStem } from "@/lib/domain/download-name";
 import type { CompiledVideo, ResolvedAsset } from "@/video";
 
 export const HTML_WARN_BYTES = 80 * 1024 * 1024;

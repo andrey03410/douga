@@ -7,6 +7,7 @@ import { resolve, join } from "node:path";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
+import { MCP_TOOL_NAMES } from "@/mcp/instructions";
 import { removePath } from "@/lib/storage";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -179,209 +180,51 @@ afterAll(async () => {
   await new Promise<void>((r) => shiki.close(() => r()));
 });
 
-describe("MCP server end-to-end (Madhouse scenario)", () => {
-  it("exposes the expected tools", async () => {
+describe("MCP server end-to-end", () => {
+  it("exposes exactly the studio, pool and shikimori tools", async () => {
     const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    for (const n of [
-      "shikimori_find_studio", "shikimori_studio_animes", "shikimori_anime_characters",
-      "shikimori_search", "import_shikimori_poster", "import_youtube_audio",
-      "shikimori_find_user", "shikimori_user_anime_list", "shikimori_user_favourites",
-      "create_picker_project", "add_round", "add_tile", "add_tile_from_shikimori",
-      "set_playlist", "get_project", "set_project",
-      "list_pool", "list_local_media", "import_local_media",
-      "add_group", "set_group", "delete_group",
-    ]) {
-      expect(names).toContain(n);
-    }
+    expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toContain("video_source_list");
+    expect(instructions).toContain('source.kind:"manual"');
   });
 
-  it("builds a two-round picker with answers via tools", async () => {
-    const { projectId, firstRoundId } = await call("create_picker_project", {
-      title: "Персонажи Madhouse",
-      orientation: "portrait",
-      introText: "Угадай персонажа Madhouse",
-      outroText: "", // empty = no final card
-    });
-    expect(projectId).toMatch(/.+/);
-
+  it("reads Shikimori without building a project", async () => {
     const studios = await call("shikimori_find_studio", { query: "Madhouse" });
     expect(studios[0]).toMatchObject({ id: 11, name: "Madhouse" });
-
     const animes = await call("shikimori_studio_animes", { studioId: 11 });
     expect(animes[0]).toMatchObject({ id: 1535, type: "anime" });
-
     const chars = await call("shikimori_anime_characters", { animeId: 1535 });
     expect(chars.map((c: { id: number }) => c.id).sort()).toEqual([17, 18]);
 
-    await call("add_tile_from_shikimori", {
-      roundId: firstRoundId, type: "character", id: 17,
-      posterPath: "/system/characters/original/17.jpg", label: "Лайт", isAnswer: true,
-    });
-    await call("add_tile_from_shikimori", {
-      roundId: firstRoundId, type: "character", id: 18,
-      posterPath: "/system/characters/original/18.jpg", label: "Эл", fitMode: "contain",
-    });
-
-    const { roundId } = await call("add_round", { projectId, prompt: "Второй раунд" });
-    await call("add_tile_from_shikimori", {
-      roundId, type: "character", id: 17,
-      posterPath: "/system/characters/original/17.jpg", label: "Лайт", isAnswer: true,
-    });
-
-    const summary = await call("get_project", { projectId });
-    expect(summary.intro).toBe("Угадай персонажа Madhouse");
-    expect(summary.outro).toBeNull();
-    expect(summary.rounds).toHaveLength(2);
-    expect(summary.rounds[0].tiles).toHaveLength(2);
-    expect(summary.rounds[0].tiles.filter((t: { isAnswer: boolean }) => t.isAnswer)).toHaveLength(1);
-
-    // The project really exists in the DB for the actor.
-    const rounds = await prisma.pickerRound.count({ where: { projectId, project: { userId } } });
-    expect(rounds).toBe(2);
-
-    const proj = await prisma.videoProject.findUniqueOrThrow({ where: { id: projectId } });
-    expect(proj.tileOrientation).toBe("portrait");
-    const answerTile = await prisma.pickerTile.findFirstOrThrow({
-      where: { round: { projectId }, fitMode: "contain" },
-    });
-    expect(answerTile.fitMode).toBe("contain");
-
-    // set_round edits an existing round's prompt in place.
-    await call("set_round", { roundId: firstRoundId, prompt: "Обновлённый вопрос" });
-    const edited = await prisma.pickerRound.findUniqueOrThrow({ where: { id: firstRoundId } });
-    expect(edited.prompt).toBe("Обновлённый вопрос");
-
-    // delete_round removes a round (clean scenarios): add a throwaway, delete it.
-    const { roundId: tmpRoundId } = await call("add_round", { projectId, prompt: "Черновик" });
-    expect(await prisma.pickerRound.count({ where: { projectId } })).toBe(3);
-    await call("delete_round", { roundId: tmpRoundId });
-    expect(await prisma.pickerRound.count({ where: { projectId } })).toBe(2);
-    expect(await prisma.pickerRound.findUnique({ where: { id: tmpRoundId } })).toBeNull();
-  }, 60_000);
-
-  it("builds a round from the user's own list: rated anime -> its characters", async () => {
     const user = await call("shikimori_find_user", { user: "andrey03410" });
     expect(user).toMatchObject({ id: 1270120, nickname: "andrey03410" });
     await expect(call("shikimori_find_user", { user: "nope-nope" })).rejects.toThrow(
       /USER_NOT_FOUND/,
     );
 
-    // only the anime this user rated 8+ ("что он реально смотрел и оценил")
+    // only the anime this user rated 8+
     const list = await call("shikimori_user_anime_list", { user: "andrey03410", minScore: 8 });
     expect(list.total).toBe(2);
     expect(list.countsByStatus).toMatchObject({ completed: 1, dropped: 1 });
     expect(list.matched).toBe(1);
-    expect(list.items[0]).toMatchObject({ id: 1535, label: "Тетрадь смерти", userScore: 10, status: "completed" });
-
-    // characters of that anime become the tiles of a fresh round
-    const chars = await call("shikimori_anime_characters", { animeId: list.items[0].id });
-    const { projectId, firstRoundId } = await call("create_picker_project", {
-      title: "Из списка andrey03410",
+    expect(list.items[0]).toMatchObject({
+      id: 1535, label: "Тетрадь смерти", userScore: 10, status: "completed",
     });
-    for (const ch of chars.slice(0, 2)) {
-      await call("add_tile_from_shikimori", {
-        roundId: firstRoundId, type: "character", id: ch.id,
-        posterPath: ch.posterPath, label: ch.label,
-      });
-    }
-
-    // favourites are import-ready too (x64 thumbs rewritten to real posters)
     const fav = await call("shikimori_user_favourites", { user: "andrey03410" });
     expect(fav.characters[0]).toMatchObject({
-      id: 17, type: "character", posterPath: "/system/characters/original/17.jpg",
+      id: 17, posterPath: "/system/characters/original/17.jpg",
     });
-    const { roundId } = await call("add_round", { projectId, prompt: "Избранное" });
-    await call("add_tile_from_shikimori", {
-      roundId, type: "character", id: fav.characters[0].id,
-      posterPath: fav.characters[0].posterPath, label: fav.characters[0].label, isAnswer: true,
-    });
-    await call("add_tile_from_shikimori", {
-      roundId, type: "anime", id: fav.animes[0].id,
-      posterPath: fav.animes[0].posterPath, label: fav.animes[0].label,
-    });
-
-    const summary = await call("get_project", { projectId });
-    expect(summary.rounds).toHaveLength(2);
-    expect(summary.rounds[0].tiles).toHaveLength(2);
-    expect(summary.rounds[1].tiles.map((t: { label: string }) => t.label)).toEqual([
-      "Лайт", "Тетрадь смерти",
-    ]);
   }, 60_000);
 
-  it("builds a group round: 3 vs 2 with a winning block", async () => {
-    const { projectId, firstRoundId } = await call("create_picker_project", {
-      title: "Тройка против двойки",
-      orientation: "portrait",
-    });
-    // switching the mode gives the round its first two blocks
-    await call("set_round", { roundId: firstRoundId, mode: "groups", prompt: "Кто сильнее?" });
-    let summary = await call("get_project", { projectId });
-    expect(summary.rounds[0].mode).toBe("groups");
-    expect(summary.rounds[0].groups).toHaveLength(2);
-
-    const [a, b] = summary.rounds[0].groups.map((g: { id: string }) => g.id);
-    await call("set_group", { groupId: a, label: "Тройка Death Note" });
-    await call("set_group", { groupId: b, label: "Двойка", isAnswer: true });
-
-    for (let i = 0; i < 3; i++) {
-      await call("add_tile_from_shikimori", {
-        groupId: a, type: "character", id: 17,
-        posterPath: "/system/characters/original/17.jpg", label: `Лайт ${i + 1}`,
-      });
-    }
-    await call("add_tile", { groupId: b, artId: summary.rounds[0].groups[0].tiles[0]?.artId ?? "" })
-      .catch(() => null); // first call may run before any art exists — ignore
-    const pool = await call("list_pool", { kind: "image", limit: 1 });
-    await call("add_tile", { groupId: b, artId: pool.arts[0].id });
-    await call("add_tile", { groupId: b, artId: pool.arts[0].id });
-
-    summary = await call("get_project", { projectId });
-    const groups = summary.rounds[0].groups;
-    expect(groups.map((g: { tiles: unknown[] }) => g.tiles.length)).toEqual([3, 2]);
-    expect(groups[0].label).toBe("Тройка Death Note");
-    expect(groups[1].isAnswer).toBe(true);
-    expect(summary.durationSec).toBeGreaterThan(0);
-
-    // limits and cleanup
-    await call("add_group", { roundId: firstRoundId });
-    await expect(call("add_group", { roundId: firstRoundId })).rejects.toThrow(/TOO_MANY_GROUPS/);
-    const third = (await call("get_project", { projectId })).rounds[0].groups[2].id;
-    await call("delete_group", { groupId: third });
-    expect((await call("get_project", { projectId })).rounds[0].groups).toHaveLength(2);
-
-    // a plain round refuses a block, a group round refuses a loose tile
-    const { roundId: plain } = await call("add_round", { projectId });
-    await expect(call("add_group", { roundId: plain })).rejects.toThrow(/NOT_GROUPS/);
-    await expect(call("add_tile", { roundId: firstRoundId, artId: pool.arts[0].id })).rejects.toThrow(
-      /NOT_SINGLE/,
-    );
-  }, 60_000);
-
-  it("dresses a picker up: local OST -> playlist, pool art -> background", async () => {
-    const { projectId, firstRoundId } = await call("create_picker_project", {
-      title: "Оформление",
-    });
-    await call("add_tile_from_shikimori", {
-      roundId: firstRoundId, type: "character", id: 17,
-      posterPath: "/system/characters/original/17.jpg", label: "Лайт", isAnswer: true,
-    });
-    await call("add_tile_from_shikimori", {
-      roundId: firstRoundId, type: "character", id: 18,
-      posterPath: "/system/characters/original/18.jpg", label: "Эл",
-    });
-
-    // the allowlisted folder is visible, the folder next to it is not
+  it("imports allowlisted local media into the pool", async () => {
     const listed = await call("list_local_media", { dir: ostDir });
     expect(listed.files.map((f: { name: string }) => f.name)).toEqual([
       "01. calm.mp3", "02. calmer.mp3", "bg.jpg",
     ]);
     expect(listed.files[0].kind).toBe("audio");
-    await expect(call("list_local_media", { dir: secretsDir })).rejects.toThrow(
-      /PATH_NOT_ALLOWED/,
-    );
+    await expect(call("list_local_media", { dir: secretsDir })).rejects.toThrow(/PATH_NOT_ALLOWED/);
 
-    // import two tracks + a background image, originals stay on disk
     const imported = await call("import_local_media", {
       paths: [
         `${ostDir}/01. calm.mp3`,
@@ -397,7 +240,6 @@ describe("MCP server end-to-end (Madhouse scenario)", () => {
     expect(existsSync(`${ostDir}/01. calm.mp3`)).toBe(true);
 
     const tracks = imported.items.filter((i: { kind: string }) => i.kind === "audio");
-    const bg = imported.items.find((i: { kind: string }) => i.kind === "image")!;
     expect(tracks[0].label).toBe("01. calm");
     expect(tracks[0].durationSec).toBeGreaterThan(0.5);
 
@@ -407,33 +249,5 @@ describe("MCP server end-to-end (Madhouse scenario)", () => {
       tracks.map((t: { artId: string }) => t.artId).sort(),
     );
     expect(pool.arts[0].filePath).toContain("arts/");
-
-    await call("set_playlist", {
-      projectId,
-      artIds: tracks.map((t: { artId: string }) => t.artId),
-    });
-    await call("set_project", { projectId, backgroundArtId: bg.artId, timerSec: 7 });
-
-    const summary = await call("get_project", { projectId });
-    expect(summary.background).toMatchObject({ artId: bg.artId, kind: "image" });
-    expect(summary.playlist.map((p: { artId: string }) => p.artId)).toEqual(
-      tracks.map((t: { artId: string }) => t.artId),
-    );
-    expect(summary.playlistSec).toBeGreaterThan(1);
-    // the plan length is reported so the playlist can be sized to the video
-    expect(summary.durationSec).toBeGreaterThan(0);
-
-    const proj = await prisma.videoProject.findUniqueOrThrow({ where: { id: projectId } });
-    expect(proj.bgArtId).toBe(bg.artId);
-    expect(proj.timerSec).toBe(7);
-
-    // backgroundArtId: null clears the background again
-    await call("set_project", { projectId, backgroundArtId: null });
-    expect((await call("get_project", { projectId })).background).toBeNull();
-
-    // a track cannot serve as a background (kind guard of the service layer)
-    await expect(
-      call("set_project", { projectId, backgroundArtId: tracks[0].artId }),
-    ).rejects.toThrow(/BAD_BG/);
   }, 60_000);
 });

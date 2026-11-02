@@ -549,10 +549,8 @@ it("creates neutral projects, binds owned media, edits with CAS/idempotency, val
     { projectId: p.id, expectedVersion: restored.version },
     "FORBIDDEN",
   );
-  const legacy = await raw("create_picker_project", {
-    title: "Role downgrade",
-  });
-  expect(legacy.isError).toBe(true);
+  const pool = await raw("list_pool", {});
+  expect(pool.isError).toBe(true);
   await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
 });
 

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "@/lib/db";
-import { absPath, removePath, saveFile } from "@/lib/storage";
+import { removePath, saveFile } from "@/lib/storage";
 import { createArt } from "@/server/arts";
-import { usageSummary, listArchiveRows, listRenderRows } from "@/server/users";
+import { usageSummary, listArchiveRows } from "@/server/users";
 import { createStudioProject, deleteStudioProject } from "@/server/studio";
 import { createVideoDocument } from "@/video";
 
@@ -52,22 +52,9 @@ beforeAll(async () => {
   await prisma.art.create({
     data: { userId, filePath: "fake/x.mp3", label: "acc-audio", kind: "audio", sizeBytes: 500 },
   });
-
-  // three render jobs: one finished with a real file, one finished with a
-  // measured size, one still running
-  const rel = `renders/account-it.mp4`;
-  await saveFile(rel, Buffer.alloc(2048, 1));
-  await prisma.renderJob.create({
-    data: { tournamentId, status: "done", progress: 1, outputPath: rel }, // outputBytes null
-  });
-  await prisma.renderJob.create({
-    data: { tournamentId, status: "done", progress: 1, outputPath: rel, outputBytes: 4096 },
-  });
-  await prisma.renderJob.create({ data: { tournamentId, status: "running", progress: 0.3 } });
 });
 
 afterAll(async () => {
-  await removePath("renders/account-it.mp4");
   await cleanup();
   await prisma.$disconnect();
 });
@@ -87,23 +74,16 @@ describe("usageSummary", () => {
       },
     });
     expect(s.archives).toEqual({ count: 1, bytes: 250 });
-    // 2048 backfilled from disk + 4096 already measured; the running job has none
-    expect(s.renders).toEqual({ count: 3, ready: 2, bytes: 2048 + 4096 });
+    expect((s as unknown as Record<string, unknown>).renders).toBeUndefined();
+    expect((s as unknown as Record<string, unknown>).renderBytes).toBeUndefined();
 
     // the heavy arrays are gone
     expect((s as unknown as Record<string, unknown>).arts).toBeUndefined();
     expect((s as unknown as Record<string, unknown>).tournaments).toBeUndefined();
-
-    // and the backfill was persisted, so the next visit costs no stat()
-    const measured = await prisma.renderJob.findMany({
-      where: { tournamentId, outputPath: { not: null } },
-      select: { outputBytes: true },
-    });
-    expect(measured.every((j) => j.outputBytes !== null)).toBe(true);
   });
 
   it("backfills track sizes it finds missing", async () => {
-    const rel = "renders/account-legacy.mp3";
+    const rel = `tournaments/${tournamentId}/account-legacy.mp3`;
     await saveFile(rel, Buffer.alloc(70, 2));
     const legacy = await prisma.track.create({
       data: { tournamentId, title: "Legacy", filePath: rel, order: 9, sizeBytes: null },
@@ -176,30 +156,8 @@ describe("cabinet lists", () => {
     expect(rows[0]).toMatchObject({ id: tournamentId, title: "Account IT", trackCount: 2, sizeBytes: 250 });
   });
 
-  it("pages renders newest-first and reports the measured size", async () => {
-    const first = await listRenderRows(userId, { limit: 2 });
-    expect(first.rows).toHaveLength(2);
-    expect(first.nextCursor).not.toBeNull();
-    expect(first.rows.every((r) => r.title === "Account IT")).toBe(true);
-
-    const second = await listRenderRows(userId, { limit: 2, cursor: first.nextCursor! });
-    expect(second.rows).toHaveLength(1);
-    expect(second.nextCursor).toBeNull();
-
-    const all = [...first.rows, ...second.rows];
-    expect(all.filter((r) => r.hasOutput)).toHaveLength(2);
-    expect(all.find((r) => !r.hasOutput)?.sizeBytes).toBe(0);
-    expect(all.filter((r) => r.hasOutput).map((r) => r.sizeBytes).sort((a, b) => a - b)).toEqual([
-      2048, 4096,
-    ]);
-    // ids are unique across the pages (no repeat at the cursor boundary)
-    expect(new Set(all.map((r) => r.id)).size).toBe(3);
-  });
-
-  it("never shows another user's renders", async () => {
+  it("never shows another user's archives", async () => {
     const other = await prisma.user.create({ data: { email: EMAIL_OTHER, passwordHash: "x" } });
-    const rows = await listRenderRows(other.id, { limit: 10 });
-    expect(rows.rows).toEqual([]);
     expect(await listArchiveRows(other.id)).toEqual([]);
     await prisma.user.delete({ where: { id: other.id } });
   });

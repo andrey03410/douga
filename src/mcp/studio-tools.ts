@@ -81,7 +81,33 @@ function failure(e: unknown): CallToolResult {
         : { code: "OPERATION_FAILED" };
   return { ...text({ error: detail }), isError: true };
 }
-const examples = () => ({
+function manualTopExample() {
+  const participants = [1, 2, 3].map((rank) => ({
+    id: `p${rank}`,
+    label: `Позиция ${rank}`,
+    rank,
+    media: { audio: `audio-${rank}`, visual: `visual-${rank}` },
+  }));
+  const document = sdk.createVideoDocument({
+    kind: "top",
+    title: "Свой топ",
+    participants,
+  });
+  document.bindings = Object.fromEntries(
+    participants.flatMap((p) => [
+      [p.media.audio, { kind: "pool" as const, assetId: `art-${p.media.audio}` }],
+      [p.media.visual, { kind: "pool" as const, assetId: `art-${p.media.visual}` }],
+    ]),
+  );
+  document.settings = {
+    ...document.settings,
+    top: { ...document.settings.top, snippet: { mode: "active" } },
+  };
+  return sdk.parseVideoDocument(document);
+}
+
+export function videoExamples() {
+  return {
   items: [
     {
       id: "top",
@@ -90,6 +116,10 @@ const examples = () => ({
         title: "Top",
         participants: [{ id: "one", label: "Item", rank: 1 }],
       }),
+    },
+    {
+      id: "top-manual",
+      document: manualTopExample(),
     },
     {
       id: "picker-groups",
@@ -101,7 +131,9 @@ const examples = () => ({
     },
   ],
   clientDisplayLimitation: displayLimitation,
-});
+  };
+}
+const examples = () => videoExamples();
 const schemas = () => ({
   document: sdk.getVideoDocumentJsonSchema(),
   preset: zodToJsonSchema(sdk.videoPresetSchema, {

@@ -1,12 +1,11 @@
 import "server-only";
 import path from "node:path";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { saveFile, removePath, artPath, absPath } from "@/lib/storage";
 import { probeMediaInfo, extractPoster } from "@/lib/audio";
 import { AUDIO_EXT, VIDEO_EXT, IMG_EXT } from "@/lib/domain/media-ext";
 import { usageBreakdown, type UsageBreakdown } from "@/lib/domain/art-usage";
-import type { MediaKind } from "@/lib/domain/position-media";
+import type { MediaKind } from "@/lib/domain/media-ext";
 
 /** Pool media kinds: visuals (image/video) + phase-6 audio tracks. */
 export type PoolKind = MediaKind | "audio";
@@ -19,7 +18,6 @@ export { IMG_EXT, VIDEO_EXT, AUDIO_EXT };
 
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 100;
-const RECENT_LIMIT = 8;
 
 export interface ArtRow {
   id: string;
@@ -34,35 +32,12 @@ export interface ArtRow {
   usage: UsageBreakdown;
   /** Total of `usage` — kept as a field because the UI shows it on cards. */
   usageCount: number;
-  lastUsedAt: Date | null;
   createdAt: Date;
 }
 
-// Positions that only show the media. One whose sound is this same media is
-// deleted with it (audioArtId cascades), so it counts once, under
-// audioRenderItems, and is not reported as "freed".
-const PICTURE_ONLY_POSITIONS: Prisma.RenderItemWhereInput = {
-  OR: [
-    { audioArtId: null },
-    { NOT: { audioArtId: { equals: prisma.renderItem.fields.artId } } },
-  ],
-};
-
-// Every relation that points at an Art: a poster standing as a card in a picker
-// round is just as "used" as one assigned to a top position.
 const ART_INCLUDE = {
   _count: {
-    select: {
-      studioReferences: true,
-      renderItems: { where: PICTURE_ONLY_POSITIONS },
-      audioRenderItems: true,
-      pickerTiles: true,
-      playlistItems: true,
-      projectBgs: true,
-      projectMusics: true,
-      roundBgs: true,
-      roundMusics: true,
-    },
+    select: { studioReferences: true },
   },
 } as const;
 
@@ -83,7 +58,6 @@ function toRow(a: ArtWithCount): ArtRow {
     sizeBytes: a.sizeBytes,
     usage,
     usageCount: usage.total,
-    lastUsedAt: a.lastUsedAt,
     createdAt: a.createdAt,
   };
 }
@@ -120,20 +94,6 @@ export async function listArts(
     arts: page.map(toRow),
     nextCursor: rows.length > limit ? page[page.length - 1].id : null,
   };
-}
-
-/** Media recently assigned to render items, most recent first. */
-export async function listRecentArts(
-  userId: string,
-  limit = RECENT_LIMIT,
-): Promise<ArtRow[]> {
-  const rows = await prisma.art.findMany({
-    where: { userId, lastUsedAt: { not: null } },
-    include: ART_INCLUDE,
-    orderBy: { lastUsedAt: "desc" },
-    take: limit,
-  });
-  return rows.map(toRow);
 }
 
 export interface CreateArtInput {
@@ -305,28 +265,13 @@ export async function renameArt(userId: string, artId: string, label: string | n
 }
 
 /**
- * Delete a pool media: positions referencing it are freed (artId -> null via
- * the FK) and their per-position settings (crop, audio source, footage offset)
- * reset to defaults in the same transaction; files are removed afterwards
- * (best-effort).
+ * Delete a pool media. A studio draft or revision that still points at it
+ * blocks the delete; the file is removed afterwards (best-effort).
  */
 export async function deleteArt(userId: string, artId: string) {
   const art = await ownedArt(userId, artId);
   await prisma.$transaction(async tx => {
     if (await tx.studioAssetReference.count({where:{artId:art.id}})) throw new Error("STUDIO_ASSET_IN_USE");
-    await tx.renderItem.updateMany({
-      where: { artId: art.id },
-      data: {
-        artCropX: null,
-        artCropY: null,
-        artCropW: null,
-        artCropH: null,
-        audioSource: "track",
-        mediaStartSec: null,
-        // positions that were listening to this media need a fresh RMS pass
-        resolvedStartSec: null,
-      },
-    });
     await tx.art.delete({ where: { id: art.id } });
   });
   await removePath(art.filePath);
@@ -342,9 +287,8 @@ export interface BulkDeleteResult {
 }
 
 /**
- * Delete several pool media in one pass (phase 17). Each id goes through
- * `deleteArt`, so the cascade and the freeing of top positions are identical to
- * a single delete; an id that cannot be deleted is reported, not fatal.
+ * Delete several pool media in one pass. Each id goes through `deleteArt`;
+ * an id that cannot be deleted is reported, not fatal.
  */
 export async function deleteArts(userId: string, ids: string[]): Promise<BulkDeleteResult> {
   const unique = [...new Set(ids.filter((id) => typeof id === "string" && id))];
