@@ -22,7 +22,7 @@
 
 - [x] **7. Схема и данные.** `prisma/schema.prisma`: удалить `VideoProject`, `PickerRound`, `PickerGroup`, `PickerTile`, `PickerPlaylistItem`, `RenderConfig`, `RenderItem`, `RenderJob`, связи в `User`, `Tournament`, `Track`, `Art` и поле `Art.lastUsedAt`. `npx prisma generate`. Затем на машине владельца: счётчики и `du`, `sqlite3 .backup` в `storage/backups/before-26-remove-classic-<YYYYMMDD-HHMMSS>.db`, `npx prisma db push --accept-data-loss`, `rm -rf storage/renders`, удалить `storage/assets/tick.wav` и пустой `storage/assets/`. Снова счётчики: `StudioProject`, `Tournament`, `Track`, `Art` те же. Готово, когда: в базе нет таблиц классики, `storage/renders/` нет, копия записана в `verify.md`.
 
-- [ ] **8. Знания.** Удалить `.ai/map/classic-video.md`. Обновить `render.md`, `mcp.md`, `media.md`, `roles.md`, `tournament.md`, `dev-env.md`, `shikimori.md`, `studio-sdk.md`, `AGENTS.md`, `README.md`, скилл `verify` — как в T13. Повторить поиск чистоты, включая карточки и скилл. Готово, когда: поиск пустой, ссылки карточек живые, `AGENTS.md` больше не указывает на классику.
+- [x] **8. Знания.** Удалить `.ai/map/classic-video.md`. Обновить `render.md`, `mcp.md`, `media.md`, `roles.md`, `tournament.md`, `dev-env.md`, `shikimori.md`, `studio-sdk.md`, `AGENTS.md`, `README.md`, скилл `verify` — как в T13. Повторить поиск чистоты, включая карточки и скилл. Готово, когда: поиск пустой, ссылки карточек живые, `AGENTS.md` больше не указывает на классику.
 
 ## Живые проверки
 

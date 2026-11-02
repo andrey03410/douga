@@ -1,6 +1,6 @@
 # Турнир сравнений
 
-Путь Douga «топ из личных предпочтений». Пользователь грузит ZIP с OST (аудио и/или видео) и слушает треки. На каждом экране он выбирает лучший из пары или ранжирует группу до 7 треков. Движок выводит строгий топ без общих мест. Топ уходит в конструктор рендера и в источники Studio.
+Путь Douga «топ из личных предпочтений». Пользователь грузит ZIP с OST (аудио и/или видео) и слушает треки. На каждом экране он выбирает лучший из пары или ранжирует группу до 7 треков. Движок выводит строгий топ без общих мест. Дальше видео собирает SDK: кнопка «Создать видео через SDK» или агент, который находит турнир по названию.
 
 ## Где код
 - [`src/lib/domain/engines/`](../../src/lib/domain/engines/) — интерфейс `Engine` и `createEngine` ([`index.ts`](../../src/lib/domain/engines/index.ts)), движки [`swiss.ts`](../../src/lib/domain/engines/swiss.ts), [`round-robin.ts`](../../src/lib/domain/engines/round-robin.ts), [`merge.ts`](../../src/lib/domain/engines/merge.ts)
@@ -10,9 +10,9 @@
 - [`src/lib/domain/order-coverage.ts`](../../src/lib/domain/order-coverage.ts) — `orderCoverage`: доля расставленных пар, противоречия, треки в циклах
 - [`src/server/tournaments.ts`](../../src/server/tournaments.ts) — сервис: `createTournament`, `getTournament`, `nextComparison`, `recordGroupAnswer`, `undoLastAnswer`, `setGroupSize`, `extendPlan`, `finalize`, `reorderRanking`, `deleteTournament`
 - [`src/lib/upload.ts`](../../src/lib/upload.ts) — `extractTracksFromZip`: теги music-metadata, у видео название из имени файла, сортировка по имени
-- [`src/app/api/tournaments/`](../../src/app/api/tournaments/) — `POST` создание (multipart: ZIP, `scheme`, `groupSize`, `blindMode`); в `[id]/`: `PATCH {groupSize}`, `DELETE`, `GET next`, `POST compare|undo|extend|finalize|reorder`. `render/` относится к рендеру
+- [`src/app/api/tournaments/`](../../src/app/api/tournaments/) — `POST` создание (multipart: ZIP, `scheme`, `groupSize`, `blindMode`); в `[id]/`: `PATCH {groupSize}`, `DELETE`, `GET next`, `POST compare|undo|extend|finalize|reorder`
 - [`src/app/api/tracks/[id]/audio/route.ts`](../../src/app/api/tracks/[id]/audio/route.ts) — отдаёт файл трека (и видео) с Range, только владельцу
-- UI [`src/app/tournaments/`](../../src/app/tournaments/): список и [`CreateTournamentForm.tsx`](../../src/app/tournaments/CreateTournamentForm.tsx) (оценка экранов), обзор [`[id]/page.tsx`](../../src/app/tournaments/[id]/page.tsx), экран [`[id]/compare/page.tsx`](../../src/app/tournaments/[id]/compare/page.tsx), топ-N и ручной порядок [`[id]/ResultsPanel.tsx`](../../src/app/tournaments/[id]/ResultsPanel.tsx). Конструктор рендера `[id]/render/` — другая зона
+- UI [`src/app/tournaments/`](../../src/app/tournaments/): список и [`CreateTournamentForm.tsx`](../../src/app/tournaments/CreateTournamentForm.tsx) (оценка экранов), обзор [`[id]/page.tsx`](../../src/app/tournaments/[id]/page.tsx), экран [`[id]/compare/page.tsx`](../../src/app/tournaments/[id]/compare/page.tsx), топ-N и ручной порядок [`[id]/ResultsPanel.tsx`](../../src/app/tournaments/[id]/ResultsPanel.tsx). На результатах одна кнопка SDK и подсказка, что видео оформляет агент
 - Права и квоты: [`src/lib/domain/permissions.ts`](../../src/lib/domain/permissions.ts) — `tournament:create`; у пользователя 1 турнир и архив до 100 МБ, у админа число не ограничено, архив до 10 ГБ
 
 ## Данные
@@ -35,7 +35,7 @@
 - `finalize`:
   - первый вызов пишет `Ranking` и ставит `status=completed`; повторные меняют только `topSize`;
   - `reorderRanking` задаёт ранги вручную;
-  - оба синхронизируют `RenderConfig.items` топа-N.
+  - рейтинг SDK читает сам (`reconcileSource`), отдельная копия порядка не хранится.
 
 ## Грабли
 - Лог и батчи читай с сортировкой `[{createdAt: "asc"}, {id: "asc"}]`. SQLite хранит время с точностью до миллисекунды. От порядка зависят `lookup` (побеждает первый ответ) и то, какой экран снимет undo.

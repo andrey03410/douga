@@ -36,7 +36,6 @@
 - SQLite-база `prisma/dev.db`, модели описаны в [schema](../../prisma/schema.prisma). Копии базы в `storage/backups/` сделаны вручную, код туда не пишет.
 - `storage/` лежит в `.gitignore`. Пути в БД хранятся относительно него:
   - `tournaments/<id>/tracks/` — треки архивов; `arts/<userId>/` — пул медиа вместе с постерами;
-  - `renders/<jobId>.mp4` и `renders/tmp/<jobId>/` — прежний рендер; `assets/tick.wav` — тик таймера пикера;
   - `downloads/tmp/<jobId>/` — загрузки yt-dlp; `tmp/` — импорт по ссылке и с диска; `bin/yt-dlp` — собственный бинарник;
   - `studio/<userId>/<projectId>/versions/…` и `studio/builtin/` — студия SDK; `studio-jobs/<userId>/<jobId>` — результаты заданий; `studio-engines/` — собранные движки;
   - `studio-verification/<run>` — куда `verify-studio.mjs` пишет результат по умолчанию.
@@ -64,7 +63,8 @@
 - Тесты импорта (`downloads`, `studio-imports`) требуют настоящий `storage/bin/yt-dlp` и сами его не скачивают. На свежем клоне положи бинарник в `storage/bin/yt-dlp`. Туда же его скачивает `ensureYtDlp`, если `YTDLP_PATH` не задан.
 - Перезапуск dev-сервера обрывает идущие `DownloadJob`. Задание, которое не обновлялось дольше 10 минут, показывается как failed.
 - Уже запущенная сессия Claude Code не подхватывает [`.mcp.json`](../../.mcp.json) (сервер `douga` → `npm run --silent mcp`). Перезапусти клиент или гоняй сервер stdio-драйвером.
-- `e2e-setup.mjs` удаляет `e2e@test.local` со всеми данными и создаёт заново с ролью admin. `e2e-run` и `e2e-render` по умолчанию обращаются к `http://localhost:3000`, другой адрес задаётся через `BASE`.
+- `e2e-setup.mjs` удаляет `e2e@test.local` со всеми данными и создаёт заново с ролью admin. `e2e-run` по умолчанию обращается к `http://localhost:3000`, другой адрес задаётся через `BASE`.
+- `npx tsc --noEmit` не проверяет `storage/`: там лежат данные и разовые скрипты, не исходники.
 
 ## Как проверить
 - Тесты: `npm test`, точечно `npx vitest run src/lib/prisma-client.test.ts src/lib/domain/prisma-drift.test.ts`. Затем `npm run build` и `npx tsc --noEmit`.

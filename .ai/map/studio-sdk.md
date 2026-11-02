@@ -1,6 +1,6 @@
 # AI Video SDK (студия)
 
-Сейчас это основная точка входа Douga. Видео (топ или пикер) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь. Прежние конструкторы (`VideoProject`) живут отдельно и сюда не мигрируют.
+Это единственная точка входа в видео Douga. Ролик (топ или пикер) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
 
 ## Где код
 - [`src/video/`](../../src/video/) — домен SDK без I/O. Публичный вход — [`index.ts`](../../src/video/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
@@ -30,12 +30,12 @@
 - [`scripts/verify-studio.mjs`](../../scripts/verify-studio.mjs) — повторяемая проверка через настоящий stdio MCP
 
 ## Данные
-- Модели Prisma: `StudioProject`, `StudioRevision`, `StudioAssetReference`, `StudioSnapshot`, `StudioPublication`, `StudioExportCache`, `StudioPreset`, `StudioMutation`, `StudioAnalysis`, `StudioJob`, `StudioWorkerLease` ([schema](../../prisma/schema.prisma)); с `VideoProject` не связаны
+- Модели Prisma: `StudioProject`, `StudioRevision`, `StudioAssetReference`, `StudioSnapshot`, `StudioPublication`, `StudioExportCache`, `StudioPreset`, `StudioMutation`, `StudioAnalysis`, `StudioJob`, `StudioWorkerLease` ([schema](../../prisma/schema.prisma))
 - Привязки медиа в документе (`bindings`): `pool` (Art пула), `track` (трек турнира), `builtin`; `StudioAssetReference` держит Art/Track/Tournament по scope `head`/`draft`/`revision:N`
 - Диск (`storage/`): `studio/<userId>/<projectId>/versions/<uuid>` — подготовленные ассеты ревизии; `studio-jobs/<userId>/<jobId>` — результаты; `studio-engines/<sha256>` — бандлы Remotion; `studio-exports/<userId>/<projectId>/<key>.m4a|.mp4` — нарезки ffmpeg для `.html`, `key` считается от содержания окна
 
 ## Как устроено
-- Форматы `wide`/`vertical`/`square` = 1920×1080 / 1080×1920 / 1080×1080. Встроенные пресеты — 30 FPS (схема допускает 24/25/30/50/60). Лимиты старых конструкторов (9 карточек/50 раундов) сюда не переносятся, действуют только технические бюджеты.
+- Форматы `wide`/`vertical`/`square` = 1920×1080 / 1080×1920 / 1080×1080. Встроенные пресеты — 30 FPS (схема допускает 24/25/30/50/60). Действуют технические бюджеты схемы.
 - Документ: `source` (`manual`|`tournament`, participants, rounds с cards/groups/answer), `bindings`, `settings` + `formatSettings`, `scenes` (`block: custom|top|picker`, `repeat: participants|rounds`, узлы container/text/shape/image/video/card/timer/audio с анимациями) и `audio` (плейлист, cues с ролями primary/music/sfx/voice). Произвольный JS/TSX документ не исполняет: новый эффект = расширение схемы + компилятора + `StudioVideo`.
 - `StudioProject.version` — CAS-токен (`expectedVersion`), растёт при любой записи: черновик, синхронизация источника, commit. `revision` — номер сохранённой ревизии, растёт только при commit/restore/смене источника. Это разные числа.
 - Черновик хранится текстом (`draftText`) даже при невалидном JSON. `previewJson` обновляется только готовым планом; происхождение превью — `previewRevision` (`null` = из черновика) и `previewVersion`; `previewStale` = превью не от текущей версии.

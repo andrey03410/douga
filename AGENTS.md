@@ -33,8 +33,7 @@ Remotion 4 · ffmpeg-static · Zod · Vitest · Node 22.
 | Пул медиа и импорт | [media](.ai/map/media.md) | `src/server/arts.ts`, `src/lib/ytdlp.ts`, `src/server/media-url.ts` |
 | Shikimori | [shikimori](.ai/map/shikimori.md) | `src/lib/shikimori.ts` |
 | MCP-сервер | [mcp](.ai/map/mcp.md) | `src/mcp/` |
-| Классические видеопроекты: топ, пикер | [classic-video](.ai/map/classic-video.md) | `src/server/projects.ts`, `src/remotion/PickerVideo.tsx` |
-| Рендер: Remotion, ffmpeg | [render](.ai/map/render.md) | `src/remotion/`, `src/server/render.ts` |
+| Рендер: Remotion, ffmpeg | [render](.ai/map/render.md) | `src/remotion/`, `src/server/studio/render.ts` |
 | AI Video SDK и студия | [studio-sdk](.ai/map/studio-sdk.md) | `src/video/`, `src/server/studio/` |
 
 Остальное: [`.ai/README.md`](.ai/README.md) — что лежит в `.ai/`,
@@ -81,5 +80,5 @@ Cursor читает обе. Если владелец назвал скилл и
 - Финальный рендер доступен только админу. MCP действует от лица `MCP_ACTOR_EMAIL`
   зарегистрированного аккаунта, а сервисы заново проверяют права, владение и квоты.
 - SDK не исполняет произвольный JS/TSX из документа. Новый эффект добавляется
-  расширением версионированной схемы, компилятора и рендерера. Классические
-  конструкторы живут отдельно, их лимиты (9 карточек, 50 раундов) в SDK не переносить.
+  расширением версионированной схемы, компилятора и рендерера. Лимиты задают
+  технические бюджеты схемы, а не старые потолки карточек и раундов.
