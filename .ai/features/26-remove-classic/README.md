@@ -4,7 +4,7 @@ title: Удаление классических конструкторов — 
 track: product
 stage: review
 branch: feat/26-remove-classic
-pr:
+pr: https://github.com/andrey03410/douga/pull/7
 started: 2026-11-02
 merged:
 ---
