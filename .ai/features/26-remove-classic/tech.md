@@ -7,7 +7,7 @@
 ## Исходная система
 
 Проверено по коду ветки `main` на `5c1d6a8` и по карточкам
-[classic-video](../../map/classic-video.md), [render](../../map/render.md), [mcp](../../map/mcp.md),
+`classic-video` (карточка удалена этой задачей; последняя версия — в `main` до вливания), [render](../../map/render.md), [mcp](../../map/mcp.md),
 [media](../../map/media.md), [roles](../../map/roles.md), [tournament](../../map/tournament.md),
 [studio-sdk](../../map/studio-sdk.md), [dev-env](../../map/dev-env.md).
 
@@ -368,7 +368,7 @@ QG по скиллу `verify`: `npm test` → `npm run build` → `npx tsc --noE
 
 ## Затронутые зоны
 
-- [`.ai/map/classic-video.md`](../../map/classic-video.md) — удаляется целиком.
+- `.ai/map/classic-video.md` — удаляется целиком.
 - [`.ai/map/render.md`](../../map/render.md) — остаётся только конвейер студии.
 - [`.ai/map/mcp.md`](../../map/mcp.md) — состав инструментов, инструкция сервера, рецепты.
 - [`.ai/map/media.md`](../../map/media.md) — импорт в кабинете, использование медиа, без «недавних».
