@@ -1,5 +1,7 @@
 // Render job DTO shared by the job-status API routes and the constructor UIs.
 
+import { downloadTitleStem } from "./download-name";
+
 export interface RenderJobDto {
   id: string;
   status: string;
@@ -27,21 +29,6 @@ export function renderJobDto(job: {
     error: job.error,
     downloadUrl: job.outputPath ? `/api/render-jobs/${job.id}/download` : null,
   };
-}
-
-/** Longest title part of a downloaded file name, in characters (before ".mp4"). */
-export const DOWNLOAD_TITLE_MAX = 100;
-
-/**
- * A video title cleaned into a file name stem: characters forbidden in file
- * names (`/\:*?"<>|`) and control codes become spaces, whitespace collapses,
- * edge dots and spaces go, and the stem is capped at DOWNLOAD_TITLE_MAX code
- * points (never splitting an emoji). Returns "" when nothing usable is left.
- */
-export function downloadTitleStem(title: string | null | undefined): string {
-  const clean = (s: string) => s.replace(/\s+/g, " ").replace(/^[\s.]+|[\s.]+$/g, "");
-  const stem = clean((title ?? "").replace(/[/\\:*?"<>|\u0000-\u001f\u007f-\u009f]/g, " "));
-  return clean(Array.from(stem).slice(0, DOWNLOAD_TITLE_MAX).join(""));
 }
 
 /** RFC 5987 ext-value encoding: percent-encode everything outside attr-char. */

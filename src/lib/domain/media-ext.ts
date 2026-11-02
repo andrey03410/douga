@@ -2,6 +2,9 @@
 // (lib/upload.ts), the pool service (server/arts.ts) and the local-disk import
 // (lib/domain/local-media.ts), so the three never drift apart.
 
+/** Picture kinds the pool stores. Audio is a separate pool kind, not a MediaKind. */
+export type MediaKind = "image" | "video";
+
 export const AUDIO_EXT = [".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg", ".opus"];
 // Browser-compatible containers only (no transcode on upload — agreed in spec 04).
 export const VIDEO_EXT = [".mp4", ".webm", ".mov"];

@@ -4,7 +4,9 @@
 // own footage -> the "#N" placeholder. Audio comes from the track by default,
 // or from the attached pool video when the user flips the per-position switch.
 
-export type MediaKind = "image" | "video";
+import type { MediaKind } from "./media-ext";
+
+export type { MediaKind } from "./media-ext";
 export type TrackKind = "audio" | "video";
 export type AudioSource = "track" | "media";
 

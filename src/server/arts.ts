@@ -6,7 +6,7 @@ import { saveFile, removePath, artPath, absPath } from "@/lib/storage";
 import { probeMediaInfo, extractPoster } from "@/lib/audio";
 import { AUDIO_EXT, VIDEO_EXT, IMG_EXT } from "@/lib/domain/media-ext";
 import { usageBreakdown, type UsageBreakdown } from "@/lib/domain/art-usage";
-import type { MediaKind } from "@/lib/domain/position-media";
+import type { MediaKind } from "@/lib/domain/media-ext";
 
 /** Pool media kinds: visuals (image/video) + phase-6 audio tracks. */
 export type PoolKind = MediaKind | "audio";
