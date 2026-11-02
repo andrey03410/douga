@@ -467,7 +467,7 @@ export function ImportSources({ onImported }: { onImported: () => void }) {
   );
 
   /**
-   * Ctrl+V anywhere in the media modal. A screenshot arrives as a file with a
+   * Ctrl+V anywhere on the page that shows the import. A screenshot arrives as a file with a
    * placeholder name (`image.png`) and gets a "Вставка ДД.ММ ЧЧ:ММ" label; a
    * picture copied in a browser arrives as HTML/text and goes through the
    * by-link import. Pastes into a text field are left alone.

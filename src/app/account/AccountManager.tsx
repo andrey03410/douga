@@ -348,7 +348,7 @@ export function AccountManager() {
           <p className="muted" style={{ marginBottom: 0 }}>Пул пуст.</p>
         ) : poolOpen ? (
           <div style={{ marginTop: 12 }}>
-            <MediaBrowser pool={pool} view="rows" emptyText="Пул пуст." />
+            <MediaBrowser pool={pool} />
           </div>
         ) : null}
       </div>

@@ -17,7 +17,7 @@
 - [`src/lib/art-dto.ts`](../../src/lib/art-dto.ts) — единая форма `Art` в ответах API
 - UI:
   - [`useMediaPool.ts`](../../src/app/components/useMediaPool.ts) — данные: страницы по 40, поиск, `Shift`-диапазон, переименование, удаление;
-  - [`MediaBrowser.tsx`](../../src/app/components/MediaBrowser.tsx) — сетка или строки; [`ImportSources.tsx`](../../src/app/components/ImportSources.tsx) — табы «Файлы · Ссылка · Shikimori» и `Ctrl+V`; [`RenameField.tsx`](../../src/app/components/RenameField.tsx);
+  - [`MediaBrowser.tsx`](../../src/app/components/MediaBrowser.tsx) — строки пула с поиском, фильтром, выбором и удалением; [`ImportSources.tsx`](../../src/app/components/ImportSources.tsx) — табы «Файлы · Ссылка · Shikimori» и `Ctrl+V`; [`RenameField.tsx`](../../src/app/components/RenameField.tsx);
   - кабинет — [`AccountManager.tsx`](../../src/app/account/AccountManager.tsx): в блоке пула всегда виден `ImportSources`, список раскрывается отдельно. После импорта обновляются пул и сводка квот.
 
 ## Данные
@@ -36,7 +36,7 @@
 - SSRF-гард один на все входы по ссылке — `assertPublicUrl` в [`src/server/media-url.ts`](../../src/server/media-url.ts): правило имён хоста, затем DNS `lookup(all)` и `isBlockedAddress` для каждого адреса. IPv6 разбирается в 16 байт. Формы со встроенным IPv4 судятся по этому IPv4: `::ffff:0:0/96` (WHATWG пишет `[::ffff:127.0.0.1]` как `[::ffff:7f00:1]`), `::/96`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`. Плюс блокируются ULA, link-local, site-local, multicast, `2001:db8::/32` и `100::/64`. Ошибки `BLOCKED_HOST` и `HOST_UNRESOLVED`. `MEDIA_URL_ALLOW_PRIVATE=1` снимает запрет. Его вызывают импорт картинки (на каждом редиректе; `HOST_UNRESOLVED` там превращается в `FETCH_FAILED`), `startDownload` и студийный импорт ([studio-sdk.md](studio-sdk.md)).
 - yt-dlp получает нормализованный `URL.href` той ссылки, которую проверил гард: `startDownload` хранит `url.toString()`, студийная схема делает `.transform(new URL(v).href)`. Иначе парсеры расходятся: Python `urlparse` читает `http://a.com\@127.0.0.1/` с хостом 127.0.0.1, а WHATWG — с хостом a.com.
 - `startDownload` проверяет адрес до создания `DownloadJob`. `/api/downloads` (400) и MCP `import_youtube_audio` отдают текст из `describeStartRefusal`: «По этому адресу ходить нельзя: локальные и внутренние адреса запрещены» или «Сайт по ссылке не найден — проверьте адрес».
-- Вставка `Ctrl+V` в модалке работает, если курсор не в поле ввода. Файлы загружаются, безымянные получают метку «Вставка ДД.ММ ЧЧ:ММ». Иначе берётся `<img src>` из HTML, затем текстовая ссылка на картинку; обе идут в `from-url`. Ссылку на видео вставка игнорирует.
+- Вставка `Ctrl+V` работает на странице с блоком импорта (кабинет), если курсор не в поле ввода. Файлы загружаются, безымянные получают метку «Вставка ДД.ММ ЧЧ:ММ». Иначе берётся `<img src>` из HTML, затем текстовая ссылка на картинку; обе идут в `from-url`. Ссылку на видео вставка игнорирует.
 - yt-dlp:
   - задание — фоновый `DownloadJob` внутри процесса Next, не больше 2 активных на пользователя;
   - сначала `-J`: если оценка размера не влезает в остаток квоты — отказ; загрузка идёт с `--max-filesize` = остаток. Видео — avc1+mp4a в mp4, звук — m4a;
@@ -55,10 +55,10 @@
 - Остаточный риск SSRF у yt-dlp: проверяется только первый адрес нормализованной ссылки. Редиректы yt-dlp проходит сам, а DNS после нашей проверки резолвит заново. Поэтому публичный хост с редиректом в LAN или DNS-rebinding в этом зазоре даст слепой GET изнутри. Для личного проекта с входом по аккаунту риск принят в задаче 23.
 - Процессы yt-dlp хранятся в памяти. После перезапуска задание висит, пока `listDownloads` не пометит его `failed` — через 10 минут без обновлений. `DownloadJob.userId`/`artId` — строки без внешнего ключа, каскадов нет.
 - `mediaResponse` читает весь файл в память на каждый Range-запрос.
-- Тестам импорта по ссылке с фикстурой на `127.0.0.1` нужен `MEDIA_URL_ALLOW_PRIVATE=1`: ставь его и восстанавливай после файла. Детерминированные имена «резолвится в LAN» и «не резолвится» даёт мок DNS [`src/test/private-dns.ts`](../../src/test/private-dns.ts). В карточке пула два `input`: чекбокс и `.rename-input`. После правки `schema.prisma` перезапусти dev: старый Prisma-клиент в живом процессе ломает роуты.
+- Тестам импорта по ссылке с фикстурой на `127.0.0.1` нужен `MEDIA_URL_ALLOW_PRIVATE=1`: ставь его и восстанавливай после файла. Детерминированные имена «резолвится в LAN» и «не резолвится» даёт мок DNS [`src/test/private-dns.ts`](../../src/test/private-dns.ts). В строке пула два `input`: чекбокс `.row-pick` и `.rename-input`. После правки `schema.prisma` перезапусти dev: старый Prisma-клиент в живом процессе ломает роуты.
 
 ## Как проверить
-- Юниты: `npx vitest run src/lib/domain/media-url.test.ts src/lib/domain/clipboard.test.ts src/lib/domain/ytdlp-args.test.ts src/lib/domain/local-media.test.ts src/lib/domain/art-usage.test.ts src/lib/domain/art-crop.test.ts src/lib/domain/bulk-delete.test.ts src/lib/domain/media-ext.test.ts src/lib/audio-probe.test.ts`
+- Юниты: `npx vitest run src/lib/domain/media-url.test.ts src/lib/domain/clipboard.test.ts src/lib/domain/ytdlp-args.test.ts src/lib/domain/local-media.test.ts src/lib/domain/art-usage.test.ts src/lib/domain/bulk-delete.test.ts src/lib/domain/media-ext.test.ts src/lib/audio-probe.test.ts`
 - Интеграция (пишет в `prisma/dev.db` и `storage/`): `npx vitest run src/integration/arts.integration.test.ts src/integration/media-url.integration.test.ts src/integration/local-media.integration.test.ts src/integration/downloads.integration.test.ts`. Тест загрузок берёт `storage/bin/yt-dlp` и сам его не скачивает
 - Живая проверка — кабинет `/account`, блок пула: табы «Файлы · Ссылка · Shikimori», `Ctrl+V`, ссылка на картинку и на HTML-страницу (`NOT_IMAGE` → предложение yt-dlp), выбор с `Shift`. Удаление медиа, на которое ссылается студия, даёт 409.
 
