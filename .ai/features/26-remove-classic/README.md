@@ -2,7 +2,7 @@
 id: 26
 title: Удаление классических конструкторов — видео только через SDK и агента
 track: product
-stage: product
+stage: tech
 branch: feat/26-remove-classic
 pr:
 started: 2026-11-02
@@ -24,7 +24,7 @@ MCP-инструменты, композиции Remotion, модели вмес
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Продукт — [product.md](product.md)
+- [x] Продукт — [product.md](product.md) (автономно, без гейта «продукт ок»)
 - [ ] Техника — [tech.md](tech.md)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
@@ -33,4 +33,5 @@ MCP-инструменты, композиции Remotion, модели вмес
 
 ## Хвосты
 
-- нет
+- Список финальных MP4 студии в кабинете взамен раздела «Рендеры»
+  ([P06](product.md#p06-раздел-рендеры-в-кабинете)). Сейчас MP4 скачивают в `/studio/<id>`.
