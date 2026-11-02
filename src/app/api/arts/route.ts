@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { userOr401, permissionOr403, badRequest, tooLarge, serverError } from "@/lib/api";
 import { formatBytes, quotasFor } from "@/lib/domain/permissions";
 import { artDto as serialize } from "@/lib/art-dto";
-import { listArts, listRecentArts, createArt, deleteArts, MAX_BULK_DELETE } from "@/server/arts";
+import { listArts, createArt, deleteArts, MAX_BULK_DELETE } from "@/server/arts";
 
 // Pool uploads are single media files; keep a sane ceiling well under the
 // tournament-archive limit. Roles with a pool quota get the tighter of the two.
@@ -14,11 +14,6 @@ export async function GET(req: Request) {
   if ("response" in auth) return auth.response;
 
   const params = new URL(req.url).searchParams;
-  if (params.get("recent")) {
-    const arts = await listRecentArts(auth.userId);
-    return NextResponse.json({ arts: arts.map(serialize), nextCursor: null });
-  }
-
   const limitRaw = Number(params.get("limit"));
   const kindRaw = params.get("kind");
   const { arts, nextCursor } = await listArts(auth.userId, {

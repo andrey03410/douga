@@ -36,8 +36,6 @@ async function fetchArts(params: Record<string, string>) {
 export interface UseMediaPoolOptions {
   /** Don't load anything until asked (the cabinet list starts collapsed). */
   enabled?: boolean;
-  /** Also load the "recently used" block. */
-  withRecent?: boolean;
   pageSize?: number;
   /** Called after the pool changed, so a parent can refresh its own view. */
   onChange?: () => void;
@@ -45,12 +43,10 @@ export interface UseMediaPoolOptions {
 
 export function useMediaPool({
   enabled = true,
-  withRecent = false,
   pageSize = PAGE_SIZE,
   onChange,
 }: UseMediaPoolOptions = {}) {
   const [arts, setArts] = useState<PoolArt[]>([]);
-  const [recent, setRecent] = useState<PoolArt[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"" | PoolKind>("");
@@ -73,7 +69,7 @@ export function useMediaPool({
     [enabled, pageSize, query, kind],
   );
 
-  // First page + the recent block; re-runs (debounced) on search/filter change.
+  // First page; re-runs (debounced) on search/filter change.
   useEffect(() => {
     if (!enabled) return;
     const t = setTimeout(() => {
@@ -89,11 +85,6 @@ export function useMediaPool({
     }, query || kind ? 300 : 0);
     return () => clearTimeout(t);
   }, [enabled, query, kind, pageSize]);
-
-  useEffect(() => {
-    if (!enabled || !withRecent) return;
-    void fetchArts({ recent: "1" }).then((d) => setRecent(d.arts));
-  }, [enabled, withRecent]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingRef.current) return;
@@ -114,7 +105,6 @@ export function useMediaPool({
 
   const forget = useCallback((ids: Set<string>) => {
     setArts((prev) => prev.filter((a) => !ids.has(a.id)));
-    setRecent((prev) => prev.filter((a) => !ids.has(a.id)));
     setSelected((prev) => {
       const next = new Set(prev);
       for (const id of ids) next.delete(id);
@@ -133,19 +123,14 @@ export function useMediaPool({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Не удалось переименовать");
       }
-      const patch = (list: PoolArt[]) =>
-        list.map((a) => (a.id === art.id ? { ...a, label: next } : a));
-      setArts(patch);
-      setRecent(patch);
+      setArts((list) => list.map((a) => (a.id === art.id ? { ...a, label: next } : a)));
     },
     [],
   );
 
   const remove = useCallback(
     async (art: PoolArt) => {
-      // Say what deletion actually does: cards, playlist entries and manual-top
-      // positions that sound with the media go with it (cascade), other top
-      // positions are only freed.
+      // Studio references block the delete; say so before the confirm.
       const consequences = describeDeletion(art.usage);
       if (
         !confirm(
@@ -228,7 +213,6 @@ export function useMediaPool({
 
   return {
     arts,
-    recent,
     nextCursor,
     query,
     setQuery,

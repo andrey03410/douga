@@ -4,7 +4,7 @@ import React, { useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import type { ArtCrop } from "@/lib/domain/art-crop";
 import { ImportSources } from "@/app/components/ImportSources";
-import { MediaBrowser, MediaThumb } from "@/app/components/MediaBrowser";
+import { MediaBrowser } from "@/app/components/MediaBrowser";
 import { useMediaPool, type PoolArt, type PoolKind } from "@/app/components/useMediaPool";
 
 /** The pool types under their historical names (imported by the constructors). */
@@ -127,7 +127,6 @@ export function ArtGalleryModal({
 }) {
   const pool = useMediaPool({
     enabled: mode !== "crop",
-    withRecent: mode === "pick",
     onChange: onPoolChange,
   });
   const [cropArt, setCropArt] = useState<{
@@ -153,24 +152,6 @@ export function ArtGalleryModal({
       : mode === "manage"
         ? "Менеджер медиа"
         : "Выбор медиа";
-
-  const recentBlock =
-    mode === "pick" && pool.recent.length > 0 && !pool.query && !pool.kind ? (
-      <>
-        <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>Недавние</p>
-        <div className="art-grid" style={{ marginBottom: 14 }}>
-          {pool.recent
-            .filter((a) => pickKinds.includes(a.kind))
-            .map((a) => (
-              <div key={a.id} className="art-card selectable" onClick={() => pickArt(a)}>
-                <MediaThumb art={a} />
-                <div className="meta">{a.label ?? "без названия"}</div>
-              </div>
-            ))}
-        </div>
-        <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>Все</p>
-      </>
-    ) : null;
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -211,7 +192,6 @@ export function ArtGalleryModal({
                 manage={mode === "manage"}
                 onPick={mode === "pick" ? pickArt : undefined}
                 pickKinds={mode === "pick" ? pickKinds : undefined}
-                header={recentBlock}
               />
             </>
           )}

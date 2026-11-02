@@ -4,17 +4,14 @@ import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import {
   listArts,
-  listRecentArts,
   createArt,
   renameArt,
   deleteArt,
   deleteArts,
   MAX_BULK_DELETE,
 } from "@/server/arts";
-import { patchRenderItem } from "@/server/render-items";
 
-// Integration tests for the arts service layer + render-item patching, on the
-// real Prisma schema (SQLite). Covers every scenario from the phase-3 spec.
+// Integration tests for the arts service layer on the real Prisma schema.
 
 const EMAIL = "integration-arts@test.local";
 const EMAIL_OTHER = "integration-arts-other@test.local";
@@ -26,7 +23,6 @@ const PNG = Buffer.from(
 
 let userId: string;
 let otherUserId: string;
-let itemId: string;
 
 async function cleanup() {
   const users = await prisma.user.findMany({
@@ -44,22 +40,6 @@ beforeAll(async () => {
     data: { email: EMAIL_OTHER, passwordHash: "x" },
   });
   otherUserId = other.id;
-
-  // Minimal tournament -> render config -> one item, to exercise assignment/crop.
-  const tournament = await prisma.tournament.create({
-    data: { userId, title: "Arts IT", scheme: "merge", status: "completed", topSize: 1 },
-  });
-  const track = await prisma.track.create({
-    data: { tournamentId: tournament.id, title: "T", filePath: "fake/t.mp3", order: 0 },
-  });
-  const config = await prisma.renderConfig.create({
-    data: {
-      tournamentId: tournament.id,
-      items: { create: [{ trackId: track.id, rank: 1 }] },
-    },
-    include: { items: true },
-  });
-  itemId = config.items[0].id;
 });
 
 afterAll(async () => {
@@ -119,33 +99,13 @@ describe("arts service", () => {
     await expect(renameArt(otherUserId, art.id, "Hijack")).rejects.toThrow("NOT_FOUND");
   });
 
-  it("tracks recent arts only after they are used", async () => {
-    const art = await createArt(userId, { fileName: "recent.png", data: PNG });
-    expect((await listRecentArts(userId)).map((a) => a.id)).not.toContain(art.id);
-
-    await patchRenderItem(userId, itemId, { artId: art.id });
-    const recent = await listRecentArts(userId);
-    expect(recent[0]?.id).toBe(art.id);
-
-    const listed = await listArts(userId, { q: "recent" });
-    expect(listed.arts[0]?.usageCount).toBe(1);
-  });
-
-  it("deletes an art: file and row gone, positions freed, crop cleared", async () => {
+  it("deletes an art: file and row are gone", async () => {
     const art = await createArt(userId, { fileName: "doomed.png", data: PNG });
-    await patchRenderItem(userId, itemId, {
-      artId: art.id,
-      artCrop: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
-    });
 
     await deleteArt(userId, art.id);
 
     expect(await prisma.art.findUnique({ where: { id: art.id } })).toBeNull();
     expect(existsSync(absPath(art.filePath))).toBe(false);
-    const item = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(item?.artId).toBeNull();
-    expect(item?.artCropX).toBeNull();
-    expect(item?.artCropW).toBeNull();
   });
 
   it("refuses to delete a foreign art", async () => {
@@ -154,192 +114,42 @@ describe("arts service", () => {
   });
 });
 
-describe("render-item art assignment and crop", () => {
-  it("sets and updates the crop on an item that has an art", async () => {
-    const art = await createArt(userId, { fileName: "crop-target.png", data: PNG });
-    await patchRenderItem(userId, itemId, {
-      artId: art.id,
-      artCrop: { x: 0, y: 0, w: 1, h: 1 },
-    });
-    let item = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(item?.artCropW).toBe(1);
-
-    await patchRenderItem(userId, itemId, { artCrop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 } });
-    item = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(item?.artCropX).toBe(0.25);
-    expect(item?.artCropW).toBe(0.5);
-  });
-
-  it("resets the crop to auto-cover with an explicit null", async () => {
-    await patchRenderItem(userId, itemId, { artCrop: null });
-    const item = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(item?.artCropX).toBeNull();
-    expect(item?.artCropH).toBeNull();
-  });
-
-  it("resets the crop when the art changes without a new crop", async () => {
-    await patchRenderItem(userId, itemId, { artCrop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } });
-    const another = await createArt(userId, { fileName: "another.png", data: PNG });
-    await patchRenderItem(userId, itemId, { artId: another.id });
-    const item = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(item?.artId).toBe(another.id);
-    expect(item?.artCropX).toBeNull();
-  });
-
-  it("rejects an invalid crop rect", async () => {
-    await expect(
-      patchRenderItem(userId, itemId, { artCrop: { x: 0.8, y: 0, w: 0.5, h: 1 } }),
-    ).rejects.toThrow("INVALID_CROP");
-    await expect(
-      patchRenderItem(userId, itemId, { artCrop: { x: 0 } }),
-    ).rejects.toThrow("INVALID_CROP");
-  });
-
-  it("rejects a crop on an item without an art", async () => {
-    await patchRenderItem(userId, itemId, { artId: null });
-    await expect(
-      patchRenderItem(userId, itemId, { artCrop: { x: 0, y: 0, w: 1, h: 1 } }),
-    ).rejects.toThrow("NO_ART");
-  });
-
-  it("rejects a foreign art and a foreign item", async () => {
-    const foreign = await createArt(otherUserId, { fileName: "foreign2.png", data: PNG });
-    await expect(
-      patchRenderItem(userId, itemId, { artId: foreign.id }),
-    ).rejects.toThrow("ART_NOT_FOUND");
-    await expect(
-      patchRenderItem(otherUserId, itemId, { artId: foreign.id }),
-    ).rejects.toThrow("NOT_FOUND");
-  });
-});
-
-// Phase 17: the pool used to count only top positions, so a poster standing as
-// a card in thirty picker rounds reported "not used" — and deleting it took the
-// cards along (PickerTile.artId cascades).
 describe("art usage breakdown", () => {
-  it("counts cards, playlist entries, backgrounds and top positions", async () => {
-    const poster = await createArt(userId, { fileName: "usage-poster.png", data: PNG });
-    const music = await prisma.art.create({
-      data: { userId, filePath: "fake/m.mp3", label: "usage-music", kind: "audio", sizeBytes: 10 },
-    });
-
-    const project = await prisma.videoProject.create({
+  it("counts studio references and refuses to delete a referenced media", async () => {
+    const art = await createArt(userId, { fileName: "usage-poster.png", data: PNG });
+    const project = await prisma.studioProject.create({
       data: {
         userId,
-        title: "Usage IT",
-        kind: "picker",
-        bgArtId: poster.id,
-        bgMusicArtId: music.id,
+        title: "Usage studio",
+        kind: "top",
+        documentJson: "{}",
       },
     });
-    const round = await prisma.pickerRound.create({
-      data: { projectId: project.id, order: 0, bgArtId: poster.id },
+    await prisma.studioAssetReference.create({
+      data: { projectId: project.id, scope: "draft", artId: art.id },
     });
-    await prisma.pickerTile.createMany({
-      data: [
-        { roundId: round.id, artId: poster.id, order: 0 },
-        { roundId: round.id, artId: poster.id, order: 1 },
-      ],
-    });
-    await prisma.pickerPlaylistItem.create({
-      data: { projectId: project.id, order: 0, artId: music.id },
-    });
-    await patchRenderItem(userId, itemId, { artId: poster.id });
-
-    const listed = await listArts(userId, { q: "usage-" });
-    const posterRow = listed.arts.find((a) => a.id === poster.id);
-    const musicRow = listed.arts.find((a) => a.id === music.id);
-
-    // two cards + one position + project background + round background
-    expect(posterRow?.usage).toEqual({
-      positions: 1,
-      audioPositions: 0,
-      cards: 2,
-      playlist: 0,
-      backgrounds: 2,
-      total: 5,
-    });
-    expect(posterRow?.usageCount).toBe(5);
-    expect(musicRow?.usage).toEqual({
-      positions: 0,
-      audioPositions: 0,
-      cards: 0,
-      playlist: 1,
-      backgrounds: 1,
-      total: 2,
+    await prisma.studioAssetReference.create({
+      data: { projectId: project.id, scope: "head", artId: art.id },
     });
 
-    // deleting the poster is what the warning is about: the cards go with it
-    await deleteArt(userId, poster.id);
-    expect(await prisma.pickerTile.count({ where: { roundId: round.id } })).toBe(0);
-    const freed = await prisma.renderItem.findUnique({ where: { id: itemId } });
-    expect(freed?.artId).toBeNull();
-    const rounds = await prisma.pickerRound.findUnique({ where: { id: round.id } });
-    expect(rounds?.bgArtId).toBeNull();
+    const listed = await listArts(userId, { q: "usage-poster" });
+    expect(listed.arts[0]?.usage).toEqual({ studio: 2, total: 2 });
+    expect(listed.arts[0]?.usageCount).toBe(2);
+    await expect(deleteArt(userId, art.id)).rejects.toThrow("STUDIO_ASSET_IN_USE");
 
-    await prisma.videoProject.delete({ where: { id: project.id } });
-    await prisma.art.delete({ where: { id: music.id } });
-  });
-
-  // T02: RenderItem.audioArtId cascades, so a manual-top position that sounds
-  // with the media is deleted with it, while a picture-only position is freed.
-  it("tells positions that sound with the media from those that only show it", async () => {
-    const mkMedia = (label: string, kind: string) =>
-      prisma.art.create({
-        data: { userId, filePath: `fake/${label}`, label, kind, sizeBytes: 10, hasAudio: kind !== "image" },
-      });
-    const song = await mkMedia("usage-audio-song", "audio");
-    const clip = await mkMedia("usage-audio-clip", "video");
-    const cover = await mkMedia("usage-audio-cover", "image");
-    const project = await prisma.videoProject.create({
-      data: { userId, title: "Usage audio IT", kind: "top" },
-    });
-    const config = await prisma.renderConfig.create({
-      data: {
-        projectId: project.id,
-        items: {
-          create: [
-            { rank: 1, audioArtId: song.id, artId: cover.id },
-            // one video as both the sound and the picture of the same position
-            { rank: 2, audioArtId: clip.id, artId: clip.id },
-          ],
-        },
-      },
-    });
-
-    const listed = await listArts(userId, { q: "usage-audio-" });
-    const usage = (id: string) => listed.arts.find((a) => a.id === id)?.usage;
-    expect(usage(song.id)).toMatchObject({ positions: 0, audioPositions: 1, total: 1 });
-    expect(usage(cover.id)).toMatchObject({ positions: 1, audioPositions: 0, total: 1 });
-    // the position goes away with the clip, so it is not "freed" as well
-    expect(usage(clip.id)).toMatchObject({ positions: 0, audioPositions: 1, total: 1 });
-
-    await deleteArt(userId, clip.id);
-    await deleteArt(userId, song.id);
-    // both positions sounded with deleted media and went away (cascade)
-    expect(await prisma.renderItem.count({ where: { renderConfigId: config.id } })).toBe(0);
-
-    await prisma.videoProject.delete({ where: { id: project.id } });
-    await deleteArt(userId, cover.id);
+    await prisma.studioProject.delete({ where: { id: project.id } });
+    await deleteArt(userId, art.id);
+    expect(await prisma.art.findUnique({ where: { id: art.id } })).toBeNull();
   });
 
   it("reports zeros for media nothing points at", async () => {
     const lonely = await createArt(userId, { fileName: "usage-lonely.png", data: PNG });
     const listed = await listArts(userId, { q: "usage-lonely" });
-    expect(listed.arts[0]?.usage).toEqual({
-      positions: 0,
-      audioPositions: 0,
-      cards: 0,
-      playlist: 0,
-      backgrounds: 0,
-      total: 0,
-    });
+    expect(listed.arts[0]?.usage).toEqual({ studio: 0, total: 0 });
     await deleteArt(userId, lonely.id);
   });
 });
 
-// Phase 17: cleaning a pool of a thousand posters one file at a time is the
-// reason bulk delete exists; partial failures must not stop the rest.
 describe("bulk delete", () => {
   it("deletes many at once, wipes their files and reports the ids", async () => {
     const a = await createArt(userId, { fileName: "bulk-a.png", data: PNG });
@@ -363,24 +173,27 @@ describe("bulk delete", () => {
       [foreign.id, "cmsnosuchid0000000000000"].sort(),
     );
     expect(res.failed.every((f) => f.reason === "NOT_FOUND")).toBe(true);
-    // the other user's media is untouched
     expect(await prisma.art.count({ where: { id: foreign.id } })).toBe(1);
     await deleteArt(otherUserId, foreign.id);
   });
 
-  it("takes the cards of a deleted media with it, as a single delete does", async () => {
-    const art = await createArt(userId, { fileName: "bulk-card.png", data: PNG });
-    const project = await prisma.videoProject.create({
-      data: { userId, title: "Bulk IT", kind: "picker" },
+  it("skips media a studio project still references", async () => {
+    const free = await createArt(userId, { fileName: "bulk-free.png", data: PNG });
+    const used = await createArt(userId, { fileName: "bulk-used.png", data: PNG });
+    const project = await prisma.studioProject.create({
+      data: { userId, title: "Bulk studio", kind: "top", documentJson: "{}" },
     });
-    const round = await prisma.pickerRound.create({
-      data: { projectId: project.id, order: 0 },
+    await prisma.studioAssetReference.create({
+      data: { projectId: project.id, scope: "head", artId: used.id },
     });
-    await prisma.pickerTile.create({ data: { roundId: round.id, artId: art.id, order: 0 } });
 
-    await deleteArts(userId, [art.id]);
-    expect(await prisma.pickerTile.count({ where: { roundId: round.id } })).toBe(0);
-    await prisma.videoProject.delete({ where: { id: project.id } });
+    const res = await deleteArts(userId, [free.id, used.id]);
+    expect(res.deleted).toEqual([free.id]);
+    expect(res.failed).toEqual([{ id: used.id, reason: "STUDIO_ASSET_IN_USE" }]);
+    expect(await prisma.art.count({ where: { id: used.id } })).toBe(1);
+
+    await prisma.studioProject.delete({ where: { id: project.id } });
+    await deleteArt(userId, used.id);
   });
 
   it("ignores duplicate ids and refuses an empty or oversized batch", async () => {

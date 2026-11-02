@@ -8,7 +8,7 @@
 
 ## Задачи
 
-- [ ] **1. Общие модули.** Файлы: новый `src/lib/domain/download-name.ts` (перенос `downloadTitleStem` и `DOWNLOAD_TITLE_MAX` из `render-jobs.ts`), `src/watch/offline.ts`, `src/lib/domain/media-ext.ts` (тип `MediaKind`), `src/server/arts.ts`, `src/lib/domain/position-media.ts` (реэкспорт до удаления файла). Тесты: кейсы `downloadTitleStem` переезжают в `download-name.test.ts`. Готово, когда: офлайн-плеер и пул импортируют новые модули, старые тесты стема зелёные, `tsc` чистый.
+- [x] **1. Общие модули.** Файлы: новый `src/lib/domain/download-name.ts` (перенос `downloadTitleStem` и `DOWNLOAD_TITLE_MAX` из `render-jobs.ts`), `src/watch/offline.ts`, `src/lib/domain/media-ext.ts` (тип `MediaKind`), `src/server/arts.ts`, `src/lib/domain/position-media.ts` (реэкспорт до удаления файла). Тесты: кейсы `downloadTitleStem` переезжают в `download-name.test.ts`. Готово, когда: офлайн-плеер и пул импортируют новые модули, старые тесты стема зелёные, `tsc` чистый.
 
 - [ ] **2. Пул только для студии.** Файлы: `src/lib/domain/art-usage.ts`, `src/server/arts.ts`, `src/lib/art-dto.ts`, `src/app/api/arts/route.ts`, `src/app/components/useMediaPool.ts`. `ArtRelationCounts` = `{studioReferences}`, `UsageBreakdown` = `{studio, total}`. Удалить `listRecentArts`, `?recent=1`, `lastUsedAt` из DTO, ветку `RenderItem` в `deleteArt`, `PICTURE_ONLY_POSITIONS`. Тесты: переписать `art-usage.test.ts`; в `arts.integration` убрать проверки позиций и «недавних», использование считать по студии. Готово, когда: описание использования говорит только про студию, удаление медиа со ссылкой студии по-прежнему 409.
 
