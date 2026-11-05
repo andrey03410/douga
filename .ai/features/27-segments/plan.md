@@ -118,7 +118,7 @@ participantIds?,roundIds?,scenes,settings?,audio?); SourceSegment (id,title,subt
 ### 6. Знания и вливание
 
 - [x] Обновить `.ai/map/tournament.md`, `media.md`, `studio-sdk.md`, `render.md`, `mcp.md`, `dev-env.md`.
-- [ ] Push, PR `27: Сегменты турнира и видео`; записать PR и stage: review отдельным коммитом.
+- [x] Push, PR `27: Сегменты турнира и видео`; записать PR и stage: review отдельным коммитом.
 - [ ] Зелёный QG и ревью → history, stage: merged, дата; commit `docs(27): merged`.
 - [ ] Merge PR с удалением ветки, обновить main. Автономное разрешение уже дано.
 
