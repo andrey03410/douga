@@ -32,10 +32,11 @@ class Lock {
  * - The adapter serves the whole process over one connection and only orders
  *   transactions among themselves. A query that arrives while a transaction is
  *   open would run inside it and be rolled back with it. Here every query outside
- *   a transaction waits until the open transaction ends, as it waited for the
- *   single pooled connection in Prisma 5.
+ *   a transaction waits until the open transaction ends. Unlike Prisma 5, whose
+ *   pool let reads run beside a writing transaction, reads wait too.
  *   So inside `$transaction(async (db) => …)` use only `db`: a query through the
- *   shared client there waits for the transaction itself until its timeout.
+ *   shared client there waits for the transaction itself until its timeout, then
+ *   runs on its own after the rollback.
  */
 export function sqliteAdapter(
   url: string,

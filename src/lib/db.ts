@@ -11,9 +11,12 @@ export function createPrismaClient(url = process.env.DATABASE_URL): PrismaClient
   return new PrismaClient({ adapter: sqliteAdapter(resolveDatabaseUrl(url)) });
 }
 
-// Reuse the client across hot reloads in dev to avoid exhausting connections.
+// One client per process, in production too: dev hot reloads re-evaluate this
+// module, and `next start` evaluates it once per webpack layer (pages, route
+// handlers, server actions). Separate clients would mean separate SQLite
+// connections whose lock waits block the event loop of the same process.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;
