@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MediaPlayer } from "../../MediaPlayer";
 import { useRouter } from "next/navigation";
 
 interface TrackDto {
@@ -9,6 +10,7 @@ interface TrackDto {
   artist: string | null;
   kind: "audio" | "video";
   audioUrl: string;
+  durationSec?: number | null;
 }
 interface Standing {
   trackId: string;
@@ -18,6 +20,8 @@ interface Standing {
   score: number;
 }
 interface NextResponse {
+  activeSegmentId?: string;
+  segmentTitle?: string;
   blindMode: boolean;
   isComplete: boolean;
   canExtend: boolean;
@@ -25,23 +29,42 @@ interface NextResponse {
   maxGroupSize: number;
   progress: { completed: number; estimatedTotal: number };
   screens: { completed: number; estimatedTotal: number };
-  coverage: { pairs: number; ordered: number; orderedPct: number; contradictory: number };
+  coverage: {
+    pairs: number;
+    ordered: number;
+    orderedPct: number;
+    contradictory: number;
+  };
   standings: Standing[] | null;
   question: TrackDto[] | null;
 }
 
-export default function ComparePage({ params }: { params: { id: string } }) {
+export default function ComparePage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { segmentId?: string };
+}) {
+  const segmentId = searchParams.segmentId;
+  const segmentQuery = segmentId
+    ? `?segmentId=${encodeURIComponent(segmentId)}`
+    : "";
   const router = useRouter();
   const [data, setData] = useState<NextResponse | null>(null);
   const [picks, setPicks] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [reveal, setReveal] = useState(false);
   const [showTop, setShowTop] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
-    const res = await fetch(`/api/tournaments/${params.id}/next`, { cache: "no-store" });
+    const res = await fetch(
+      `/api/tournaments/${params.id}/next${segmentQuery}`,
+      { cache: "no-store" },
+    );
     if (!res.ok) {
       setError("Не удалось загрузить сравнение");
       return;
@@ -50,7 +73,7 @@ export default function ComparePage({ params }: { params: { id: string } }) {
     setReveal(false);
     setPicks([]);
     setData(json);
-  }, [params.id]);
+  }, [params.id, segmentQuery]);
 
   useEffect(() => {
     void load();
@@ -64,7 +87,7 @@ export default function ComparePage({ params }: { params: { id: string } }) {
         const res = await fetch(`/api/tournaments/${params.id}/compare`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ranked, rest }),
+          body: JSON.stringify({ ranked, rest, segmentId }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Ошибка");
@@ -75,7 +98,7 @@ export default function ComparePage({ params }: { params: { id: string } }) {
         setBusy(false);
       }
     },
-    [busy, load, params.id],
+    [busy, load, params.id, segmentId],
   );
 
   /** Click n-th: that track takes the next free place; the last one is implied. */
@@ -102,7 +125,8 @@ export default function ComparePage({ params }: { params: { id: string } }) {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       const n = Number(e.key);
-      if (Number.isInteger(n) && n >= 1 && n <= question.length) pick(question[n - 1].id);
+      if (Number.isInteger(n) && n >= 1 && n <= question.length)
+        pick(question[n - 1].id);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -112,11 +136,14 @@ export default function ComparePage({ params }: { params: { id: string } }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/tournaments/${params.id}${path}`, {
-        method: body === undefined ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
+      const res = await fetch(
+        `/api/tournaments/${params.id}${path}${segmentQuery}`,
+        {
+          method: body === undefined ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        },
+      );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Ошибка");
       await load();
@@ -129,10 +156,14 @@ export default function ComparePage({ params }: { params: { id: string } }) {
 
   if (error && !data) {
     return (
-      <div className="container">
+      <div className="container tournament-page">
         <div className="panel">
           <div className="error">{error}</div>
-          <button className="btn secondary" onClick={() => load()} style={{ marginTop: 12 }}>
+          <button
+            className="btn secondary"
+            onClick={() => load()}
+            style={{ marginTop: 12 }}
+          >
             Повторить
           </button>
         </div>
@@ -141,14 +172,19 @@ export default function ComparePage({ params }: { params: { id: string } }) {
   }
   if (!data) {
     return (
-      <div className="container">
+      <div className="container tournament-page">
         <p className="muted">Загрузка…</p>
       </div>
     );
   }
 
   const pct = data.screens.estimatedTotal
-    ? Math.min(100, Math.round((data.screens.completed / data.screens.estimatedTotal) * 100))
+    ? Math.min(
+        100,
+        Math.round(
+          (data.screens.completed / data.screens.estimatedTotal) * 100,
+        ),
+      )
     : 0;
   const showNames = !data.blindMode || reveal;
   const question = data.question ?? [];
@@ -157,7 +193,11 @@ export default function ComparePage({ params }: { params: { id: string } }) {
     showNames ? (
       <>
         {t.title}
-        {t.artist ? <div className="muted" style={{ fontSize: 13 }}>{t.artist}</div> : null}
+        {t.artist ? (
+          <div className="muted" style={{ fontSize: 13 }}>
+            {t.artist}
+          </div>
+        ) : null}
       </>
     ) : (
       "🎧"
@@ -167,7 +207,9 @@ export default function ComparePage({ params }: { params: { id: string } }) {
   const pauseOthers = (e: React.SyntheticEvent<HTMLMediaElement>) => {
     const self = e.currentTarget;
     document
-      .querySelectorAll<HTMLMediaElement>(".versus audio, .versus video, .group-card audio, .group-card video")
+      .querySelectorAll<HTMLMediaElement>(
+        ".versus audio, .versus video, .group-card audio, .group-card video",
+      )
       .forEach((m) => {
         if (m !== self) m.pause();
       });
@@ -175,18 +217,53 @@ export default function ComparePage({ params }: { params: { id: string } }) {
 
   // Blind mode hides the footage too (it gives the track away): play the file
   // through an <audio> element until names are revealed.
-  const player = (t: TrackDto, maxHeight: number) =>
-    t.kind === "video" && showNames ? (
-      <video
-        controls
-        preload="metadata"
+  async function markMoment(t: TrackDto, player: HTMLMediaElement | null) {
+    setError(null);
+    setNotice("");
+    try {
+      const second = Math.round((player?.currentTime ?? 0) * 10) / 10;
+      const res = await fetch(`/api/tracks/${t.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bestMomentSec: second }),
+      });
+      if (!res.ok)
+        throw Error((await res.json()).error ?? "Не удалось сохранить момент");
+      setNotice(
+        `Лучший момент: ${second} с. Фрагмент в ролике начнётся отсюда.`,
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  const player = (t: TrackDto, maxHeight: number) => (
+    <div className="comparison-player">
+      <MediaPlayer
+        key={t.id}
         src={t.audioUrl}
+        title={showNames ? t.title : "Скрытый трек"}
+        kind={t.kind === "video" && showNames ? "video" : "audio"}
+        durationSec={t.durationSec}
+        maxHeight={maxHeight}
         onPlay={pauseOthers}
-        style={{ width: "100%", maxHeight, background: "#000", borderRadius: 8 }}
       />
-    ) : (
-      <audio controls preload="none" src={t.audioUrl} onPlay={pauseOthers} />
-    );
+
+      <button
+        type="button"
+        className="btn ghost"
+        onClick={(e) =>
+          void markMoment(
+            t,
+            e.currentTarget.parentElement?.querySelector<HTMLMediaElement>(
+              "audio,video",
+            ) ?? null,
+          )
+        }
+      >
+        ★ Лучший момент здесь
+      </button>
+    </div>
+  );
 
   const coverage = (
     <span className="coverage">
@@ -207,14 +284,19 @@ export default function ComparePage({ params }: { params: { id: string } }) {
           onChange={(e) => void act("", { groupSize: Number(e.target.value) })}
           style={{ marginBottom: 0, width: 70 }}
         >
-          {Array.from({ length: data.maxGroupSize - 1 }, (_, i) => i + 2).map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
+          {Array.from({ length: data.maxGroupSize - 1 }, (_, i) => i + 2).map(
+            (n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ),
+          )}
         </select>
         {data.groupSize > 5 ? (
-          <span className="muted" title="Удержать в голове больше пяти треков почти невозможно">
+          <span
+            className="muted"
+            title="Удержать в голове больше пяти треков почти невозможно"
+          >
             ⚠
           </span>
         ) : null}
@@ -227,27 +309,38 @@ export default function ComparePage({ params }: { params: { id: string } }) {
 
   if (data.isComplete) {
     return (
-      <div className="container">
-        <h1>План пройден</h1>
+      <div className="container tournament-page">
+        <h1>План сегмента пройден</h1>
         <p className="muted">
           Сделано {data.screens.completed} экранов. {coverage}.
         </p>
         {error ? <div className="error">{error}</div> : null}
         <div className="panel">
           <p style={{ marginTop: 0 }}>
-            Можно смотреть топ — или добрать точности ещё одним раундом: каждый трек
-            получит ещё {Math.max(1, data.groupSize - 1)} соперник(ов).
+            Можно смотреть топ — или добрать точности ещё одним раундом: каждый
+            трек получит ещё {Math.max(1, data.groupSize - 1)} соперник(ов).
           </p>
           <div className="row" style={{ gap: 12 }}>
-            <a className="btn" href={`/tournaments/${params.id}`}>
+            <a
+              className="btn"
+              href={`/tournaments/${params.id}${segmentQuery}`}
+            >
               Смотреть топ →
             </a>
             {data.canExtend ? (
-              <button className="btn secondary" disabled={busy} onClick={() => void act("/extend")}>
+              <button
+                className="btn secondary"
+                disabled={busy}
+                onClick={() => void act("/extend")}
+              >
                 Ещё раунд
               </button>
             ) : null}
-            <button className="btn ghost" disabled={busy} onClick={() => void act("/undo")}>
+            <button
+              className="btn ghost"
+              disabled={busy || data.screens.completed === 0}
+              onClick={() => void act("/undo")}
+            >
               ← Отменить последний ответ
             </button>
           </div>
@@ -260,18 +353,25 @@ export default function ComparePage({ params }: { params: { id: string } }) {
   const canStopEarly = question.length > 2 && rest.length > 1;
 
   return (
-    <div className="container">
+    <div className="container tournament-page">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>{question.length > 2 ? "Расставьте по местам" : "Что лучше?"}</h1>
-        <a href={`/tournaments/${params.id}`} className="muted">Выйти (прогресс сохранён)</a>
+        <h1 style={{ margin: 0 }}>
+          {question.length > 2 ? "Расставьте по местам" : "Что лучше?"}
+        </h1>
+        <a href={`/tournaments/${params.id}${segmentQuery}`} className="muted">
+          Выйти (прогресс сохранён)
+        </a>
       </div>
 
+      {data.segmentTitle ? <p className="muted">{data.segmentTitle}</p> : null}
+      {notice ? <p role="status">{notice}</p> : null}
       <div className="progressbar" style={{ margin: "16px 0 10px" }}>
         <div style={{ width: `${pct}%` }} />
       </div>
       <div className="compare-bar">
         <span className="coverage">
-          Экран {data.screens.completed + 1} из ~{data.screens.estimatedTotal} · {coverage}
+          Экран {data.screens.completed + 1} из ~{data.screens.estimatedTotal} ·{" "}
+          {coverage}
         </span>
         {sizePicker}
       </div>
@@ -311,8 +411,13 @@ export default function ComparePage({ params }: { params: { id: string } }) {
           {question.map((t, i) => {
             const place = picks.indexOf(t.id);
             return (
-              <div key={t.id} className={`group-card${place >= 0 ? " picked" : ""}`}>
-                {place >= 0 ? <span className="place-badge">{place + 1}</span> : null}
+              <div
+                key={t.id}
+                className={`group-card${place >= 0 ? " picked" : ""}`}
+              >
+                {place >= 0 ? (
+                  <span className="place-badge">{place + 1}</span>
+                ) : null}
                 <div className="name">{name(t)}</div>
                 {player(t, 160)}
                 <button
@@ -328,7 +433,10 @@ export default function ComparePage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      <div className="row" style={{ justifyContent: "center", marginTop: 22, gap: 14 }}>
+      <div
+        className="row"
+        style={{ justifyContent: "center", marginTop: 22, gap: 14 }}
+      >
         {question.length === 2 ? (
           <button
             className="btn secondary"
@@ -341,18 +449,31 @@ export default function ComparePage({ params }: { params: { id: string } }) {
         {canStopEarly ? (
           <button
             className="btn secondary"
-            onClick={() => void submit(picks, rest.map((t) => t.id))}
+            onClick={() =>
+              void submit(
+                picks,
+                rest.map((t) => t.id),
+              )
+            }
             disabled={busy}
           >
             Остальные примерно равны
           </button>
         ) : null}
         {picks.length > 0 ? (
-          <button className="btn ghost" onClick={() => setPicks([])} disabled={busy}>
+          <button
+            className="btn ghost"
+            onClick={() => setPicks([])}
+            disabled={busy}
+          >
             Сбросить выбор
           </button>
         ) : null}
-        <button className="btn ghost" disabled={busy} onClick={() => void act("/undo")}>
+        <button
+          className="btn ghost"
+          disabled={busy || data.screens.completed === 0}
+          onClick={() => void act("/undo")}
+        >
           ← Отменить последний ответ
         </button>
         {data.blindMode ? (
@@ -371,7 +492,8 @@ export default function ComparePage({ params }: { params: { id: string } }) {
         <div className="panel" style={{ marginTop: 22 }}>
           <h2>Предварительный топ</h2>
           <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-            Промежуточные позиции по текущим очкам — будут меняться по ходу сравнений.
+            Промежуточные позиции по текущим очкам — будут меняться по ходу
+            сравнений.
           </p>
           {data.standings.map((s) => (
             <div className="rank-row" key={s.trackId}>
@@ -379,10 +501,14 @@ export default function ComparePage({ params }: { params: { id: string } }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>{s.title}</div>
                 {s.artist ? (
-                  <div className="muted" style={{ fontSize: 13 }}>{s.artist}</div>
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    {s.artist}
+                  </div>
                 ) : null}
               </div>
-              <div className="muted" style={{ fontSize: 13 }}>{s.score} очк.</div>
+              <div className="muted" style={{ fontSize: 13 }}>
+                {s.score} очк.
+              </div>
             </div>
           ))}
         </div>
