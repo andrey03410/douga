@@ -295,6 +295,14 @@ export async function createStudioProjectFromPreset(
           participants: [],
           rounds: [],
         };
+        document.schemaVersion = 2;
+        document.scenes = [];
+        document.segments = [];
+        // Preset sound anchors belong to the cloned segment scenes.
+        if (document.audio) {
+          delete document.audio.cues;
+          if (!document.audio.playlist) delete document.audio;
+        }
       }
       return document;
     },

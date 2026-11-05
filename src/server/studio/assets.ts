@@ -127,6 +127,7 @@ export async function references(
         assetId?: unknown;
         trackId?: unknown;
         tournamentId?: unknown;
+        media?: unknown;
       };
       // A malformed hash/style must never disable protection of an identifiable owned file.
       if (b.kind === "pool" && typeof b.assetId === "string") {
@@ -138,17 +139,24 @@ export async function references(
         typeof b.trackId === "string" &&
         typeof b.tournamentId === "string"
       ) {
-        if (
-          !(await db.track.findFirst({
-            where: {
-              id: b.trackId,
-              tournamentId: b.tournamentId,
-              tournament: { userId },
-            },
-          }))
-        )
-          throw new StudioError("ASSET_NOT_FOUND");
+        const track = await db.track.findFirst({
+          where: {
+            id: b.trackId,
+            tournamentId: b.tournamentId,
+            tournament: { userId },
+          },
+        });
+        if (!track) throw new StudioError("ASSET_NOT_FOUND");
         refs.push({ trackId: b.trackId, tournamentId: b.tournamentId });
+        if (b.media === "cover" && track.coverArtId) {
+          if (
+            !(await db.art.findFirst({
+              where: { id: track.coverArtId, userId, kind: "image" },
+            }))
+          )
+            throw new StudioError("ASSET_NOT_FOUND");
+          refs.push({ artId: track.coverArtId });
+        }
       }
     }
   return [...new Map(refs.map((r) => [JSON.stringify(r), r])).values()];
@@ -201,6 +209,17 @@ async function bindingFile(userId: string, b: AssetBinding) {
     },
   });
   if (!t) throw new StudioError("ASSET_NOT_FOUND");
+  if (b.media === "cover") {
+    if (t.coverArtId) {
+      const art = await prisma.art.findFirst({
+        where: { id: t.coverArtId, userId, kind: "image" },
+      });
+      if (!art) throw new StudioError("ASSET_NOT_FOUND");
+      return { ...art, id: t.id };
+    }
+    if (!t.coverPath) throw new StudioError("ASSET_NOT_FOUND");
+    return { id: t.id, kind: "image", filePath: t.coverPath, posterPath: null };
+  }
   return { ...t, posterPath: null };
 }
 export async function resolveAssets(
@@ -252,7 +271,7 @@ export async function resolveAssets(
         : binding.kind === "pool"
           ? `/api/arts/${row.id}`
           : binding.kind === "track"
-            ? `/api/tracks/${row.id}/audio`
+            ? `/api/tracks/${row.id}/${binding.media === "cover" ? `cover?hash=${digest}` : "audio"}`
             : `/api/studio/builtin/${binding.name}`;
       manifest[key] = {
         id: row.id,
@@ -328,14 +347,72 @@ export async function getStudioManifest(
     throw new StudioError("ASSET_RESOLUTION_FAILED", result.diagnostics);
   return result.manifest;
 }
+function resolveAudioAnchors(
+  audio: VideoDocument["audio"],
+  expanded: Map<string, VideoScene[]>,
+) {
+  if (audio?.cues)
+    audio.cues = audio.cues.flatMap((cue) => {
+      const copies = cue.anchor?.sceneId
+        ? expanded.get(cue.anchor.sceneId)
+        : undefined;
+      const matches = copies?.filter(
+        (scene) =>
+          !cue.anchor?.participantId ||
+          scene.participantId === cue.anchor.participantId,
+      );
+      // Keep unmatched rules so the compiler diagnoses a genuinely missing event.
+      return matches?.length
+        ? matches.map((scene, i) => ({
+            ...cue,
+            id: `${cue.id}:resolved:${i}`,
+            anchor: { ...cue.anchor!, sceneId: scene.id },
+          }))
+        : [cue];
+    });
+}
 /** Analyze real PCM only when no authored active interval exists. Cache by bytes and requested window. */
 async function activeDocument(
   document: VideoDocument,
   manifest: AssetManifest,
   files: Record<string, StudioFile>,
+  expanded = new Map<string, VideoScene[]>(),
 ) {
   const result = structuredClone(document);
-  const expanded = new Map<string, VideoScene[]>();
+  if (result.schemaVersion === 2) {
+    for (const segment of result.segments ?? []) {
+      if (segment.enabled === false) continue;
+      const ids =
+        segment.participantIds ??
+        result.source.segments?.find(
+          (source) => source.id === segment.sourceSegmentId,
+        )?.participantIds;
+      const local: VideoDocument = {
+        ...result,
+        schemaVersion: 1,
+        source: {
+          ...result.source,
+          participants: result.source.participants.filter(
+            (p) => !ids || ids.includes(p.id),
+          ),
+        },
+        settings: mergeSettings(
+          result.settings,
+          result.formatSettings?.[result.output.format],
+          segment.settings,
+        ),
+        formatSettings: undefined,
+        scenes: segment.scenes,
+        audio: segment.audio,
+      };
+      delete local.segments;
+      const resolved = await activeDocument(local, manifest, files, expanded);
+      segment.scenes = resolved.scenes;
+      if (resolved.audio) segment.audio = resolved.audio;
+    }
+    resolveAudioAnchors(result.audio, expanded);
+    return result;
+  }
   const output: VideoScene[] = [];
   for (const scene of result.scenes) {
     if (scene.block !== "top") {
@@ -368,6 +445,7 @@ async function activeDocument(
       const key = p.media?.audio ?? p.media?.visual;
       const asset = key ? manifest[key] : undefined;
       if (
+        p.bestMomentSec !== undefined ||
         snippet?.mode !== "active" ||
         snippet.activeEndSec !== undefined ||
         !key ||
@@ -429,27 +507,7 @@ async function activeDocument(
     expanded.set(scene.id, copies);
   }
   result.scenes = output;
-  if (result.audio?.cues)
-    result.audio.cues = result.audio.cues.flatMap((cue) => {
-      const copies = cue.anchor?.sceneId
-        ? expanded.get(cue.anchor.sceneId)
-        : undefined;
-      const matches = copies?.filter(
-        (scene) =>
-          !cue.anchor?.participantId ||
-          scene.participantId === cue.anchor.participantId,
-      );
-      // Retain an unmatched rule so the compiler still diagnoses a genuinely
-      // missing event. A selected participant must not create failing rules for
-      // every other instance of the repeated scene.
-      return matches?.length
-        ? matches.map((scene, i) => ({
-            ...cue,
-            id: `${cue.id}:resolved:${i}`,
-            anchor: { ...cue.anchor!, sceneId: scene.id },
-          }))
-        : [cue];
-    });
+  resolveAudioAnchors(result.audio, expanded);
   return result;
 }
 export async function evaluate(
