@@ -2,11 +2,11 @@
 id: 28
 title: Переход на Prisma 7
 track: tech
-stage: review
+stage: merged
 branch: chore/28-prisma-7
 pr: https://github.com/andrey03410/douga/pull/9
 started: 2026-11-05
-merged:
+merged: 2026-11-05
 ---
 
 # 28. Переход на Prisma 7
@@ -22,8 +22,8 @@ merged:
 - [x] Техника — [tech.md](tech.md)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
-- [ ] Проверка владельцем (автономный режим)
-- [ ] Влито
+- [x] Проверка владельцем (автономный режим)
+- [x] Влито
 
 ## Хвосты
 
