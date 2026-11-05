@@ -193,3 +193,10 @@ SDK R1/R4/R5/R6: RED→GREEN, затем scoped review выявил ещё дв�
 Первый запуск `tournament-assets.integration.test.ts` воспроизвёл FK-отказ в deleteUser.
 Исправлен порядок: Studio-ссылки/проекты → турниры → User/pool cascade, затем файлы.
 Регрессия + старые roles: 22/22, `account-assets.log` (RED), `account-assets-green.log` (GREEN).
+
+## Интеграция
+
+[PR8](https://github.com/andrey03410/douga/pull/8), автономная приёмка разрешена в brief.md.
+После зелёной тройки и независимого PASS задача интегрируется merge-коммитом в main.
+Base main оставался756cf4a; production-исправлений после итогового QG нет.
+Dev перезапущен на Node22 после build, порт3000 снова доступен.

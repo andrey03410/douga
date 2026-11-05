@@ -2,11 +2,11 @@
 id: 27
 title: Сегменты — несколько блоков в одном ролике
 track: product
-stage: review
+stage: merged
 branch: feat/27-segments
 pr: https://github.com/andrey03410/douga/pull/8
 started: 2026-11-05
-merged:
+merged: 2026-11-05
 ---
 
 # 27. Сегменты — несколько блоков в одном ролике
@@ -31,7 +31,7 @@ merged:
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
 - [x] Самостоятельная приёмка по автономному разрешению
-- [ ] Влито
+- [x] Влито
 
 ## Хвосты
 
