@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "@/lib/db";
 import {
   effectiveGroupSize,
   extendPlan,
@@ -18,7 +18,7 @@ import { pairKey } from "@/lib/domain/comparisons";
 
 // vitest.config sets DATABASE_URL (TEST_DATABASE_URL or prisma/dev.db): same DB as the services.
 const DB_URL = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
-const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+const prisma = createPrismaClient(DB_URL);
 const EMAIL = "integration-groups@test.local";
 
 let userId = "";

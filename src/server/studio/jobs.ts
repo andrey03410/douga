@@ -1,7 +1,7 @@
 import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import type { StudioJob } from "@prisma/client";
+import type { StudioJob } from "@/generated/prisma/client";
 import { can } from "@/lib/domain/permissions";
 import {
   actor,

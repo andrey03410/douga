@@ -1,6 +1,6 @@
 import "server-only";
 import bcrypt from "bcryptjs";
-import { Prisma, type User } from "@prisma/client";
+import { Prisma, type User } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { ensureAdminRole } from "@/server/roles";
 

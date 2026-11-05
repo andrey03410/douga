@@ -1,7 +1,7 @@
 import "server-only";
 import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
-import type { StudioJob } from "@prisma/client";
+import type { StudioJob } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { absPath } from "@/lib/storage";
 import { quotasFor } from "@/lib/domain/permissions";

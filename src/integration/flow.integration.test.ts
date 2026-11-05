@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "@/lib/db";
 import { createEngine } from "@/lib/domain/engines";
 import { toDomainComparisonsRaw } from "./helpers";
 // Integration test: drives the real Prisma schema (SQLite) through a full
@@ -9,7 +9,7 @@ import { toDomainComparisonsRaw } from "./helpers";
 
 // vitest.config sets DATABASE_URL (TEST_DATABASE_URL or prisma/dev.db): same DB as the services.
 const DB_URL = process.env.DATABASE_URL ?? `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
-const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+const prisma = createPrismaClient(DB_URL);
 const TEST_EMAIL = "integration-flow@test.local";
 
 // hidden ground-truth order keyed by title (lower = better)

@@ -1,15 +1,14 @@
 // E2E setup: create a test user and a ZIP of real audio tones.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import AdmZip from "adm-zip";
 import ffmpegPath from "ffmpeg-static";
+import { deleteUsersByEmail, openDevDb } from "./script-db.mjs";
 
 const EMAIL = "e2e@test.local";
 const PASSWORD = "password123";
-const DB_URL = `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
-const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+const prisma = openDevDb();
 
 const tmp = "/tmp/e2e";
 spawnSync("mkdir", ["-p", tmp]);
@@ -37,7 +36,7 @@ zip.writeZip(zipPath);
 
 // The e2e account is an admin: verify flows exercise render and the admin
 // panel. Limited-role flows create their own throwaway "user" accounts.
-await prisma.user.deleteMany({ where: { email: EMAIL } });
+await deleteUsersByEmail(prisma, [EMAIL]);
 const hash = await bcrypt.hash(PASSWORD, 10);
 await prisma.user.create({ data: { email: EMAIL, passwordHash: hash, role: "admin" } });
 await prisma.$disconnect();

@@ -9,7 +9,7 @@ AI-студия на SDK, которой управляет внешний ИИ 
 
 ## Стек и команды
 
-Next.js 14 (App Router) · React 18 · TypeScript · Prisma 5 + SQLite · Auth.js ·
+Next.js 14 (App Router) · React 18 · TypeScript · Prisma 7 + SQLite · Auth.js ·
 Remotion 4 · ffmpeg-static · Zod · Vitest · Node 22.
 
 | Команда | Что делает |

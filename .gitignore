@@ -13,3 +13,4 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 /assets/
 /.ai/production/
+src/generated/

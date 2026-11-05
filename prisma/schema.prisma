@@ -4,12 +4,17 @@
 // below are provider-agnostic.
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  // Generated into the source tree (gitignored) and imported as "@/generated/prisma/client".
+  output   = "../src/generated/prisma"
+  // Explicit .ts specifiers: plain `node` (type stripping) can then load the
+  // client from scripts/*.mjs; tsx, vitest and Next accept them as well.
+  importFileExtension = "ts"
 }
 
+// The connection URL lives in prisma.config.ts (CLI) and src/lib/db.ts (runtime adapter).
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
