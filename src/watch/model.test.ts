@@ -188,7 +188,10 @@ describe("clock", () => {
 
 describe("keys and control visibility", () => {
   const body = { tagName: "BODY" };
-  const key = (code: string, extra: Partial<Parameters<typeof keyAction>[0]> = {}) => ({
+  const key = (
+    code: string,
+    extra: Partial<Parameters<typeof keyAction>[0]> = {},
+  ) => ({
     code,
     ...extra,
   });
@@ -212,14 +215,22 @@ describe("keys and control visibility", () => {
     expect(keyAction(key("Space", { repeat: true }), body)).toBeNull();
     expect(keyAction(key("KeyF", { repeat: true }), body)).toBeNull();
     expect(keyAction(key("KeyM", { repeat: true }), body)).toBeNull();
-    expect(keyAction(key("ArrowRight", { repeat: true }), body)).toBe("seek-forward");
-    expect(keyAction(key("PageDown", { repeat: true }), body)).toBe("chapter-next");
+    expect(keyAction(key("ArrowRight", { repeat: true }), body)).toBe(
+      "seek-forward",
+    );
+    expect(keyAction(key("PageDown", { repeat: true }), body)).toBe(
+      "chapter-next",
+    );
   });
 
   it("ignores text fields and keeps native arrows only where a range asks for them", () => {
-    expect(keyAction(key("Space"), { tagName: "INPUT", type: "text" })).toBeNull();
+    expect(
+      keyAction(key("Space"), { tagName: "INPUT", type: "text" }),
+    ).toBeNull();
     expect(keyAction(key("ArrowLeft"), { tagName: "TEXTAREA" })).toBeNull();
-    expect(keyAction(key("KeyF"), { tagName: "DIV", isContentEditable: true })).toBeNull();
+    expect(
+      keyAction(key("KeyF"), { tagName: "DIV", isContentEditable: true }),
+    ).toBeNull();
     const seekBar = { tagName: "INPUT", type: "range" };
     expect(keyAction(key("ArrowRight"), seekBar)).toBe("seek-forward");
     expect(keyAction(key("Space"), seekBar)).toBe("toggle");
@@ -240,8 +251,12 @@ describe("keys and control visibility", () => {
     const idle = { playing: true, loading: false, pinned: false };
     expect(controlsHidden({ ...idle, idleMs: 2499 })).toBe(false);
     expect(controlsHidden({ ...idle, idleMs: 2500 })).toBe(true);
-    expect(controlsHidden({ ...idle, playing: false, idleMs: 9000 })).toBe(false);
-    expect(controlsHidden({ ...idle, loading: true, idleMs: 9000 })).toBe(false);
+    expect(controlsHidden({ ...idle, playing: false, idleMs: 9000 })).toBe(
+      false,
+    );
+    expect(controlsHidden({ ...idle, loading: true, idleMs: 9000 })).toBe(
+      false,
+    );
     expect(controlsHidden({ ...idle, pinned: true, idleMs: 9000 })).toBe(false);
   });
 });
@@ -277,15 +292,46 @@ describe("cover frame", () => {
   it("shows the first picker round with every card open and no answer yet", () => {
     const video = plan({
       scenes: [
-        scene({ id: "r1", kind: "picker", from: 0, durationInFrames: 300, phases: { revealStartFrame: 20, timerStartFrame: 150, answerStartFrame: 240 } }),
+        scene({
+          id: "r1",
+          kind: "picker",
+          from: 0,
+          durationInFrames: 300,
+          phases: {
+            revealStartFrame: 20,
+            timerStartFrame: 150,
+            answerStartFrame: 240,
+          },
+        }),
       ],
     });
     expect(coverFrame(video)).toBe(150);
   });
 
   it("stops before the answer when there is no timer, else takes 60% of the first scene", () => {
-    expect(coverFrame(plan({ scenes: [scene({ from: 0, durationInFrames: 100, phases: { answerStartFrame: 40 } })] }))).toBe(39);
-    expect(coverFrame(plan({ scenes: [scene({ id: "empty", durationInFrames: 0 }), scene({ id: "intro", from: 0, durationInFrames: 255 })] }))).toBe(153);
+    expect(
+      coverFrame(
+        plan({
+          scenes: [
+            scene({
+              from: 0,
+              durationInFrames: 100,
+              phases: { answerStartFrame: 40 },
+            }),
+          ],
+        }),
+      ),
+    ).toBe(39);
+    expect(
+      coverFrame(
+        plan({
+          scenes: [
+            scene({ id: "empty", durationInFrames: 0 }),
+            scene({ id: "intro", from: 0, durationInFrames: 255 }),
+          ],
+        }),
+      ),
+    ).toBe(153);
     expect(coverFrame(plan({ durationInFrames: 0 }))).toBe(0);
   });
 });
@@ -295,15 +341,50 @@ describe("preload window", () => {
     const video = plan({
       durationInFrames: 900,
       audio: [
-        cue({ id: "now", from: 0, durationInFrames: 255, asset: { src: "/api/watch/t/media/now.wav" } as never }),
-        cue({ id: "soon", from: 255, durationInFrames: 255, asset: { src: "/api/watch/t/media/soon.wav" } as never }),
-        cue({ id: "late", from: 800, durationInFrames: 30, asset: { src: "/api/watch/t/media/late.wav" } as never }),
-        cue({ id: "offline", from: 100, durationInFrames: 30, asset: { src: "blob:null/1" } as never }),
+        cue({
+          id: "now",
+          from: 0,
+          durationInFrames: 255,
+          asset: { src: "/api/watch/t/media/now.wav" } as never,
+        }),
+        cue({
+          id: "soon",
+          from: 255,
+          durationInFrames: 255,
+          asset: { src: "/api/watch/t/media/soon.wav" } as never,
+        }),
+        cue({
+          id: "late",
+          from: 800,
+          durationInFrames: 30,
+          asset: { src: "/api/watch/t/media/late.wav" } as never,
+        }),
+        cue({
+          id: "offline",
+          from: 100,
+          durationInFrames: 30,
+          asset: { src: "blob:null/1" } as never,
+        }),
       ],
       scenes: [
-        scene({ id: "a", from: 0, durationInFrames: 255, nodes: [imageNode("/api/watch/t/media/a.png"), videoNode()] }),
-        scene({ id: "b", from: 255, durationInFrames: 255, nodes: [imageNode("blob:null/b", "d".repeat(64))] }),
-        scene({ id: "c", from: 800, durationInFrames: 100, nodes: [imageNode("/api/watch/t/media/c.png", "e".repeat(64))] }),
+        scene({
+          id: "a",
+          from: 0,
+          durationInFrames: 255,
+          nodes: [imageNode("/api/watch/t/media/a.png"), videoNode()],
+        }),
+        scene({
+          id: "b",
+          from: 255,
+          durationInFrames: 255,
+          nodes: [imageNode("blob:null/b", "d".repeat(64))],
+        }),
+        scene({
+          id: "c",
+          from: 800,
+          durationInFrames: 100,
+          nodes: [imageNode("/api/watch/t/media/c.png", "e".repeat(64))],
+        }),
       ],
     });
     // Before the first play everything from frame 0 counts.
@@ -350,10 +431,14 @@ describe("public media urls", () => {
       ],
     });
     const token = "tok_en";
-    const next = rewritePlanMedia(video, {
-      [hash]: { file: `${hash}.m4a` },
-      [hashB]: { file: `${hashB}.mp4`, poster: `${hashB}-poster.jpg` },
-    }, token);
+    const next = rewritePlanMedia(
+      video,
+      {
+        [hash]: { file: `${hash}.m4a` },
+        [hashB]: { file: `${hashB}.mp4`, poster: `${hashB}-poster.jpg` },
+      },
+      token,
+    );
     expect(next.audio[0].asset.src).toBe(watchMediaPath(token, `${hash}.m4a`));
     expect(next.scenes[0].nodes[0].media?.asset.src).toBe(
       watchMediaPath(token, `${hashB}.mp4`),
@@ -369,3 +454,16 @@ describe("public media urls", () => {
   });
 });
 
+it("uses segment titles and boundaries as chapters for watch and the shared offline player", () => {
+  const video = plan({
+    segments: [
+      { id: "opening", title: "Вступление", kind: "custom", from: 0, to: 30 },
+      { id: "episode", title: "Эпизод 1", kind: "top", from: 30, to: 180 },
+    ],
+    scenes: [scene({ from: 30, participantId: "p", durationInFrames: 150 })],
+  });
+  expect(chapters(video)).toEqual([
+    { frame: 0, label: "Вступление" },
+    { frame: 30, label: "Эпизод 1" },
+  ]);
+});

@@ -88,7 +88,9 @@ const Media: React.FC<{
       ) : outsideActive && media.asset.posterSrc ? (
         <Img
           src={resolveAsset(media.asset.posterSrc, mode)}
-          pauseWhenLoading={!imageDecoded(resolveAsset(media.asset.posterSrc, mode))}
+          pauseWhenLoading={
+            !imageDecoded(resolveAsset(media.asset.posterSrc, mode))
+          }
           style={layout.source}
         />
       ) : playback?.type === "play" ? (
@@ -240,6 +242,13 @@ export const StudioSceneFrame: React.FC<{
           transform: `translate(${state.x}px, ${state.y}px) rotate(${state.rotate}deg) scale(${state.scale * (state.answer ? 1.05 : 1)})`,
           transformOrigin: "center",
           zIndex: node.layer,
+          filter:
+            (node.type === "image" ||
+              node.type === "video" ||
+              node.type === "card") &&
+            style.blur
+              ? `blur(${style.blur}px)`
+              : undefined,
         }}
       >
         <div

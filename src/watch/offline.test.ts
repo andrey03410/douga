@@ -53,7 +53,10 @@ describe("slice windows", () => {
     const video = plan({
       audio: [cue({ id: "all", offsetFrames: 0, durationInFrames: 290 })],
     });
-    expect(mediaSlices(video)[0]).toMatchObject({ id: `whole:${hash}`, whole: true });
+    expect(mediaSlices(video)[0]).toMatchObject({
+      id: `whole:${hash}`,
+      whole: true,
+    });
     expect(applySlices(video).audio[0].offsetFrames).toBe(0);
     expect(applySlices(video).audio[0].asset.src).toBe(`slice:whole:${hash}`);
   });
@@ -80,7 +83,7 @@ describe("slice windows", () => {
     const sliced = applySlices(video);
     expect(sliced.scenes[0].nodes[0].media?.offsetFrames).toBe(15);
     expect(sliced.scenes[0].nodes[0].media?.freezeAtFrame).toBe(
-      200 - (picture!.startFrame),
+      200 - picture!.startFrame,
     );
   });
 
@@ -92,7 +95,12 @@ describe("slice windows", () => {
     node.durationInFrames = 150;
     const video = plan({ fps: 30, scenes: [scene([node])] });
     expect(mediaSlices(video)).toEqual([
-      expect.objectContaining({ role: "visual", startFrame: 45, endFrame: 180, whole: false }),
+      expect.objectContaining({
+        role: "visual",
+        startFrame: 45,
+        endFrame: 180,
+        whole: false,
+      }),
     ]);
     const sliced = applySlices(video);
     expect(sliced.scenes[0].nodes[0].media?.offsetFrames).toBe(15);
@@ -115,11 +123,18 @@ describe("slice roles", () => {
     const node = videoNode({ hash: hashB });
     node.media!.offsetFrames = 90;
     node.durationInFrames = 30;
-    const sound = cue({ id: "card-sound", hash: hashB, offsetFrames: 90, durationInFrames: 30 });
+    const sound = cue({
+      id: "card-sound",
+      hash: hashB,
+      offsetFrames: 90,
+      durationInFrames: 30,
+    });
     sound.asset = { ...sound.asset, kind: "video", hasAudio: true };
     const video = plan({ audio: [sound], scenes: [scene([node])] });
     const slices = mediaSlices(video);
-    expect(slices.map((s) => [s.role, s.startFrame, s.endFrame]).sort()).toEqual([
+    expect(
+      slices.map((s) => [s.role, s.startFrame, s.endFrame]).sort(),
+    ).toEqual([
       ["audio", 75, 135],
       ["visual", 75, 135],
     ]);
@@ -127,19 +142,39 @@ describe("slice roles", () => {
     const audio = slices.find((s) => s.role === "audio")!;
     const picture = slices.find((s) => s.role === "visual")!;
     expect(sliced.audio[0].asset.src).toBe(`slice:${audio.id}`);
-    expect(sliced.scenes[0].nodes[0].media?.asset.src).toBe(`slice:${picture.id}`);
+    expect(sliced.scenes[0].nodes[0].media?.asset.src).toBe(
+      `slice:${picture.id}`,
+    );
     expect(audio.id).not.toBe(picture.id);
   });
 
   it("embeds the poster of a video picture, not of a sound cut from the same kind of file", () => {
-    const sound = cue({ id: "card-sound", hash: hashB, offsetFrames: 90, durationInFrames: 30 });
-    sound.asset = { ...sound.asset, kind: "video", hasAudio: true, posterSrc: "/api/studio/media?path=p.jpg" };
+    const sound = cue({
+      id: "card-sound",
+      hash: hashB,
+      offsetFrames: 90,
+      durationInFrames: 30,
+    });
+    sound.asset = {
+      ...sound.asset,
+      kind: "video",
+      hasAudio: true,
+      posterSrc: "/api/studio/media?path=p.jpg",
+    };
     const onlySound = plan({ audio: [sound] });
     expect(posterHashes(onlySound)).toEqual([]);
     const sliced = applySlices(onlySound);
     expect(sliced.audio[0].asset.posterSrc).toBeUndefined();
-    expect(offlineMediaUnresolved(sliced, new Set(mediaSlices(onlySound).map((s) => s.id)))).toBe(false);
-    const withPicture = plan({ audio: [sound], scenes: [scene([videoNode({ hash: hashB })])] });
+    expect(
+      offlineMediaUnresolved(
+        sliced,
+        new Set(mediaSlices(onlySound).map((s) => s.id)),
+      ),
+    ).toBe(false);
+    const withPicture = plan({
+      audio: [sound],
+      scenes: [scene([videoNode({ hash: hashB })])],
+    });
     expect(posterHashes(withPicture)).toEqual([hashB]);
   });
 
@@ -148,7 +183,12 @@ describe("slice roles", () => {
     const node = videoNode({ hash: hashB });
     node.media!.offsetFrames = 0;
     node.durationInFrames = 290;
-    const sound = cue({ id: "full", hash: hashB, offsetFrames: 0, durationInFrames: 290 });
+    const sound = cue({
+      id: "full",
+      hash: hashB,
+      offsetFrames: 0,
+      durationInFrames: 290,
+    });
     const video = plan({ audio: [sound], scenes: [scene([still, node])] });
     const slices = mediaSlices(video);
     expect(slices.map((s) => s.id).sort()).toEqual([
@@ -165,7 +205,12 @@ describe("slice roles", () => {
 
 describe("offline media check", () => {
   it("flags only media sources, not text that mentions a link", () => {
-    const text = { ...videoNode(), type: "text", text: "Подписка: https://t.me/douga", media: undefined };
+    const text = {
+      ...videoNode(),
+      type: "text",
+      text: "Подписка: https://t.me/douga",
+      media: undefined,
+    };
     const source = plan({
       audio: [cue({ offsetFrames: 0, durationInFrames: 290 })],
       scenes: [scene([text as never])],
@@ -189,9 +234,14 @@ describe("offline media check", () => {
     const slices = new Set(mediaSlices(source).map((slice) => slice.id));
     expect(offlineMediaUnresolved(sliced, slices)).toBe(true);
     expect(
-      offlineMediaUnresolved(sliced, new Set([...slices, posterSliceId(hashB)])),
+      offlineMediaUnresolved(
+        sliced,
+        new Set([...slices, posterSliceId(hashB)]),
+      ),
     ).toBe(false);
-    expect(offlineMediaUnresolved(sliced, new Set([posterSliceId(hashB)]))).toBe(true);
+    expect(
+      offlineMediaUnresolved(sliced, new Set([posterSliceId(hashB)])),
+    ).toBe(true);
   });
 });
 
@@ -211,7 +261,7 @@ describe("html size and disposition", () => {
 
   it("names the download like a render, with an html extension", () => {
     expect(htmlContentDisposition("cm123", "Топ: аниме (2024)")).toBe(
-      "attachment; filename=\"douga-cm123.html\"; " +
+      'attachment; filename="douga-cm123.html"; ' +
         "filename*=UTF-8''%D0%A2%D0%BE%D0%BF%20%D0%B0%D0%BD%D0%B8%D0%BC%D0%B5%20%282024%29.html",
     );
     expect(htmlContentDisposition("cm123", null)).toBe(
@@ -221,4 +271,13 @@ describe("html size and disposition", () => {
     expect(header).toMatch(/^[\x20-\x7e]+$/);
     expect(() => new Headers({ "Content-Disposition": header })).not.toThrow();
   });
+});
+
+it("retains segment intervals when media is embedded for offline playback", async () => {
+  const { chapters } = await import("./model");
+  const video = plan({
+    segments: [{ id: "ep", title: "Эпизод", kind: "top", from: 0, to: 30 }],
+    audio: [cue({ durationInFrames: 30 })],
+  });
+  expect(chapters(applySlices(video))).toEqual([{ frame: 0, label: "Эпизод" }]);
 });

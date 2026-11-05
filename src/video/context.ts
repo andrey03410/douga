@@ -5,10 +5,17 @@ import type {
   ResolvedAsset,
   Settings,
   VideoDocument,
+  VideoSegment,
+  Participant,
 } from "./types";
 import { mergeSettings, DEFAULT_SETTINGS } from "./settings";
 export interface CompileContext {
   document: VideoDocument;
+  segment?: VideoSegment;
+  segmentNumber?: number;
+  segmentCount?: number;
+  allParticipants?: Participant[];
+  revealedParticipantIds?: Set<string>;
   manifest: AssetManifest;
   fps: number;
   width: number;

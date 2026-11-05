@@ -62,3 +62,34 @@ it("keeps actual Player video fragments constant across frame updates, seeks and
   const heldSourceStart = Number(result.held[0].split("#t=")[1].split(",")[0]);
   expect(heldSourceStart).toBeCloseTo(239 / 30, 2);
 }, 15_000);
+
+it("renders blur for image, video and card visuals", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      `
+    import React from "react";
+    import {renderToString} from "react-dom/server";
+    import {Player} from "@remotion/player";
+    import {StudioVideo} from "./src/remotion/StudioVideo.tsx";
+    import {createVideoDocument,compileVideo} from "./src/video/index.ts";
+    const doc=createVideoDocument({kind:"top",participants:[{id:"p",label:"P",media:{visual:"image"}}]});
+    doc.scenes=[{id:"s",block:"custom",duration:{sec:1},nodes:[
+      {id:"image",type:"image",asset:"image",style:{blur:4}},
+      {id:"video",type:"video",asset:"video",style:{blur:6}},
+      {id:"card",type:"card",participantId:"p",style:{blur:8}},
+    ]}];
+    const plan=compileVideo(doc,{image:{id:"i",kind:"image",src:"https://media.invalid/i.png"},video:{id:"v",kind:"video",src:"https://media.invalid/v.mp4",durationSec:2}}).plan;
+    console.log(renderToString(React.createElement(Player,{acknowledgeRemotionLicense:true,component:StudioVideo,inputProps:{plan},compositionWidth:plan.width,compositionHeight:plan.height,fps:plan.fps,durationInFrames:plan.durationInFrames})));
+  `,
+    ],
+    { env: { ...process.env, NODE_ENV: "production" }, encoding: "utf8" },
+  );
+  expect(output).toContain("filter:blur(4px)");
+  expect(output).toContain("filter:blur(6px)");
+  expect(output).toContain("filter:blur(8px)");
+}, 15_000);

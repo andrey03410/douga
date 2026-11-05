@@ -7,6 +7,7 @@ import type {
   VideoScene,
 } from "./types";
 import { parseVideoDocument, videoPresetSchema } from "./schema";
+import { mergeSettings } from "./settings";
 const families = {
   top: ["classic", "minimal", "cinematic"],
   picker: [
@@ -208,6 +209,26 @@ export function extractVideoPreset(
   metadata: { id: string; name: string; version?: number },
 ): VideoPreset {
   const doc = parseVideoDocument(document);
+  if (doc.schemaVersion === 2) {
+    const segment = doc.segments?.find(
+      (s) => s.kind === doc.kind && s.enabled !== false,
+    );
+    if (!segment)
+      throw new Error(
+        "A reusable preset needs a segment matching the document kind",
+      );
+    return extractVideoPreset(
+      {
+        ...doc,
+        schemaVersion: 1,
+        segments: undefined,
+        scenes: segment.scenes,
+        settings: mergeSettings(doc.settings, segment.settings),
+        audio: segment.audio ?? doc.audio,
+      },
+      metadata,
+    );
+  }
   let nodeIndex = 0;
   const soundSlots = new Map<string, string>();
   const node = (n: VideoNode): VideoNode => {
@@ -224,7 +245,12 @@ export function extractVideoPreset(
       base.participantId = "$participant";
       if (base.label) base.label = { bind: "participant.label" };
     }
-    if (base.type === "audio" || base.type === "image" || base.type === "video")
+    if (
+      (base.type === "audio" ||
+        base.type === "image" ||
+        base.type === "video") &&
+      !base.asset.startsWith("$")
+    )
       base.asset = `slot:${base.type}:${nodeIndex}`;
     return base;
   };
@@ -294,12 +320,131 @@ export function extractVideoPreset(
       : {}),
   });
 }
+/** Each v2 application owns its abstract slots. A project's existing slot-shaped
+ * keys may still be referenced by custom content, so never reuse or overwrite them. */
+function namespacePresetSlots(
+  preset: VideoPreset,
+  used: Set<string>,
+  scope: "document" | "segment",
+): VideoPreset {
+  const result = structuredClone(preset);
+  const slots = new Map<string, string>();
+  let index = 0;
+  const allocate = (): string => {
+    let next: string;
+    do next = `slot:${scope}:${index++}`;
+    while (used.has(next));
+    used.add(next);
+    return next;
+  };
+  const key = (value: string): string => {
+    if (!value.startsWith("slot:")) return value;
+    if (!slots.has(value)) slots.set(value, allocate());
+    return slots.get(value)!;
+  };
+  const settings = (value: Settings | undefined) => {
+    // A scene's authored override is independent of the document/format default,
+    // even when extraction used the same abstract slot for their old sound.
+    if (value?.picker?.tick?.startsWith("slot:"))
+      value.picker.tick = allocate();
+  };
+  const nodes = (items: VideoNode[]) => {
+    for (const node of items) {
+      if (node.type === "container") nodes(node.children);
+      if (
+        node.type === "image" ||
+        node.type === "video" ||
+        node.type === "audio"
+      )
+        node.asset = key(node.asset);
+    }
+  };
+  settings(result.settings);
+  Object.values(result.formatSettings ?? {}).forEach(settings);
+  result.scenes.forEach((scene) => {
+    settings(scene.settings);
+    nodes(scene.nodes);
+  });
+  result.audio?.cues?.forEach((cue) => {
+    cue.asset = key(cue.asset);
+  });
+  return result;
+}
+
 export function applyVideoPreset(
   document: VideoDocument,
   preset: VideoPreset,
 ): VideoDocument {
   const doc = parseVideoDocument(document);
   const p = videoPresetSchema.parse(preset);
+  if (doc.schemaVersion === 2) {
+    const slots = new Set(Object.keys(doc.bindings));
+    // Common defaults bind independently of any one segment's authored media.
+    const common = applyVideoPreset(
+      {
+        ...doc,
+        schemaVersion: 1,
+        segments: undefined,
+        kind: p.kind,
+        scenes: [],
+      },
+      namespacePresetSlots(p, slots, "document"),
+    );
+    const bindings = structuredClone(common.bindings);
+    const segments = doc.segments?.map((segment) => {
+      if (segment.kind === "custom" || segment.kind !== p.kind) return segment;
+      const local = applyVideoPreset(
+        {
+          ...doc,
+          schemaVersion: 1,
+          segments: undefined,
+          kind: segment.kind,
+          bindings: doc.bindings,
+          settings: mergeSettings(doc.settings, segment.settings),
+          scenes: segment.scenes,
+          audio: segment.audio,
+        },
+        namespacePresetSlots(p, slots, "segment"),
+      );
+      Object.assign(bindings, local.bindings);
+      const prefix = `segment:${segment.id}:`;
+      const renameNode = (node: VideoNode): VideoNode =>
+        node.type === "container"
+          ? {
+              ...node,
+              id: `${prefix}${node.id}`,
+              children: node.children.map(renameNode),
+            }
+          : { ...node, id: `${prefix}${node.id}` };
+      const scenes = local.scenes.map((scene) => ({
+        ...scene,
+        id: `${prefix}${scene.id}`,
+        nodes: scene.nodes.map(renameNode),
+      }));
+      const audio = structuredClone(segment.audio ?? local.audio);
+      for (const cue of audio?.cues ?? []) {
+        if (!cue.anchor?.sceneId) continue;
+        const index = segment.scenes.findIndex(
+          (scene) => scene.id === cue.anchor!.sceneId,
+        );
+        const presetIndex = local.scenes.findIndex(
+          (scene) => scene.id === cue.anchor!.sceneId,
+        );
+        const target = scenes[index >= 0 ? index : presetIndex];
+        if (target) cue.anchor.sceneId = target.id;
+      }
+      return { ...segment, scenes, ...(audio ? { audio } : {}) };
+    });
+    return parseVideoDocument({
+      ...doc,
+      bindings,
+      segments,
+      output: p.output,
+      settings: common.settings,
+      formatSettings: common.formatSettings,
+      preset: { id: p.id, version: p.version },
+    });
+  }
   if (doc.kind !== p.kind)
     throw new Error("Preset kind must match document kind");
   transferCustomContent(doc, p);
