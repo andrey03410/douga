@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import type { StudioProject } from "@prisma/client";
+import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
 import { prisma } from "@/lib/db";
 import {
