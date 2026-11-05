@@ -33,7 +33,7 @@ AI Video SDK, а автор — внешний агент через MCP. Веб
 ## Стек
 
 - **Next.js 14** (App Router, React 18) — фронт + API.
-- **Prisma + SQLite** (MVP; продакшн-таргет Postgres — смена `provider` в схеме).
+- **Prisma 7 + SQLite** через адаптер `better-sqlite3` (для Postgres понадобятся другой `provider` и другой адаптер).
 - **Auth.js (next-auth v5)** — email + пароль.
 - **Remotion** — общий Player и рендер SDK (1920×1080, 1080×1920, 1080×1080; H.264/AAC).
 - **ffmpeg-static** — декод/нарезка аудио, RMS-анализ активного сниппета.
@@ -50,7 +50,7 @@ AI Video SDK, а автор — внешний агент через MCP. Веб
 | **Google Chrome / Chromium** | только для **рендера MP4** (Remotion)   | `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version` |
 
 Ставить отдельно **не нужно**: ffmpeg (идёт в комплекте — пакет
-`ffmpeg-static`), SQLite (встроен в Prisma), Remotion/React/Prisma и прочее —
+`ffmpeg-static`), SQLite (пакет `better-sqlite3`), Remotion/React/Prisma и прочее —
 всё приходит через `npm install`.
 
 ## Быстрый старт
@@ -58,8 +58,7 @@ AI Video SDK, а автор — внешний агент через MCP. Веб
 ```bash
 npm install
 cp .env.example .env          # отредактируйте AUTH_SECRET и ADMIN_EMAILS
-npx prisma generate
-npx prisma db push            # создаёт SQLite-схему (prisma/dev.db)
+npm run db:push               # создаёт SQLite-схему (prisma/dev.db) и Prisma-клиент
 npm run dev                   # http://localhost:3000
 ```
 

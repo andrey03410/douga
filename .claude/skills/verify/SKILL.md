@@ -45,7 +45,7 @@ description: QG и живая проверка Douga. Обязательная �
 npm run dev   # http://localhost:3000 (в фоне; лог в файл)
 ```
 
-После изменений `prisma/schema.prisma`: `npx prisma db push && npx prisma generate`
+После изменений `prisma/schema.prisma`: `npm run db:push` (это `prisma db push && prisma generate`: в Prisma 7 `db push` клиент сам не генерирует)
 и **обязательно перезапустить dev-сервер** — работающий процесс держит старый
 Prisma-клиент в памяти и падает 500 «Unknown argument <новое поле>».
 `npm run dev` сам делает `prisma generate` перед стартом, а если клиент всё же
