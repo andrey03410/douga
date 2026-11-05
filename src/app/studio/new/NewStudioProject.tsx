@@ -1,17 +1,21 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createVideoDocument, type VideoDocument } from "@/video";
 import { studioRequest } from "../StudioWorkspace";
 function example(kind: "top" | "picker", sourceId?: string): VideoDocument {
   const document = createVideoDocument({ kind });
-  if (kind === "top" && sourceId)
+  if (kind === "top" && sourceId) {
     document.source = {
       kind: "tournament",
       tournamentId: sourceId,
       participants: [],
       rounds: [],
     };
+    document.schemaVersion = 2;
+    document.scenes = [];
+    document.segments = [];
+  }
   return document;
 }
 export function NewStudioProject({ sourceId }: { sourceId?: string }) {
@@ -41,8 +45,8 @@ export function NewStudioProject({ sourceId }: { sourceId?: string }) {
       </div>
       {sourceId ? (
         <p className="studio-notice">
-          Пример топа подключён к вашему турниру. Порядок участников будет
-          обновляться из рейтинга, оформление привязано к стабильным ID.
+          Готовые сегменты вашего турнира появятся в видео. Порядок участников
+          обновляется из рейтинга каждого сегмента, оформление сохраняется.
         </p>
       ) : null}
       <label htmlFor="new-studio-json">Документ VideoDocument</label>

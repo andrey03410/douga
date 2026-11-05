@@ -10,6 +10,7 @@ import type {
   PickerRound,
   VideoDocument,
   VideoScene,
+  VideoSegment,
   Window,
 } from "./types";
 import { assetManifestSchema, videoDocumentSchema } from "./schema";
@@ -23,6 +24,18 @@ import { compileGlobalAudio } from "./audio";
 export function compileVideo(
   input: VideoDocument,
   manifest: AssetManifest = {},
+): CompileResult {
+  return compileDocument(input, manifest);
+}
+function compileDocument(
+  input: VideoDocument,
+  manifest: AssetManifest,
+  segmentContext?: {
+    segment: VideoSegment;
+    number: number;
+    count: number;
+    participants: Participant[];
+  },
 ): CompileResult {
   const plan: CompiledVideo = {
     schemaVersion: 1,
@@ -68,8 +81,188 @@ export function compileVideo(
     fps: document.output.fps,
     seed: document.seed,
   });
+  if (document.schemaVersion === 2) {
+    plan.segments = [];
+    const active = (document.segments ?? []).filter((s) => s.enabled !== false);
+    let cursor = 0;
+    let policyWindows = 0;
+    const exhausted = (): CompileResult => ({
+      plan: { ...plan, scenes: [], audio: [], segments: [] },
+      ready: false,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "RESOURCE_BUDGET_EXCEEDED",
+          path: "segments",
+          message: "Aggregate segment timeline exceeds resource budgets.",
+        },
+      ],
+    });
+    const diagnostics = [] as CompileResult["diagnostics"];
+    for (const [index, segment] of active.entries()) {
+      const sourceSegment = document.source.segments?.find(
+        (s) => s.id === segment.sourceSegmentId,
+      );
+      const ids = segment.participantIds ?? sourceSegment?.participantIds;
+      const participants = ids
+        ? ids
+            .map((id) => document.source.participants.find((p) => p.id === id)!)
+            .filter(Boolean)
+        : document.source.participants;
+      const roundIds = segment.roundIds;
+      const rounds = roundIds
+        ? roundIds
+            .map((id) => document.source.rounds.find((r) => r.id === id)!)
+            .filter(Boolean)
+        : document.source.rounds.filter(
+            (r) => !ids || r.cards.every((c) => ids.includes(c.participantId)),
+          );
+      const local = compileDocument(
+        {
+          ...document,
+          schemaVersion: 1,
+          segments: undefined,
+          source: {
+            ...document.source,
+            segments: undefined,
+            participants,
+            rounds,
+          },
+          settings: mergeSettings(
+            document.settings,
+            document.formatSettings?.[document.output.format],
+            segment.settings,
+          ),
+          formatSettings: undefined,
+          scenes: segment.scenes,
+          audio: segment.audio,
+        },
+        manifest,
+        {
+          segment: {
+            ...segment,
+            poster: segment.poster ?? sourceSegment?.poster,
+          },
+          number: index + 1,
+          count: participants.length,
+          participants: document.source.participants,
+        },
+      );
+      for (const diagnostic of local.diagnostics)
+        diagnostics.push({
+          ...diagnostic,
+          path: `segments.${segment.id}.${diagnostic.path}`,
+        });
+      policyWindows += local.plan.audio.reduce(
+        (sum, cue) => sum + cue.duckWindows.length + cue.muteWindows.length,
+        0,
+      );
+      if (
+        policyWindows > videoResourceLimits.maxAudioPolicyWindows ||
+        local.diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED")
+      )
+        return exhausted();
+      const length = local.plan.scenes.length ? local.plan.durationInFrames : 0;
+      if (length)
+        plan.segments.push({
+          id: segment.id,
+          title: segment.title,
+          kind: segment.kind,
+          from: cursor,
+          to: cursor + length,
+        });
+      for (const scene of local.plan.scenes)
+        plan.scenes.push({
+          ...scene,
+          from: scene.from + cursor,
+          segmentId: segment.id,
+          segmentTitle: segment.title,
+        });
+      const shift = (windows: Window[]) =>
+        windows.map((w) => ({ from: w.from + cursor, to: w.to + cursor }));
+      for (const cue of local.plan.audio)
+        plan.audio.push({
+          ...cue,
+          id: `${encodeURIComponent(segment.id)}/${cue.id}`,
+          from: cue.from + cursor,
+          duckWindows: shift(cue.duckWindows),
+          muteWindows: shift(cue.muteWindows),
+        });
+      cursor += length;
+      if (
+        cursor > videoResourceLimits.maxDurationSeconds * plan.fps ||
+        plan.scenes.length > videoResourceLimits.maxExpandedScenes ||
+        plan.scenes.reduce((sum, s) => sum + s.nodes.length, 0) >
+          videoResourceLimits.maxExpandedNodes ||
+        plan.audio.length > videoResourceLimits.maxAudioCues
+      ) {
+        return exhausted();
+      }
+    }
+    plan.durationInFrames = Math.max(1, cursor);
+    const ctx: CompileContext = {
+      document,
+      manifest: assets.data,
+      fps: plan.fps,
+      width: plan.width,
+      height: plan.height,
+      diagnostics,
+      audio: plan.audio,
+      settings: mergeSettings(
+        document.settings,
+        document.formatSettings?.[document.output.format],
+      ),
+    };
+    // Segment playlists override the document playlist for their own intervals.
+    const muteWindows = plan.segments
+      .filter(
+        (s) =>
+          document.segments?.find((segment) => segment.id === s.id)?.audio
+            ?.playlist,
+      )
+      .map((s) => ({ from: s.from, to: s.to }));
+    for (const scene of plan.scenes) {
+      if (
+        scene.roundId &&
+        document.source.rounds.find((r) => r.id === scene.roundId)?.music !==
+          undefined
+      )
+        muteWindows.push({
+          from: scene.from,
+          to: scene.from + scene.durationInFrames,
+        });
+    }
+    compileGlobalAudio(ctx, plan.durationInFrames, muteWindows, plan.scenes);
+    // Global audio retains segment mute policies while adding document policies.
+    // Check the final retained arrays together, not each compilation scope alone.
+    if (
+      diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED") ||
+      plan.audio.reduce(
+        (sum, cue) => sum + cue.duckWindows.length + cue.muteWindows.length,
+        0,
+      ) > videoResourceLimits.maxAudioPolicyWindows
+    )
+      return exhausted();
+    if (!plan.scenes.length)
+      diagnostic(
+        ctx,
+        "EMPTY_TIMELINE",
+        "Add enabled segments with source content or custom scenes.",
+        "segments",
+      );
+    return {
+      plan: JSON.parse(JSON.stringify(plan)),
+      diagnostics,
+      ready: !diagnostics.some((d) => d.severity === "error"),
+    };
+  }
   const ctx: CompileContext = {
     document,
+    segment: segmentContext?.segment,
+    segmentNumber: segmentContext?.number,
+    segmentCount: segmentContext?.count,
+    allParticipants: segmentContext?.participants,
+    revealedParticipantIds: new Set(),
     manifest: assets.data,
     fps: plan.fps,
     width: plan.width,
@@ -110,6 +303,10 @@ export function compileVideo(
       );
       return;
     }
+    if (participant) ctx.revealedParticipantIds?.add(participant.id);
+    round?.cards.forEach((card) =>
+      ctx.revealedParticipantIds?.add(card.participantId),
+    );
     const settings = effectiveSettings(ctx, template.settings);
     let scenes;
     if (template.block === "top") {
@@ -169,6 +366,12 @@ export function compileVideo(
         ),
         participant,
         round,
+        mergeSettings(
+          ctx.settings,
+          template.settings,
+          round?.settings,
+          participant?.settings,
+        ).card?.playSound,
       );
       scene.nodes.sort((a, b) => a.layer - b.layer);
       for (const n of scene.nodes) {

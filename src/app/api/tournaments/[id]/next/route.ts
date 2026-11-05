@@ -4,13 +4,17 @@ import { getTournament, nextComparison } from "@/server/tournaments";
 import { MAX_GROUP_SIZE } from "@/lib/domain/group-answer";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } },
 ) {
   const auth = await userOr401();
   if ("response" in auth) return auth.response;
 
-  const t = await getTournament(auth.userId, params.id);
+  const t = await getTournament(
+    auth.userId,
+    params.id,
+    new URL(req.url).searchParams.get("segmentId") ?? undefined,
+  );
   if (!t) return notFound();
 
   const step = nextComparison(t);
@@ -23,11 +27,18 @@ export async function GET(
       title: tr.title,
       artist: tr.artist,
       kind: tr.kind,
+      album: tr.album,
+      comment: tr.comment,
+      bestMomentSec: tr.bestMomentSec,
+      durationSec: tr.durationSec,
+      coverArtId: tr.coverArtId,
       audioUrl: `/api/tracks/${tr.id}/audio`,
     };
   };
 
   return NextResponse.json({
+    activeSegmentId: t.activeSegmentId,
+    segmentTitle: t.segments.find((s) => s.id === t.activeSegmentId)?.title,
     blindMode: t.blindMode,
     isComplete: step.isComplete,
     canExtend: step.canExtend,

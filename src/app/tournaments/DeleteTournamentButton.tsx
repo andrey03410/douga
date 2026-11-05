@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function DeleteTournamentButton({ id, title }: { id: string; title: string }) {
+export function DeleteTournamentButton({
+  id,
+  title,
+}: {
+  id: string;
+  title: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 

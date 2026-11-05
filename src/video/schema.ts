@@ -73,6 +73,7 @@ const crop = rectSchema.refine(
 );
 export const cardStyleSchema = z
   .object({
+    blur: opt(nonnegative.max(200)),
     fit: opt(z.enum(["cover", "contain", "fill"])),
     crop: opt(crop),
     offsetSec: opt(nonnegative),
@@ -156,6 +157,10 @@ export const participantSchema = z
     id,
     label: str,
     caption: opt(str),
+    comment: opt(str),
+    album: opt(str),
+    score: opt(n),
+    bestMomentSec: opt(nonnegative),
     rank: opt(positive.int()),
     media: opt(z.object({ visual: opt(id), audio: opt(id) }).strict()),
     settings: opt(settingsSchema),
@@ -201,6 +206,13 @@ const text = z.union([
         "document.title",
         "participant.label",
         "participant.rank",
+        "participant.comment",
+        "participant.album",
+        "participant.score",
+        "segment.title",
+        "segment.subtitle",
+        "segment.number",
+        "segment.count",
         "round.prompt",
         "group.label",
       ]),
@@ -238,6 +250,8 @@ export const videoNodeSchema: z.ZodType<VideoNode> = z.lazy(() =>
       .object({
         ...base,
         type: z.literal("container"),
+        repeat: opt(z.literal("participants")),
+        selection: opt(z.enum(["segment", "document", "revealed"])),
         children: z.array(videoNodeSchema),
         flow: opt(z.enum(["parallel", "sequence"])),
         layout: opt(layoutSchema),
@@ -337,6 +351,7 @@ export const assetBindingSchema = z.discriminatedUnion("kind", [
       kind: z.literal("track"),
       tournamentId: id,
       trackId: id,
+      media: opt(z.literal("cover")),
       hash: opt(str),
     })
     .strict(),
@@ -417,9 +432,43 @@ const formatSettings = z
     square: opt(settingsSchema),
   })
   .strict();
+const videoAudioSchema = z
+  .object({
+    playlist: opt(
+      z.object({ tracks: z.array(id), ...playlistOptions }).strict(),
+    ),
+    cues: opt(z.array(audioCueSchema)),
+  })
+  .strict();
+export const videoSegmentSchema = z
+  .object({
+    id,
+    kind: z.enum(["top", "picker", "custom"]),
+    title: str,
+    subtitle: opt(str),
+    poster: opt(id),
+    sourceSegmentId: opt(id),
+    enabled: opt(z.boolean()),
+    participantIds: opt(z.array(id)),
+    roundIds: opt(z.array(id)),
+    scenes: z.array(sceneSchema),
+    settings: opt(settingsSchema),
+    audio: opt(videoAudioSchema),
+  })
+  .strict();
+const sourceSegmentSchema = z
+  .object({
+    id,
+    title: str,
+    subtitle: opt(str),
+    poster: opt(id),
+    participantIds: z.array(id),
+  })
+  .strict();
 const documentObject = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
+    segments: opt(z.array(videoSegmentSchema)),
     id,
     title: str,
     kind: z.enum(["top", "picker"]),
@@ -429,6 +478,20 @@ const documentObject = z
       .object({
         kind: z.enum(["manual", "tournament"]),
         tournamentId: opt(id),
+        segmentId: opt(id),
+        segments: opt(z.array(sourceSegmentSchema)),
+        suppressedSegmentIds: opt(z.array(id)),
+        dormantSegments: opt(
+          z.array(
+            z
+              .object({
+                id,
+                sourceSegmentId: id,
+                enabled: opt(z.boolean()),
+              })
+              .strict(),
+          ),
+        ),
         version: opt(str),
         participants: z.array(participantSchema),
         rounds: z.array(roundSchema),
@@ -478,8 +541,72 @@ export const videoDocumentSchema: z.ZodType<VideoDocument> = z
         d.source.rounds.map((r) => r.id),
         ["source", "rounds"],
       );
+      const scenes = [
+        ...d.scenes,
+        ...(d.segments ?? []).flatMap((s) => s.scenes),
+      ];
+      if (
+        (d.schemaVersion === 1 && d.segments !== undefined) ||
+        (d.schemaVersion === 2 && !d.segments)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "v1 forbids segments; v2 requires segments",
+          path: ["segments"],
+        });
+      if (d.schemaVersion === 2 && d.scenes.length)
+        ctx.addIssue({
+          code: "custom",
+          message: "v2 scenes belong to segments",
+          path: ["scenes"],
+        });
       unique(
-        d.scenes.map((s) => s.id),
+        (d.segments ?? []).map((s) => s.id),
+        ["segments"],
+      );
+      unique(
+        (d.source.segments ?? []).map((s) => s.id),
+        ["source", "segments"],
+      );
+      const participantIds = new Set(d.source.participants.map((p) => p.id));
+      const roundIds = new Set(d.source.rounds.map((r) => r.id));
+      for (const [i, s] of (d.source.segments ?? []).entries()) {
+        if (
+          new Set(s.participantIds).size !== s.participantIds.length ||
+          s.participantIds.some((id) => !participantIds.has(id))
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Source segment participants must be unique existing IDs",
+            path: ["source", "segments", i, "participantIds"],
+          });
+      }
+      for (const [i, s] of (d.segments ?? []).entries()) {
+        if (s.enabled === false) continue;
+        if (
+          s.participantIds?.some((id) => !participantIds.has(id)) ||
+          (s.participantIds &&
+            new Set(s.participantIds).size !== s.participantIds.length) ||
+          s.roundIds?.some((id) => !roundIds.has(id)) ||
+          (s.roundIds && new Set(s.roundIds).size !== s.roundIds.length)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Segment selections must contain unique existing IDs",
+            path: ["segments", i],
+          });
+        if (
+          s.sourceSegmentId &&
+          !d.source.segments?.some((source) => source.id === s.sourceSegmentId)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Source segment does not exist",
+            path: ["segments", i, "sourceSegmentId"],
+          });
+      }
+      unique(
+        scenes.map((s) => s.id),
         ["scenes"],
       );
       unique(
@@ -494,9 +621,17 @@ export const videoDocumentSchema: z.ZodType<VideoDocument> = z
       const walk = (nodes: VideoNode[]) =>
         nodes.forEach((node) => {
           ids.push(node.id);
-          if (node.type === "container") walk(node.children);
+          if (node.type === "container") {
+            if (node.selection && !node.repeat)
+              ctx.addIssue({
+                code: "custom",
+                message: "Participant selection requires repeat:participants",
+                path: ["nodes", node.id, "selection"],
+              });
+            walk(node.children);
+          }
         });
-      d.scenes.forEach((s) => walk(s.nodes));
+      scenes.forEach((s) => walk(s.nodes));
       unique(ids, ["scenes"]);
       if (d.source.kind === "tournament" && !d.source.tournamentId)
         ctx.addIssue({
@@ -504,7 +639,7 @@ export const videoDocumentSchema: z.ZodType<VideoDocument> = z
           message: "Tournament source requires tournamentId",
           path: ["source", "tournamentId"],
         });
-      d.scenes.forEach((s, i) => {
+      scenes.forEach((s, i) => {
         if (s.repeat && (s.participantId || s.roundId)) {
           ctx.addIssue({
             code: "custom",
@@ -582,7 +717,12 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
         if (n.type === "container") walk(n.children, [...at, "children"]);
         if (
           (n.type === "video" || n.type === "image" || n.type === "audio") &&
-          !/^slot:[a-z]+:[0-9]+$/.test(n.asset)
+          !/^slot:[a-z]+:[0-9]+$/.test(n.asset) &&
+          ![
+            "$participant.visual",
+            "$participant.audio",
+            "$segment.poster",
+          ].includes(n.asset)
         )
           issue([...at, "asset"]);
         if (n.type === "card" && n.participantId !== "$participant")
@@ -627,7 +767,15 @@ const patchTargetSchema = z.union([
   z.object({ type: z.literal("document") }).strict(),
   z
     .object({
-      type: z.enum(["participant", "round", "card", "group", "scene", "node"]),
+      type: z.enum([
+        "participant",
+        "round",
+        "card",
+        "group",
+        "scene",
+        "node",
+        "segment",
+      ]),
       id: z.string().min(1),
     })
     .strict(),

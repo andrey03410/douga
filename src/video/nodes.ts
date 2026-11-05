@@ -82,6 +82,27 @@ export function boundText(
     case "participant.rank":
       result = p?.rank;
       break;
+    case "participant.comment":
+      result = p?.comment;
+      break;
+    case "participant.album":
+      result = p?.album;
+      break;
+    case "participant.score":
+      result = p?.score;
+      break;
+    case "segment.title":
+      result = ctx.segment?.title;
+      break;
+    case "segment.subtitle":
+      result = ctx.segment?.subtitle;
+      break;
+    case "segment.number":
+      result = ctx.segmentNumber;
+      break;
+    case "segment.count":
+      result = ctx.segmentCount;
+      break;
     case "round.prompt":
       result = r?.prompt;
       break;
@@ -104,6 +125,30 @@ export function boundText(
     );
   return `${value.prefix ?? ""}${result ?? ""}${value.suffix ?? ""}`;
 }
+function mediaKey(
+  ctx: CompileContext,
+  key: string,
+  participant: Participant | undefined,
+  nodeId: string,
+): string | undefined {
+  const dynamic =
+    key === "$participant.visual"
+      ? participant?.media?.visual
+      : key === "$participant.audio"
+        ? participant?.media?.audio
+        : key === "$segment.poster"
+          ? ctx.segment?.poster
+          : key;
+  if (key.startsWith("$") && !dynamic)
+    diagnostic(
+      ctx,
+      "MEDIA_BINDING_UNRESOLVED",
+      `Media binding ${key} has no value in this context.`,
+      `nodes.${nodeId}.asset`,
+      nodeId,
+    );
+  return dynamic;
+}
 export function compileCustomNodes(
   ctx: CompileContext,
   scene: CompiledScene,
@@ -111,6 +156,7 @@ export function compileCustomNodes(
   settings: Settings,
   participant?: Participant,
   round?: PickerRound,
+  authoredPlaySound: boolean | undefined = ctx.settings.card?.playSound,
   parent: Rect = { x: 0, y: 0, width: ctx.width, height: ctx.height },
   parentId?: string,
   parentFrom = 0,
@@ -152,17 +198,29 @@ export function compileCustomNodes(
     }
     const end = from + duration;
     cursor = end;
-    const style = { ...settings.card, ...node.style };
+    const style = {
+      ...settings.card,
+      ...node.style,
+      ...(node.type === "video" &&
+      node.asset === "$participant.visual" &&
+      participant?.bestMomentSec !== undefined
+        ? { offsetSec: participant.bestMomentSec }
+        : {}),
+    };
     if (node.type === "audio") {
       const asset = resolveAsset(
         ctx,
-        node.asset,
+        mediaKey(ctx, node.asset, participant, node.id),
         `nodes.${node.id}.asset`,
         "audio",
       );
       if (asset)
         addAudio(ctx, {
           ...node,
+          offsetSec:
+            node.asset === "$participant.audio"
+              ? (participant?.bestMomentSec ?? node.offsetSec)
+              : node.offsetSec,
           id,
           asset,
           from: scene.from + from,
@@ -217,7 +275,7 @@ export function compileCustomNodes(
     if (node.type === "image" || node.type === "video") {
       const asset = resolveAsset(
         ctx,
-        node.asset,
+        mediaKey(ctx, node.asset, participant, node.id),
         `nodes.${node.id}.asset`,
         "visual",
         node.required !== false,
@@ -273,7 +331,12 @@ export function compileCustomNodes(
         const local = effectiveSettings(ctx, settings, p.settings, {
           card: node.style,
         });
-        compiled.style = local.card ?? {};
+        compiled.style = {
+          ...local.card,
+          ...(p.bestMomentSec !== undefined
+            ? { offsetSec: p.bestMomentSec }
+            : {}),
+        };
         compiled.participantId = p.id;
         compiled.rank = p.rank;
         compiled.showRank = local.labels?.showRank ?? true;
@@ -302,16 +365,26 @@ export function compileCustomNodes(
             compiled.style,
             `nodes.${node.id}.style.offsetSec`,
           );
+        // DEFAULT_SETTINGS.playSound:false controls embedded footage only.
+        // Only v2 adds full mute. Legacy v1 keeps its separate participant audio.
+        const playSound =
+          node.style?.playSound ??
+          p.settings?.card?.playSound ??
+          authoredPlaySound;
         const audio =
-          resolveAsset(
-            ctx,
-            p.media?.audio,
-            `source.participants.${p.id}.media.audio`,
-            "audio",
-          ) ??
-          (asset?.kind === "video" && asset.hasAudio && compiled.style.playSound
-            ? asset
-            : undefined);
+          ctx.segment && playSound === false
+            ? undefined
+            : (resolveAsset(
+                ctx,
+                p.media?.audio,
+                `source.participants.${p.id}.media.audio`,
+                "audio",
+              ) ??
+              (asset?.kind === "video" &&
+              asset.hasAudio &&
+              compiled.style.playSound
+                ? asset
+                : undefined));
         if (audio)
           addAudio(ctx, {
             id: `${id}/primary`,
@@ -326,7 +399,62 @@ export function compileCustomNodes(
       }
     }
     scene.nodes.push(compiled);
-    if (node.type === "container")
+    if (node.type === "container" && node.repeat === "participants") {
+      const collection = [
+        ...(node.selection === "document"
+          ? (ctx.allParticipants ?? ctx.document.source.participants)
+          : ctx.document.source.participants),
+      ].filter(
+        (p) =>
+          node.selection !== "revealed" ||
+          ctx.revealedParticipantIds?.has(p.id),
+      );
+      const order = settings.top?.order;
+      if (order === "ascending" || order === "descending")
+        collection.sort(
+          (a, b) =>
+            ((a.rank ?? Infinity) - (b.rank ?? Infinity)) *
+            (order === "ascending" ? 1 : -1),
+        );
+      if (
+        node.layout?.type === "free" &&
+        node.layout.positions?.length !== collection.length
+      )
+        diagnostic(
+          ctx,
+          "LAYOUT_POSITIONS_MISMATCH",
+          "Participant set free layout needs one position per participant.",
+          `nodes.${node.id}.layout.positions`,
+          node.id,
+        );
+      const items = layoutCards(
+        collection.length,
+        rect,
+        node.layout,
+        settings.card?.orientation,
+      );
+      collection.forEach((p, i) => {
+        const suffix = encodeURIComponent(p.id);
+        const clone = (n: VideoNode): VideoNode =>
+          n.type === "container"
+            ? { ...n, id: `${n.id}/${suffix}`, children: n.children.map(clone) }
+            : { ...n, id: `${n.id}/${suffix}` };
+        compileCustomNodes(
+          ctx,
+          scene,
+          node.children.map(clone),
+          effectiveSettings(ctx, settings, { card: node.style }),
+          p,
+          round,
+          node.style?.playSound ?? authoredPlaySound,
+          items[i],
+          id,
+          from,
+          end,
+          node.flow,
+        );
+      });
+    } else if (node.type === "container")
       compileCustomNodes(
         ctx,
         scene,
@@ -334,6 +462,7 @@ export function compileCustomNodes(
         effectiveSettings(ctx, settings, { card: node.style }),
         participant,
         round,
+        node.style?.playSound ?? authoredPlaySound,
         rect,
         id,
         from,

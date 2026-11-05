@@ -3,6 +3,7 @@
 Карточка о том, как поднять Douga локально, где лежат база и файлы и чем проверять изменения. Сайт (`next dev`), очередь SDK (`studio:worker`) и MCP-сервер (`mcp`) — это отдельные процессы. Все три работают с одной SQLite-базой `prisma/dev.db` и одним каталогом `storage/`.
 
 ## Где код
+
 - [`package.json`](../../package.json) — скрипты:
   - `dev` (это `prisma generate && next dev`, порт 3000), `build`, `start`;
   - `test` (`vitest run`), `test:watch`, `db:push`, `db:generate`;
@@ -19,6 +20,7 @@
 - [`tsconfig.mcp.json`](../../tsconfig.mcp.json) — для процессов под tsx подменяет `server-only` стабом [`src/test/server-only-stub.ts`](../../src/test/server-only-stub.ts).
 
 ## Переменные `.env`
+
 - База и вход: `DATABASE_URL` (путь `file:./dev.db` отсчитывается от `prisma/`), `AUTH_SECRET`, `AUTH_TRUST_HOST`, `ADMIN_EMAILS` ([roles.md](roles.md)).
 - Рендер: `REMOTION_BROWSER_EXECUTABLE` — путь к Chrome или Chromium.
 - Импорт по ссылке:
@@ -33,17 +35,22 @@
 - Как читается `.env`: Next загружает его сам, `studio:worker` и `mcp` — через флаг `--env-file-if-exists`. Явно переданные переменные окружения важнее. Скрипты `scripts/e2e-*.mjs` берут адрес сервера из `BASE`.
 
 ## Данные
+
 - SQLite-база `prisma/dev.db`, модели описаны в [schema](../../prisma/schema.prisma). Копии базы в `storage/backups/` сделаны вручную, код туда не пишет.
 - `storage/` лежит в `.gitignore`. Пути в БД хранятся относительно него:
-  - `tournaments/<id>/tracks/` — треки архивов; `arts/<userId>/` — пул медиа вместе с постерами;
+  - `tournaments/<id>/tracks/` — треки архивов и встроенные обложки `<trackId>-cover.<ext>`; `arts/<userId>/` — пул медиа вместе с постерами;
   - `downloads/tmp/<jobId>/` — загрузки yt-dlp; `tmp/` — импорт по ссылке и с диска; `bin/yt-dlp` — собственный бинарник;
   - `studio/<userId>/<projectId>/versions/…` и `studio/builtin/` — студия SDK; `studio-jobs/<userId>/<jobId>` — результаты заданий; `studio-engines/` — собранные движки;
-  - `studio-verification/<run>` — куда `verify-studio.mjs` пишет результат по умолчанию.
+  - `studio-verification/<run>` — куда `verify-studio.mjs` пишет результат по умолчанию;
+  - `verification/<задача>/` — изолированные копии БД, целевые логи и доказательства проверок (например задача 27).
 - `output/` тоже в `.gitignore`, но код его не использует: в `src/` и `scripts/` нет ни одной ссылки на него. Это ручная папка для готовых роликов.
 
 ## Как устроено
+
 - Первый запуск: `npm install`, `cp .env.example .env`, `npx prisma generate`, `npx prisma db push`, `npm run dev`.
 - Схема: после правки `schema.prisma` выполни `npx prisma db push && npx prisma generate` и перезапусти dev-сервер. Если запущены `studio:worker` и `mcp`, их тоже. Сам `npm run dev` делает только `generate`.
+- Сегменты (задача 27) применяются аддитивно: новая `TournamentSegment`, nullable `segmentId` у Track/ComparisonBatch/Ranking и metadata трека. `db push` добавляет схему, а содержимое старых турниров лениво получает «Все треки» через `ensureTournamentSegments` при чтении турнира/источника Studio. Отдельного массового пересчёта сравнений и рейтингов нет. `coverArtId`/`posterArtId` защищены FK Restrict к Art.
+- Для изолированного целевого прогона сначала скопируй `prisma/dev.db` в `storage/verification/<задача>/…db`, примени новую схему к этой копии явным `DATABASE_URL=file:/abs/copy.db npx prisma db push`, затем используй `TEST_DATABASE_URL=file:/abs/copy.db npx vitest run <файлы>`. `prisma generate` обновляет общий клиент в node_modules даже при работе с копией БД; согласуй это с агентом, который держит dev, убедись, что рабочая БД тоже обновлена, и перезапусти активные процессы.
 - Устаревший клиент Prisma падает с `Unknown argument <поле>`. `serverError` превращает это в ответ 500 с текстом `staleClientHint`, а [`prisma-client.test.ts`](../../src/lib/prisma-client.test.ts) ловит забытый `generate` в `npm test`.
 - Рендер MP4 (Remotion) берёт браузер из `REMOTION_BROWSER_EXECUTABLE`. Без переменной Remotion скачивает chrome-headless-shell из сети; скачать заранее можно командой `npx remotion browser ensure`. Без браузера работает всё, кроме рендера.
 - Очередь SDK: сайт и MCP только ставят задание, выполняет его `npm run studio:worker`. В разработке нужны два терминала: `dev` и воркер. Тяжёлый слот один на всех (`StudioWorkerLease`). Одно задание отдельно: `npm run studio:worker -- --once --job JOB_ID`.
@@ -55,6 +62,7 @@
 - Обязательная тройка после последних правок, в этом порядке: `npm test` → `npm run build` → `npx tsc --noEmit`. Для правок только в доках её не гоняют. Подробнее — в [verify](../../.claude/skills/verify/SKILL.md).
 
 ## Грабли
+
 - Порт 3000. Перед `npm run dev` выполни `lsof -nP -iTCP:3000 -sTCP:LISTEN`: у владельца часто уже работает свой сервер, тогда пользуйся им. Второй Next уйдёт на 3001, но каталог `.next` у них общий. Процессы перетирают друг другу CSS-чанки, и вёрстка ломается. Если серверы всё же пересеклись: останови все процессы `next`, выполни `rm -rf .next`, подними один сервер и проверь, что CSS-чанк из HTML отдаёт 200.
 - `npm run build` пишет в тот же `.next`, поэтому после сборки dev-сервер нужно перезапустить. `npx tsc --noEmit` запускай, когда build закончится: пока `.next/types` пересоздаётся, tsc падает с TS6053 (журнал фазы 21).
 - Не держи общий `studio:worker` запущенным во время интеграционных тестов и `verify-studio.mjs`: он перехватывает их задания.
@@ -67,13 +75,16 @@
 - `npx tsc --noEmit` не проверяет `storage/`: там лежат данные и разовые скрипты, не исходники.
 
 ## Как проверить
-- Тесты: `npm test`, точечно `npx vitest run src/lib/prisma-client.test.ts src/lib/domain/prisma-drift.test.ts`. Затем `npm run build` и `npx tsc --noEmit`.
+
+- Итоговый QG: `npm test` → `npm run build` → `npx tsc --noEmit`, строго в этом порядке после последних правок. Целевая проверка схемы: `npx vitest run src/lib/prisma-client.test.ts src/lib/domain/prisma-drift.test.ts`; она не заменяет QG.
 - Живой сайт: по [verify-скиллу](../../.claude/skills/verify/SKILL.md). Тестовый аккаунт: `node scripts/e2e-setup.mjs`. Турнир по HTTP проходит `scripts/e2e-run.mjs` ([tournament.md](tournament.md)).
 - SDK: `node scripts/verify-studio.mjs --actor <email> --project ID --kind clip --seconds 3 --output storage/studio-verification/<run>`. Код выхода 2 означает, что результат больше 12 MiB и скачивать его нужно на сайте.
 
 ## История
+
 - [спека 02](../specs/02-phase-render.md) и [исследование](../research/remotion-headless-render.md) — рендер через Remotion в headless Chrome.
 - [спека 08](../specs/08-url-import.md) — yt-dlp в `storage/bin` и `YTDLP_PATH`.
 - [спека 10](../specs/10-mcp-server.md) — stdio MCP, `npm run mcp`, `MCP_ACTOR_EMAIL`.
 - [спека 24](../specs/24-ai-video-job-contract.md) — устойчивая очередь и `studio:worker`.
 - [журнал фазы 21](../phases/phase-21-verification.md) — последние итоговые прогоны тройки проверок.
+- [задача 27](../features/27-segments/README.md) — аддитивная схема сегментов, ленивая совместимость старых турниров и изолированные целевые проверки на копиях БД

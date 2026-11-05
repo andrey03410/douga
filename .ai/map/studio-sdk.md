@@ -4,12 +4,12 @@
 
 ## Где код
 - [`src/video/`](../../src/video/) — домен SDK без I/O. Публичный вход — [`index.ts`](../../src/video/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
-  - [`schema.ts`](../../src/video/schema.ts) / [`types.ts`](../../src/video/types.ts) — строгие Zod-схемы (`schemaVersion: 1`, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
+  - [`schema.ts`](../../src/video/schema.ts) / [`types.ts`](../../src/video/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
   - [`builders.ts`](../../src/video/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
   - [`compiler.ts`](../../src/video/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
   - [`layout.ts`](../../src/video/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
   - [`presets.ts`](../../src/video/presets.ts) — 30 встроенных пресетов `top|picker.<family>.<wide|vertical|square>`, `extractVideoPreset`/`applyVideoPreset`
-  - [`patches.ts`](../../src/video/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/participant/round/card/group/scene/node)
+  - [`patches.ts`](../../src/video/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
   - [`resource-limits.ts`](../../src/video/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
 - [`src/remotion/StudioVideo.tsx`](../../src/remotion/StudioVideo.tsx) — единый рендерер плана (композиция `Studio` в [`Root.tsx`](../../src/remotion/Root.tsx)) для Player, PNG, клипов и финального MP4; покадровая математика — [`studio-frame.ts`](../../src/remotion/studio-frame.ts), градиент/тень → CSS — [`studio-paint.ts`](../../src/remotion/studio-paint.ts)
 - [`src/server/studio/`](../../src/server/studio/) — сервисы (вход `index.ts`, все `import "server-only"`):
@@ -31,16 +31,19 @@
 
 ## Данные
 - Модели Prisma: `StudioProject`, `StudioRevision`, `StudioAssetReference`, `StudioSnapshot`, `StudioPublication`, `StudioExportCache`, `StudioPreset`, `StudioMutation`, `StudioAnalysis`, `StudioJob`, `StudioWorkerLease` ([schema](../../prisma/schema.prisma))
-- Привязки медиа в документе (`bindings`): `pool` (Art пула), `track` (трек турнира), `builtin`; `StudioAssetReference` держит Art/Track/Tournament по scope `head`/`draft`/`revision:N`
+- Привязки медиа в документе (`bindings`): `pool` (Art пула), `track` (трек турнира, `media:"cover"` — его обложка), `builtin`; `StudioAssetReference` держит Art/Track/Tournament по scope `head`/`draft`/`revision:N`
 - Диск (`storage/`): `studio/<userId>/<projectId>/versions/<uuid>` — подготовленные ассеты ревизии; `studio-jobs/<userId>/<jobId>` — результаты; `studio-engines/<sha256>` — бандлы Remotion; `studio-exports/<userId>/<projectId>/<key>.m4a|.mp4` — нарезки ffmpeg для `.html`, `key` считается от содержания окна
 
 ## Как устроено
 - Форматы `wide`/`vertical`/`square` = 1920×1080 / 1080×1920 / 1080×1080. Встроенные пресеты — 30 FPS (схема допускает 24/25/30/50/60). Действуют технические бюджеты схемы.
-- Документ: `source` (`manual`|`tournament`, participants, rounds с cards/groups/answer), `bindings`, `settings` + `formatSettings`, `scenes` (`block: custom|top|picker`, `repeat: participants|rounds`, узлы container/text/shape/image/video/card/timer/audio с анимациями) и `audio` (плейлист, cues с ролями primary/music/sfx/voice). Произвольный JS/TSX документ не исполняет: новый эффект = расширение схемы + компилятора + `StudioVideo`.
+- Документ v1: `source` (`manual`|`tournament`, participants, rounds с cards/groups/answer), `bindings`, `settings` + `formatSettings`, `scenes` (`block: custom|top|picker`, `repeat: participants|rounds`, узлы container/text/shape/image/video/card/timer/audio с анимациями) и `audio` (плейлист, cues с ролями primary/music/sfx/voice). Произвольный JS/TSX документ не исполняет: новый эффект = расширение схемы + компилятора + `StudioVideo`.
+- Документ v2: корневой `scenes: []` и `segments[]` с id/kind/title/subtitle/poster/sourceSegmentId/participantIds/roundIds/scenes/settings/audio/enabled. В одном видео top, picker и custom. Общие settings/пресет наследуются, локальные overrides сохраняются. Патч target segment меняет один сегмент, set массива document.segments позволяет копировать (с новыми ID), переставлять и удалять.
+- Примитивы v2: text bindings `segment.title/subtitle/number/count` (count — число мест), `participant.comment/album/score`; asset tokens `$participant.visual`, `$participant.audio`, `$segment.poster`; container `repeat:"participants"` + `selection:"segment"|"document"|"revealed"` + дочерний шаблон. `style.blur` = 0..200 px. `bestMomentSec` приоритетнее автоматического и ручного offset. Бюджеты развёртки суммируются по включённым сегментам и вложенным повторам.
+- План остаётся IR schemaVersion1/compilerVersion1.0.0 и дополняется `segments:[{id,title,kind,from,to}]`; у сцен segmentId/segmentTitle. Timeline возвращает границы [from,to), watch/offline называют главы по сегментам. Старый v1 проходит прежний путь; проверка задачи27 подтвердила идентичные планы, lossless PNG и PCM.
 - `StudioProject.version` — CAS-токен (`expectedVersion`), растёт при любой записи: черновик, синхронизация источника, commit. `revision` — номер сохранённой ревизии, растёт только при commit/restore/смене источника. Это разные числа.
 - Черновик хранится текстом (`draftText`) даже при невалидном JSON. `previewJson` обновляется только готовым планом; происхождение превью — `previewRevision` (`null` = из черновика) и `previewVersion`; `previewStale` = превью не от текущей версии.
 - Restore создаёт новую ревизию со старым содержимым. Идемпотентность — `idempotencyKey` в `StudioMutation`: ключ общий на аккаунт, тот же ключ с другим запросом → `IDEMPOTENCY_CONFLICT`.
-- Каждое чтение проекта вызывает `reconcileSource`. Участники = top-N рейтинга, ID участника = `trackId`; `caption`, оформление и медиа сохраняются по этому ID. При смене отпечатка рейтинга head получает ревизию с reason `source`.
+- Каждое чтение проекта вызывает `reconcileSource`. Новый проект по турниру — v2: `source.segments` содержит готовые непустые сегменты в порядке турнира, участники — top-N каждого с локальными rank. ID участника = trackId; metadata (label/comment/album/score/bestMoment/cover) авторитетны из турнира, оформление сохраняется по ID. Новый готовый сегмент наследует общий пресет и встаёт после последнего исходного перед аутро. Авторский порядок, копии и удаление video-сегментов сохраняются. Временно неготовый source-сегмент остаётся в документе с enabled:false и восстанавливает оформление после готовности; `source.dormantSegments` хранит авторский enabled по video segment ID, а `source.suppressedSegmentIds` удерживает авторское удаление через этот цикл (в том числе удаление уже dormant части). V1 закрепляется за `source.segmentId`, не смешивает локальные рейтинги. При смене отпечатка head получает ревизию reason source.
 - Задание: `startStudioJob` → `freezeStudioProject` (снимок: resolved document, manifest, файлы с SHA-256, план) + `engineId` → `StudioJob` в статусе `queued`. Воркер берёт единственный тяжёлый слот `StudioWorkerLease` (lease 30 с, heartbeat 5 с, ≤ 3 попытки) и форкает `studio-render-child.ts`. Виды: `still`/`clip`/`audio` (≤ 15 с, длинная сторона 720) и `render` (весь таймлайн).
 - Пресеты (30 встроенных + личные `StudioPreset`) содержат только оформление и абстрактные слоты; схема отвергает участников и реальные медиа-привязки. Применение переносит медиа только по совместимой структуре, иначе `PRESET_INCOMPATIBLE`.
 
@@ -76,7 +79,7 @@
 - Домен: `npx vitest run src/video` (схема, компилятор, дуга, пресеты, бюджеты, градиент/тень)
 - Рендерер/UI/сервис: `npx vitest run src/remotion/studio-frame.test.ts src/remotion/studio-player.test.ts src/app/studio src/server/studio`
 - Интеграция: `npx vitest run src/integration/studio-` — реальная БД, рендер, yt-dlp в `studio-imports` (медленно). Общий worker на это время останавливайте.
-- Обязательно после последних правок: `npm test`, `npx tsc --noEmit`, `npm run build`
+- Обязательно после последних правок: `npm test` → `npm run build` → `npx tsc --noEmit`
 - Живой сайт: `npm run dev` (сначала проверьте, что порт 3000 свободен) + `npm run studio:worker`. Путь: `/projects` → `/studio/new` → `/studio/<id>`: «Сохранить и проверить», «Показать превью», задания PNG/клип/аудио.
 - MCP: `node scripts/verify-studio.mjs --actor you@example.com --project PROJECT_ID --kind clip --seconds 3 --output storage/studio-verification/<run>`. Нужны ровно один `--project`/`--document` и новый каталог. Код 0 — байты сверены; 1 — ошибка/отмена/таймаут; 2 — результат > 12 MiB, нужна аутентифицированная загрузка на сайте (это не подтверждение download).
 - HTML-плеер: `/watch/<token>` и скачанный `.html` (открывать с выключенной сетью) прогоняйте в headless Chrome (`puppeteer-core`). Смотрите события `waiting` у `<audio>` во время просмотра, уход кадра от часов и кадры на паузе против MP4 того же номера (PSNR). Так сделана приёмка [задачи 25](../features/25-html-player-polish/verify.md).
@@ -91,3 +94,11 @@
 - [спека 25](../specs/25-ai-video-http-contract.md) — **актуальный контракт** сайта/HTTP: `/api/studio`, Origin, страницы
 - [спека 26](../specs/26-sdk-visual-demos.md) — три демо, `CardStyle.gradient`/`shadow`, отказ от seek для JPEG
 - Фаза 20: [план](../phases/phase-20-ai-video-sdk-plan.md), [решения](../phases/phase-20-implementation-decisions.md), [приёмка](../phases/phase-20-verification.md). Фаза 21: [план](../phases/phase-21-sdk-demos-plan.md), [приёмка](../phases/phase-21-verification.md) (978/978 на `07a01f8`)
+
+## Задача 27
+
+- [Техника сегментов](../features/27-segments/tech.md), [приёмка](../features/27-segments/verify.md).
+- Тесты: `src/video/segments.test.ts`, `src/integration/studio-segments.integration.test.ts`, `src/app/studio/new/new-project.test.ts`.
+- В v2 `card.style.playSound:false` выключает и отдельный participant audio; прежняя семантика v1 сохраняется. При apply общего пресета создаваемые sound slots изолированы по сегментам, разные tick не смешиваются.
+- Четыре рецепта `video_examples`: rank-reveal, segment-intro, participant-summary, staircase.
+- Пул защищает cover/poster через FK и human 409 TOURNAMENT_ASSET_IN_USE; binding track cover замораживает файл как image.

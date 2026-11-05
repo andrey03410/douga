@@ -3,9 +3,15 @@ import { z } from "zod";
 import { userOr401, notFound, badRequest } from "@/lib/api";
 import { reorderRanking } from "@/server/tournaments";
 
-const schema = z.object({ order: z.array(z.string()).min(1) });
+const schema = z.object({
+  order: z.array(z.string()).min(1),
+  segmentId: z.string().optional(),
+});
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } },
+) {
   const auth = await userOr401();
   if ("response" in auth) return auth.response;
 
@@ -13,7 +19,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!parsed.success) return badRequest("Некорректный порядок");
 
   try {
-    await reorderRanking(auth.userId, params.id, parsed.data.order);
+    await reorderRanking(
+      auth.userId,
+      params.id,
+      parsed.data.order,
+      parsed.data.segmentId ??
+        new URL(req.url).searchParams.get("segmentId") ??
+        undefined,
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = String((e as Error).message);

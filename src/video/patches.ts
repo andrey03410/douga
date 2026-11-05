@@ -13,13 +13,18 @@ function targetObject(document: VideoDocument, target: PatchTarget): object {
       nodes.push(n);
       if (n.type === "container") collect(n.children);
     });
-  document.scenes.forEach((s) => collect(s.nodes));
+  const scenes = [
+    ...document.scenes,
+    ...(document.segments ?? []).flatMap((s) => s.scenes),
+  ];
+  scenes.forEach((s) => collect(s.nodes));
   const lists = {
     participant: document.source.participants,
     round: document.source.rounds,
     card: document.source.rounds.flatMap((r) => r.cards),
     group: document.source.rounds.flatMap((r) => r.groups ?? []),
-    scene: document.scenes,
+    segment: document.segments ?? [],
+    scene: scenes,
     node: nodes,
   };
   const found = lists[target.type].find((v) => v.id === target.id);

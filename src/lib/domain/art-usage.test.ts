@@ -9,17 +9,25 @@ import {
 
 describe("usageBreakdown", () => {
   it("counts only studio references", () => {
-    expect(usageBreakdown({ studioReferences: 2 })).toEqual({ studio: 2, total: 2 });
+    expect(usageBreakdown({ studioReferences: 2 })).toEqual({
+      studio: 2,
+      total: 2,
+    });
   });
 
   it("is all zeros for unused media", () => {
-    expect(usageBreakdown({ studioReferences: 0 })).toEqual({ studio: 0, total: 0 });
+    expect(usageBreakdown({ studioReferences: 0 })).toEqual({
+      studio: 0,
+      total: 0,
+    });
   });
 });
 
 describe("describeUsage", () => {
   it("says plainly that nothing uses the media", () => {
-    expect(describeUsage(usageBreakdown({ studioReferences: 0 }))).toBe("не используется");
+    expect(describeUsage(usageBreakdown({ studioReferences: 0 }))).toBe(
+      "не используется",
+    );
   });
 
   it("names studio references with the right plural", () => {
@@ -72,5 +80,21 @@ describe("pluralRu", () => {
     expect(pluralRu(21, files)).toBe("файл");
     expect(pluralRu(112, files)).toBe("файлов");
     expect(pluralRu(0, files)).toBe("файлов");
+  });
+});
+
+it("counts tournament covers and posters and explains their deletion protection", () => {
+  const usage = usageBreakdown({
+    studioReferences: 0,
+    trackCovers: 1,
+    segmentPosters: 1,
+  });
+  expect(usage).toEqual({ studio: 0, tournament: 2, total: 2 });
+  expect(describeUsage(usage)).toBe("2 ссылки в турнирах");
+  expect(describeDeletion(usage)).toContain("турнирах");
+  expect(sumUsage([usage, { studio: 1, total: 1 }])).toEqual({
+    studio: 1,
+    tournament: 2,
+    total: 3,
   });
 });

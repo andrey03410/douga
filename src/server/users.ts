@@ -51,11 +51,20 @@ interface KindTotals {
 }
 
 export interface UsageSummary {
-  studio: {projects:number;revisions:number;snapshots:number;bytes:number;jobs:number;resultBytes:number};
+  studio: {
+    projects: number;
+    revisions: number;
+    snapshots: number;
+    bytes: number;
+    jobs: number;
+    resultBytes: number;
+  };
   role: string;
   quotas: ReturnType<typeof quotasFor>;
   /** Pool totals with a per-kind split (images/videos/audio). */
-  pool: KindTotals & { byKind: Record<"image" | "video" | "audio", KindTotals> };
+  pool: KindTotals & {
+    byKind: Record<"image" | "video" | "audio", KindTotals>;
+  };
   archives: KindTotals;
   /** Legacy aliases the quota lines are drawn from. */
   archiveBytes: number;
@@ -111,21 +120,55 @@ export async function usageSummary(userId: string): Promise<UsageSummary> {
     bytes: trackAgg._sum.sizeBytes ?? 0,
   };
 
-  const studioProjects = await prisma.studioProject.findMany({where:{userId},include:{revisions:{select:{assetsJson:true}},_count:{select:{snapshots:true}}}});
-  const studioFiles = new Map<string,number>();
-  for(const project of studioProjects) for(const revision of project.revisions) {
-    if(!revision.assetsJson) continue;
-    const assets = JSON.parse(revision.assetsJson) as {files:Record<string,{path:string;bytes:number;posterPath?:string;posterBytes?:number}>};
-    for(const file of Object.values(assets.files)) {
-      studioFiles.set(file.path,file.bytes);
-      if(file.posterPath) studioFiles.set(file.posterPath,file.posterBytes??0);
+  const studioProjects = await prisma.studioProject.findMany({
+    where: { userId },
+    include: {
+      revisions: { select: { assetsJson: true } },
+      _count: { select: { snapshots: true } },
+    },
+  });
+  const studioFiles = new Map<string, number>();
+  for (const project of studioProjects)
+    for (const revision of project.revisions) {
+      if (!revision.assetsJson) continue;
+      const assets = JSON.parse(revision.assetsJson) as {
+        files: Record<
+          string,
+          {
+            path: string;
+            bytes: number;
+            posterPath?: string;
+            posterBytes?: number;
+          }
+        >;
+      };
+      for (const file of Object.values(assets.files)) {
+        studioFiles.set(file.path, file.bytes);
+        if (file.posterPath)
+          studioFiles.set(file.posterPath, file.posterBytes ?? 0);
+      }
     }
-  }
   const [studioJobs, exportCache] = await Promise.all([
-    prisma.studioJob.aggregate({where:{userId},_count:true,_sum:{outputBytes:true}}),
-    prisma.studioExportCache.aggregate({where:{userId},_sum:{bytes:true}}),
+    prisma.studioJob.aggregate({
+      where: { userId },
+      _count: true,
+      _sum: { outputBytes: true },
+    }),
+    prisma.studioExportCache.aggregate({
+      where: { userId },
+      _sum: { bytes: true },
+    }),
   ]);
-  const studio = {jobs:studioJobs._count,resultBytes:studioJobs._sum.outputBytes??0,projects:studioProjects.length,revisions:studioProjects.reduce((n,p)=>n+p.revisions.length,0),snapshots:studioProjects.reduce((n,p)=>n+p._count.snapshots,0),bytes:[...studioFiles.values()].reduce((n,b)=>n+b,0)+(exportCache._sum.bytes??0)};
+  const studio = {
+    jobs: studioJobs._count,
+    resultBytes: studioJobs._sum.outputBytes ?? 0,
+    projects: studioProjects.length,
+    revisions: studioProjects.reduce((n, p) => n + p.revisions.length, 0),
+    snapshots: studioProjects.reduce((n, p) => n + p._count.snapshots, 0),
+    bytes:
+      [...studioFiles.values()].reduce((n, b) => n + b, 0) +
+      (exportCache._sum.bytes ?? 0),
+  };
   return {
     studio,
     role: user.role,
@@ -193,7 +236,10 @@ export async function listUsers(): Promise<AdminUserRow[]> {
         where: { tournament: { userId: u.id } },
         _sum: { sizeBytes: true },
       }),
-      prisma.art.aggregate({ where: { userId: u.id }, _sum: { sizeBytes: true } }),
+      prisma.art.aggregate({
+        where: { userId: u.id },
+        _sum: { sizeBytes: true },
+      }),
       prisma.tournament.count({ where: { userId: u.id } }),
     ]);
     rows.push({
@@ -211,7 +257,11 @@ export async function listUsers(): Promise<AdminUserRow[]> {
  * An email listed in ADMIN_EMAILS is elevated back on its next login, so a
  * demotion would silently undo itself: refused with ADMIN_BOOTSTRAP.
  */
-export async function setUserRole(actorId: string, targetId: string, role: string) {
+export async function setUserRole(
+  actorId: string,
+  targetId: string,
+  role: string,
+) {
   if (!isAssignableRole(role)) throw new Error("BAD_ROLE");
   if (actorId === targetId) throw new Error("SELF_CHANGE");
   const target = await prisma.user.findUnique({ where: { id: targetId } });
@@ -231,8 +281,8 @@ export async function setUserRole(actorId: string, targetId: string, role: strin
  */
 export async function deleteUser(actorId: string, targetId: string) {
   if (actorId === targetId) throw new Error("SELF_CHANGE");
-  const actor = await prisma.user.findUnique({where:{id:actorId}});
-  if(!can(actor?.role,"admin:users")) throw new Error("FORBIDDEN");
+  const actor = await prisma.user.findUnique({ where: { id: actorId } });
+  if (!can(actor?.role, "admin:users")) throw new Error("FORBIDDEN");
   const target = await prisma.user.findUnique({
     where: { id: targetId },
     include: { tournaments: true },
@@ -240,27 +290,34 @@ export async function deleteUser(actorId: string, targetId: string) {
   if (!target) throw new Error("NOT_FOUND");
 
   // Delete references and rows atomically before releasing any user bytes.
-  await prisma.$transaction(async tx => {
+  await prisma.$transaction(async (tx) => {
     const activeJobs = await tx.studioJob.count({
       where: {
         userId: targetId,
-        OR: [{ status: { in: activeJobStatuses } }, { leaseUntil: { gt: new Date() } }],
+        OR: [
+          { status: { in: activeJobStatuses } },
+          { leaseUntil: { gt: new Date() } },
+        ],
       },
     });
     if (activeJobs) throw new Error("JOB_IN_USE");
     // Jobs reference snapshots and projects with onDelete: Restrict.
     await tx.studioJob.deleteMany({ where: { userId: targetId } });
     await tx.studioPublication.deleteMany({ where: { userId: targetId } });
-    await tx.studioSnapshot.deleteMany({where:{project:{userId:targetId}}});
-    await tx.studioProject.deleteMany({where:{userId:targetId}});
-    await tx.user.delete({where:{id:targetId}});
+    await tx.studioSnapshot.deleteMany({
+      where: { project: { userId: targetId } },
+    });
+    await tx.studioProject.deleteMany({ where: { userId: targetId } });
+    // Covers/posters restrict Art deletion. Remove their owning tournaments
+    // before the User cascade reaches the media pool.
+    await tx.tournament.deleteMany({ where: { userId: targetId } });
+    await tx.user.delete({ where: { id: targetId } });
   });
-  await removePath(path.join("studio",targetId));
-  await removePath(path.join("studio-jobs",targetId));
-  await removePath(path.join("studio-exports",targetId));
+  await removePath(path.join("studio", targetId));
+  await removePath(path.join("studio-jobs", targetId));
+  await removePath(path.join("studio-exports", targetId));
   for (const t of target.tournaments) {
     await removePath(path.join("tournaments", t.id));
   }
   await removePath(path.join("arts", targetId));
-
 }

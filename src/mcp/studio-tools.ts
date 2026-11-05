@@ -95,8 +95,14 @@ function manualTopExample() {
   });
   document.bindings = Object.fromEntries(
     participants.flatMap((p) => [
-      [p.media.audio, { kind: "pool" as const, assetId: `art-${p.media.audio}` }],
-      [p.media.visual, { kind: "pool" as const, assetId: `art-${p.media.visual}` }],
+      [
+        p.media.audio,
+        { kind: "pool" as const, assetId: `art-${p.media.audio}` },
+      ],
+      [
+        p.media.visual,
+        { kind: "pool" as const, assetId: `art-${p.media.visual}` },
+      ],
     ]),
   );
   document.settings = {
@@ -106,31 +112,191 @@ function manualTopExample() {
   return sdk.parseVideoDocument(document);
 }
 
+function segmentRecipe(
+  id: "rank-reveal" | "segment-intro" | "participant-summary" | "staircase",
+): sdk.VideoDocument {
+  const participants: sdk.Participant[] = [1, 2, 3].map((rank) => ({
+    id: `p${rank}`,
+    label: `Композиция ${rank}`,
+    rank,
+    comment: `Почему место ${rank}`,
+    album: "Эпизод 1",
+    score: 4 - rank,
+    media: { visual: `visual-${rank}`, audio: `audio-${rank}` },
+  }));
+  const doc = sdk.createVideoDocument({
+    kind: "top",
+    title: "OST: Эпизод 1",
+    participants,
+  });
+  doc.bindings = Object.fromEntries(
+    participants.flatMap((p) =>
+      Object.values(p.media!).map((key) => [
+        key,
+        { kind: "pool" as const, assetId: `art-${key}` },
+      ]),
+    ),
+  );
+  const common: Pick<
+    sdk.VideoSegment,
+    "id" | "kind" | "title" | "subtitle" | "poster" | "participantIds"
+  > = {
+    id: "episode-1",
+    kind: "top",
+    title: "Эпизод 1",
+    subtitle: "Любимые композиции",
+    poster: "visual-1",
+    participantIds: participants.map((p) => p.id),
+  };
+  const card: sdk.VideoNode = {
+    id: "participant-card",
+    type: "card",
+    participantId: "$participant",
+    rect: { x: 0, y: 0, width: 1, height: 0.85 },
+    style: { playSound: false },
+    label: { bind: "participant.label" },
+  };
+  let scenes: sdk.VideoScene[];
+  if (id === "segment-intro")
+    scenes = [
+      {
+        id: "intro",
+        block: "custom",
+        duration: { sec: 3 },
+        nodes: [
+          {
+            id: "poster",
+            type: "image",
+            asset: "$segment.poster",
+            style: { blur: 18 },
+            opacity: 0.35,
+          },
+          {
+            id: "title",
+            type: "text",
+            text: { bind: "segment.title" },
+            rect: { x: 0.1, y: 0.25, width: 0.8, height: 0.2 },
+          },
+          {
+            id: "subtitle",
+            type: "text",
+            text: { bind: "segment.subtitle" },
+            rect: { x: 0.1, y: 0.5, width: 0.8, height: 0.15 },
+          },
+          {
+            id: "count",
+            type: "text",
+            text: { bind: "segment.count", suffix: " места" },
+            rect: { x: 0.1, y: 0.7, width: 0.8, height: 0.1 },
+          },
+        ],
+      },
+    ];
+  else if (id === "rank-reveal")
+    scenes = [
+      {
+        id: "reveal",
+        block: "custom",
+        repeat: "participants",
+        duration: { sec: 4 },
+        nodes: [
+          {
+            id: "rank",
+            type: "text",
+            text: { bind: "participant.rank", prefix: "Место " },
+            rect: { x: 0.1, y: 0.05, width: 0.8, height: 0.15 },
+          },
+          {
+            ...card,
+            rect: { x: 0.2, y: 0.25, width: 0.6, height: 0.5 },
+            timing: { at: { sec: 1 } },
+            style: { playSound: false },
+          },
+          {
+            id: "comment",
+            type: "text",
+            text: { bind: "participant.comment" },
+            rect: { x: 0.1, y: 0.8, width: 0.8, height: 0.1 },
+            timing: { at: { sec: 1 } },
+          },
+          {
+            id: "audio",
+            type: "audio",
+            asset: "$participant.audio",
+            role: "primary",
+            timing: { at: { sec: 1 } },
+          },
+        ],
+      },
+    ];
+  else {
+    const set: sdk.VideoNode = {
+      id: "participants",
+      type: "container",
+      repeat: "participants",
+      selection: id === "staircase" ? "revealed" : "segment",
+      layout: { type: "grid", columns: 3, padding: 40, gap: 24 },
+      children: [
+        card,
+        {
+          id: "rank-label",
+          type: "text",
+          text: { bind: "participant.rank", prefix: "#" },
+          rect: { x: 0, y: 0.87, width: 1, height: 0.13 },
+        },
+      ],
+    };
+    scenes = [
+      {
+        id: "overview",
+        block: "custom",
+        ...(id === "staircase" ? { repeat: "participants" as const } : {}),
+        duration: { sec: 3 },
+        nodes: [set],
+      },
+    ];
+  }
+  return sdk.parseVideoDocument({
+    ...doc,
+    schemaVersion: 2,
+    scenes: [],
+    segments: [{ ...common, scenes }],
+  });
+}
+
 export function videoExamples() {
   return {
-  items: [
-    {
-      id: "top",
-      document: sdk.createVideoDocument({
-        kind: "top",
-        title: "Top",
-        participants: [{ id: "one", label: "Item", rank: 1 }],
-      }),
-    },
-    {
-      id: "top-manual",
-      document: manualTopExample(),
-    },
-    {
-      id: "picker-groups",
-      document: sdk.createVideoDocument({
-        kind: "picker",
-        presetId: "picker.two-groups.vertical",
-        roundCount: 1,
-      }),
-    },
-  ],
-  clientDisplayLimitation: displayLimitation,
+    items: [
+      ...(
+        [
+          "rank-reveal",
+          "segment-intro",
+          "participant-summary",
+          "staircase",
+        ] as const
+      ).map((id) => ({ id, document: segmentRecipe(id) })),
+      {
+        id: "top",
+        document: sdk.createVideoDocument({
+          kind: "top",
+          title: "Top",
+          participants: [{ id: "one", label: "Item", rank: 1 }],
+        }),
+      },
+      {
+        id: "top-manual",
+        document: manualTopExample(),
+      },
+      {
+        id: "picker-groups",
+        document: sdk.createVideoDocument({
+          kind: "picker",
+          presetId: "picker.two-groups.vertical",
+          roundCount: 1,
+        }),
+      },
+    ],
+    clientDisplayLimitation: displayLimitation,
   };
 }
 const examples = () => videoExamples();
@@ -186,13 +352,14 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   }
   register(
     "video_capabilities",
-    "Discover Studio SDK v1, authorization, resource budgets and external-client modality limits. Neutral metadata.",
+    "Discover Studio SDK v1/v2, authorization, resource budgets and external-client modality limits. Neutral metadata.",
     z.object({}),
     async () => {
       const user = await freshActor(uid);
       return {
         apiVersion: 1,
-        schemaVersion: 1,
+        schemaVersion: 2,
+        supportedSchemaVersions: [1, 2],
         compilerVersion: "1.0.0",
         protocol: {
           transport: "stdio",
@@ -348,7 +515,15 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     project
       .extend({
         section: z
-          .enum(["head", "draft", "source", "settings", "scenes", "bindings"])
+          .enum([
+            "head",
+            "draft",
+            "source",
+            "settings",
+            "scenes",
+            "segments",
+            "bindings",
+          ])
           .default("head"),
         revision: z.number().int().positive().optional(),
       })

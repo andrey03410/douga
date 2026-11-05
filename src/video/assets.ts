@@ -3,7 +3,7 @@ import type { Settings, VideoDocument, VideoNode } from "./types";
 export function collectVideoAssetKeys(document: VideoDocument): string[] {
   const keys = new Set(Object.keys(document.bindings));
   const add = (key: string | null | undefined) => {
-    if (key) keys.add(key);
+    if (key && !key.startsWith("$")) keys.add(key);
   };
   const settings = (value: Settings | undefined) => add(value?.picker?.tick);
   const nodes = (items: VideoNode[]) =>
@@ -30,7 +30,17 @@ export function collectVideoAssetKeys(document: VideoDocument): string[] {
     r.cards.forEach((c) => settings(c.settings));
     r.groups?.forEach((g) => settings(g.settings));
   });
-  document.scenes.forEach((s) => {
+  document.source.segments?.forEach((s) => add(s.poster));
+  document.segments?.forEach((s) => {
+    add(s.poster);
+    settings(s.settings);
+    s.audio?.playlist?.tracks.forEach(add);
+    s.audio?.cues?.forEach((c) => add(c.asset));
+  });
+  [
+    ...document.scenes,
+    ...(document.segments ?? []).flatMap((s) => s.scenes),
+  ].forEach((s) => {
     add(s.background);
     settings(s.settings);
     nodes(s.nodes);

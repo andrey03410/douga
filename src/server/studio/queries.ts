@@ -141,8 +141,27 @@ export async function listStudioSources(
       _count: { select: { rankings: true, tracks: true } },
     },
   });
+  const items = [];
+  for (const row of rows.slice(0, limit)) {
+    const document = createVideoDocument({ kind: "top", participants: [] });
+    document.schemaVersion = 2;
+    document.segments = [];
+    document.scenes = [];
+    document.source = {
+      kind: "tournament",
+      tournamentId: row.id,
+      participants: [],
+      rounds: [],
+    };
+    const resolved = await reconcileSource(userId, document);
+    items.push({
+      ...row,
+      segments: resolved.source.segments ?? [],
+      participantCount: resolved.source.participants.length,
+    });
+  }
   return {
-    items: rows.slice(0, limit),
+    items,
     nextCursor: rows.length > limit ? rows[limit - 1].id : null,
   };
 }
@@ -155,6 +174,9 @@ export async function getStudioSource(
   await actor(userId);
   const { limit, cursor } = studioPageSchema.parse(input);
   const document = createVideoDocument({ kind: "top", participants: [] });
+  document.schemaVersion = 2;
+  document.segments = [];
+  document.scenes = [];
   document.source = {
     kind: "tournament",
     tournamentId: sourceId,
@@ -173,15 +195,21 @@ export async function getStudioSource(
   return {
     sourceId,
     version: resolved.source.version,
+    segments: resolved.source.segments ?? [],
     items,
-    bindings: Object.fromEntries(
-      items.flatMap((p) =>
+    bindings: Object.fromEntries([
+      ...items.flatMap((p) =>
         Object.values(p.media ?? {}).map((key) => [
           key,
           resolved.bindings[key],
         ]),
       ),
-    ),
+      ...(resolved.source.segments ?? []).flatMap((segment) =>
+        segment.poster
+          ? [[segment.poster, resolved.bindings[segment.poster]]]
+          : [],
+      ),
+    ]),
     nextCursor:
       index + 1 + limit < resolved.source.participants.length
         ? items.at(-1)!.id

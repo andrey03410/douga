@@ -53,6 +53,8 @@ function sceneSummary(scene: CompiledScene) {
     durationInFrames: scene.durationInFrames,
     participantId: scene.participantId ?? null,
     roundId: scene.roundId ?? null,
+    segmentId: scene.segmentId ?? null,
+    segmentTitle: scene.segmentTitle ?? null,
     phases: Object.fromEntries(
       Object.entries(scene.phases).map(([name, frame]) => [
         name,
@@ -107,6 +109,7 @@ export async function getStudioTimeline(
     width: plan?.width ?? null,
     height: plan?.height ?? null,
     durationInFrames: plan?.durationInFrames ?? null,
+    segments: plan?.segments ?? [],
     frameConvention:
       "composition-absolute, zero-based; intervals [from,to); recommendedFrames are valid still frame indices from existing phase/visibility/active/animation boundaries",
     items,

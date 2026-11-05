@@ -222,7 +222,8 @@ it("discovers SDK schemas, protocol, examples, presets and owned sources through
   });
   expect(caps).toMatchObject({
     apiVersion: 1,
-    schemaVersion: 1,
+    schemaVersion: 2,
+    supportedSchemaVersions: [1, 2],
     compilerVersion: "1.0.0",
   });
   expect(caps.clientDisplayLimitation).toContain("client");
@@ -267,6 +268,7 @@ it("discovers SDK schemas, protocol, examples, presets and owned sources through
   );
 });
 
+// job_start may prepare a cold Remotion bundle (service budget: 120 seconds).
 it("exposes actual repeated timeline offsets and distinguishes stale preview from the frozen historical plan", async () => {
   const document = createVideoDocument({
     kind: "top",
@@ -348,7 +350,7 @@ it("exposes actual repeated timeline offsets and distinguishes stale preview fro
     { projectId: p.id, cursor: "foreign-scene" },
     "NOT_FOUND",
   );
-});
+}, 150_000);
 
 it("supports the JSON text fallback after an older MCP protocol handshake", async () => {
   const legacy = new StdioClientTransport({

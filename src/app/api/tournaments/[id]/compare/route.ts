@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { userOr401, notFound, badRequest } from "@/lib/api";
-import { getTournament, recordGroupAnswer, nextComparison } from "@/server/tournaments";
+import {
+  getTournament,
+  recordGroupAnswer,
+  nextComparison,
+} from "@/server/tournaments";
 
 const MESSAGES: Record<string, string> = {
   GROUP_MISMATCH: "Экран устарел — обновите страницу и ответьте заново",
@@ -16,7 +20,10 @@ const isIdList = (v: unknown): v is string[] =>
  * user declined to separate. A pair screen is just the two-track case, so the
  * classic "left / draw / right" answer travels the same route.
  */
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } },
+) {
   const auth = await userOr401();
   if ("response" in auth) return auth.response;
 
@@ -27,7 +34,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return badRequest("Некорректные данные сравнения");
   }
 
-  const t = await getTournament(auth.userId, params.id);
+  const t = await getTournament(
+    auth.userId,
+    params.id,
+    typeof body?.segmentId === "string"
+      ? body.segmentId
+      : (new URL(req.url).searchParams.get("segmentId") ?? undefined),
+  );
   if (!t) return notFound();
 
   try {
@@ -37,7 +50,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return badRequest(MESSAGES[code] ?? code);
   }
 
-  const updated = await getTournament(auth.userId, params.id);
+  const updated = await getTournament(
+    auth.userId,
+    params.id,
+    typeof body?.segmentId === "string"
+      ? body.segmentId
+      : (new URL(req.url).searchParams.get("segmentId") ?? undefined),
+  );
   const next = updated ? nextComparison(updated) : null;
   return NextResponse.json({
     ok: true,

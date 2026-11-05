@@ -77,3 +77,10 @@
 - [спека 10](../specs/10-mcp-server.md) — актор MCP через `MCP_ACTOR_EMAIL`.
 - [спека 17](../specs/17-media-library.md) — кабинет на агрегатах и ленивые списки.
 - [спека 24](../specs/24-ai-video-job-contract.md) — `render:run` для финального рендера студии и повторная проверка в воркере.
+
+## Сегменты и удаление аккаунта (задача 27)
+
+Картинки пула могут быть Track.coverArt и TournamentSegment.posterArt с onDelete:Restrict.
+`deleteUser` после снятия Studio-ссылок явно удаляет турниры, затем User: так cascade пула
+не упирается в ещё живую обложку/постер. Регрессия —
+`src/integration/tournament-assets.integration.test.ts` (одна картинка в обоих назначениях).

@@ -11,6 +11,13 @@ export type TextValue =
         | "document.title"
         | "participant.label"
         | "participant.rank"
+        | "participant.comment"
+        | "participant.album"
+        | "participant.score"
+        | "segment.title"
+        | "segment.subtitle"
+        | "segment.number"
+        | "segment.count"
         | "round.prompt"
         | "group.label";
       groupId?: string;
@@ -31,6 +38,7 @@ export interface ShadowStyle {
   spread?: number;
 }
 export interface CardStyle {
+  blur?: number;
   fit?: "cover" | "contain" | "fill";
   crop?: Crop;
   offsetSec?: number;
@@ -92,6 +100,10 @@ export interface Participant {
   id: string;
   label: string;
   caption?: string;
+  comment?: string;
+  album?: string;
+  score?: number;
+  bestMomentSec?: number;
   rank?: number;
   media?: { visual?: string; audio?: string };
   settings?: Settings;
@@ -118,16 +130,37 @@ export interface PickerRound {
   music?: string | null;
   background?: string;
 }
+export interface SourceSegment {
+  id: string;
+  title: string;
+  subtitle?: string;
+  poster?: string;
+  participantIds: string[];
+}
 export interface Source {
   kind: "manual" | "tournament";
   tournamentId?: string;
+  segmentId?: string;
+  segments?: SourceSegment[];
+  suppressedSegmentIds?: string[];
+  dormantSegments?: {
+    id: string;
+    sourceSegmentId: string;
+    enabled?: boolean;
+  }[];
   version?: string;
   participants: Participant[];
   rounds: PickerRound[];
 }
 export type AssetBinding =
   | { kind: "pool"; assetId: string; hash?: string }
-  | { kind: "track"; tournamentId: string; trackId: string; hash?: string }
+  | {
+      kind: "track";
+      tournamentId: string;
+      trackId: string;
+      media?: "cover";
+      hash?: string;
+    }
   | { kind: "builtin"; name: "tick" | "reveal" | "answer" };
 export interface ResolvedAsset {
   id: string;
@@ -163,6 +196,8 @@ export type VideoNode = NodeBase &
   (
     | {
         type: "container";
+        repeat?: "participants";
+        selection?: "segment" | "document" | "revealed";
         children: VideoNode[];
         flow?: "parallel" | "sequence";
         layout?: Settings["layout"];
@@ -234,8 +269,27 @@ export interface Playlist {
   volume?: number;
   duckVolume?: number;
 }
+export interface VideoSegment {
+  id: string;
+  kind: "top" | "picker" | "custom";
+  title: string;
+  subtitle?: string;
+  poster?: string;
+  sourceSegmentId?: string;
+  enabled?: boolean;
+  participantIds?: string[];
+  roundIds?: string[];
+  scenes: VideoScene[];
+  settings?: Settings;
+  audio?: VideoAudio;
+}
+export interface VideoAudio {
+  playlist?: Playlist;
+  cues?: AudioCue[];
+}
 export interface VideoDocument {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
+  segments?: VideoSegment[];
   id: string;
   title: string;
   kind: "top" | "picker";
@@ -246,7 +300,7 @@ export interface VideoDocument {
   settings: Settings;
   formatSettings?: Partial<Record<VideoFormat, Settings>>;
   scenes: VideoScene[];
-  audio?: { playlist?: Playlist; cues?: AudioCue[] };
+  audio?: VideoAudio;
   preset?: { id: string; version: number };
 }
 export interface VideoPreset {
@@ -330,6 +384,8 @@ export interface CompiledNode {
   timerFrames?: number;
 }
 export interface CompiledScene {
+  segmentId?: string;
+  segmentTitle?: string;
   id: string;
   kind: "custom" | "top" | "picker" | "answer";
   from: number;
@@ -368,6 +424,13 @@ export interface CompiledVideo {
   height: number;
   fps: number;
   durationInFrames: number;
+  segments?: {
+    id: string;
+    title: string;
+    kind: VideoSegment["kind"];
+    from: number;
+    to: number;
+  }[];
   scenes: CompiledScene[];
   audio: CompiledAudio[];
 }
@@ -379,7 +442,14 @@ export interface CompileResult {
 export type PatchTarget =
   | { type: "document" }
   | {
-      type: "participant" | "round" | "card" | "group" | "scene" | "node";
+      type:
+        | "participant"
+        | "round"
+        | "card"
+        | "group"
+        | "scene"
+        | "node"
+        | "segment";
       id: string;
     };
 export type PatchOperation =

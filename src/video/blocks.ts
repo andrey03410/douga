@@ -117,6 +117,7 @@ export function compileTop(
       );
   }
   if (
+    p.bestMomentSec === undefined &&
     snippet?.mode === "active" &&
     source &&
     (source.kind === "audio" ||
@@ -133,6 +134,17 @@ export function compileTop(
         `source.participants.${p.id}`,
       );
     else duration = Math.max(1, Math.round((end - offset) * ctx.fps));
+  }
+  if (p.bestMomentSec !== undefined) {
+    offset = p.bestMomentSec;
+    duration = frames(
+      template.duration,
+      ctx.fps,
+      Math.max(
+        1,
+        Math.round((snippet?.durationSec ?? s.top?.durationSec ?? 5) * ctx.fps),
+      ),
+    );
   }
   const scene = makeScene(
     ctx,
@@ -453,7 +465,7 @@ export function compilePicker(
         role: "primary",
         from: from + start,
         durationInFrames: activeEnd - start,
-        offsetSec: local.card?.offsetSec,
+        offsetSec: participant.bestMomentSec ?? local.card?.offsetSec,
         loop: local.card?.loop,
         volume: local.card?.volume,
       });

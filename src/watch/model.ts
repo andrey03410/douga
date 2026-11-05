@@ -41,6 +41,10 @@ export interface WatchMediaName {
 }
 
 export function chapters(plan: CompiledVideo): Chapter[] {
+  if (plan.segments)
+    return plan.segments
+      .filter((segment) => segment.to > segment.from)
+      .map((segment) => ({ frame: segment.from, label: segment.title }));
   const seenRound = new Set<string>();
   const seenPosition = new Set<string>();
   let rounds = 0;
@@ -89,7 +93,10 @@ export function nextChapterFrame(
 }
 
 /** The chapter the frame is in; nothing before the first mark. */
-export function chapterAt(marks: readonly Chapter[], frame: number): Chapter | null {
+export function chapterAt(
+  marks: readonly Chapter[],
+  frame: number,
+): Chapter | null {
   let current: Chapter | null = null;
   for (const mark of marks) if (mark.frame <= frame) current = mark;
   return current;
@@ -196,7 +203,8 @@ export function coverFrame(plan: CompiledVideo): number {
   return scene.from + Math.min(last, Math.max(0, local));
 }
 
-const fetchable = (src: string) => src.startsWith("/") || /^https?:\/\//.test(src);
+const fetchable = (src: string) =>
+  src.startsWith("/") || /^https?:\/\//.test(src);
 
 export interface UpcomingMedia {
   /** Sound to fetch into the HTTP cache before its cue mounts. */
@@ -224,7 +232,12 @@ export function upcomingMedia(
       sounds.add(cue.asset.src);
   for (const scene of plan.scenes) {
     const sceneEnd = scene.from + scene.durationInFrames;
-    if (scene.durationInFrames <= 0 || sceneEnd <= afterFrame || scene.from > end) continue;
+    if (
+      scene.durationInFrames <= 0 ||
+      sceneEnd <= afterFrame ||
+      scene.from > end
+    )
+      continue;
     for (const node of scene.nodes) {
       const asset = node.media?.asset;
       if (!asset) continue;
@@ -260,4 +273,3 @@ export function rewritePlanMedia(
     for (const node of scene.nodes) if (node.media) apply(node.media.asset);
   return next;
 }
-
