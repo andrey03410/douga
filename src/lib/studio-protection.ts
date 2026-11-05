@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 export const studioProtectionMessage = (code: string): string | null =>
   (
     ({
+      TOURNAMENT_ASSET_IN_USE:
+        "Картинка используется в турнире как обложка трека или постер сегмента. Сначала замените её в турнире.",
       STUDIO_ASSET_IN_USE:
         "Медиа используется в SDK-проекте, черновике или истории. Удалите привязки и неиспользуемые ревизии; сначала удалите связанные задания и снимки.",
       STUDIO_SOURCE_IN_USE:

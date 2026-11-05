@@ -8,11 +8,21 @@ const MESSAGES: Record<string, string> = {
 };
 
 /** Undo the last comparison screen — the whole group, not one of its pairs. */
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } },
+) {
   const auth = await userOr401();
   if ("response" in auth) return auth.response;
 
-  const t = await getTournament(auth.userId, params.id);
+  const body = await req.json().catch(() => ({}));
+  const t = await getTournament(
+    auth.userId,
+    params.id,
+    typeof body?.segmentId === "string"
+      ? body.segmentId
+      : (new URL(req.url).searchParams.get("segmentId") ?? undefined),
+  );
   if (!t) return notFound();
 
   try {

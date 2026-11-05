@@ -140,7 +140,10 @@ export async function createArt(userId: string, input: CreateArtInput) {
   const art = await prisma.$transaction(async (tx) => {
     const max = input.maxPoolBytes ?? null;
     if (max !== null) {
-      const agg = await tx.art.aggregate({ where: { userId }, _sum: { sizeBytes: true } });
+      const agg = await tx.art.aggregate({
+        where: { userId },
+        _sum: { sizeBytes: true },
+      });
       const used = agg._sum.sizeBytes ?? 0;
       if (used + input.data.length > max) throw new Error("POOL_QUOTA");
     }
@@ -187,8 +190,15 @@ export interface CreateArtFromFileInput {
  * (URL imports can be hundreds of MB). Same transactional quota claim and
  * probing/poster flow as createArt.
  */
-export async function createArtFromFile(userId: string, input: CreateArtFromFileInput) {
-  const ext = (path.extname(input.fileName) || path.extname(input.sourcePath) || "").toLowerCase();
+export async function createArtFromFile(
+  userId: string,
+  input: CreateArtFromFileInput,
+) {
+  const ext = (
+    path.extname(input.fileName) ||
+    path.extname(input.sourcePath) ||
+    ""
+  ).toLowerCase();
   const kind: PoolKind | null = IMG_EXT.includes(ext)
     ? "image"
     : VIDEO_EXT.includes(ext)
@@ -209,16 +219,23 @@ export async function createArtFromFile(userId: string, input: CreateArtFromFile
   const art = await prisma.$transaction(async (tx) => {
     const max = input.maxPoolBytes ?? null;
     if (max !== null) {
-      const agg = await tx.art.aggregate({ where: { userId }, _sum: { sizeBytes: true } });
+      const agg = await tx.art.aggregate({
+        where: { userId },
+        _sum: { sizeBytes: true },
+      });
       const used = agg._sum.sizeBytes ?? 0;
       if (used + sizeBytes > max) throw new Error("POOL_QUOTA");
     }
-    return tx.art.create({ data: { userId, filePath: "", label, kind, sizeBytes } });
+    return tx.art.create({
+      data: { userId, filePath: "", label, kind, sizeBytes },
+    });
   });
 
   const rel = artPath(userId, art.id, ext);
   const dest = absPath(rel);
-  await (await import("node:fs/promises")).mkdir(path.dirname(dest), { recursive: true });
+  await (
+    await import("node:fs/promises")
+  ).mkdir(path.dirname(dest), { recursive: true });
   try {
     await rename(input.sourcePath, dest); // same volume: cheap move
   } catch {
@@ -256,7 +273,11 @@ async function ownedArt(userId: string, artId: string) {
   return art;
 }
 
-export async function renameArt(userId: string, artId: string, label: string | null) {
+export async function renameArt(
+  userId: string,
+  artId: string,
+  label: string | null,
+) {
   const art = await ownedArt(userId, artId);
   return prisma.art.update({
     where: { id: art.id },
@@ -270,8 +291,14 @@ export async function renameArt(userId: string, artId: string, label: string | n
  */
 export async function deleteArt(userId: string, artId: string) {
   const art = await ownedArt(userId, artId);
-  await prisma.$transaction(async tx => {
-    if (await tx.studioAssetReference.count({where:{artId:art.id}})) throw new Error("STUDIO_ASSET_IN_USE");
+  await prisma.$transaction(async (tx) => {
+    if (await tx.studioAssetReference.count({ where: { artId: art.id } }))
+      throw new Error("STUDIO_ASSET_IN_USE");
+    if (
+      (await tx.track.count({ where: { coverArtId: art.id } })) ||
+      (await tx.tournamentSegment.count({ where: { posterArtId: art.id } }))
+    )
+      throw new Error("TOURNAMENT_ASSET_IN_USE");
     await tx.art.delete({ where: { id: art.id } });
   });
   await removePath(art.filePath);
@@ -290,7 +317,10 @@ export interface BulkDeleteResult {
  * Delete several pool media in one pass. Each id goes through `deleteArt`;
  * an id that cannot be deleted is reported, not fatal.
  */
-export async function deleteArts(userId: string, ids: string[]): Promise<BulkDeleteResult> {
+export async function deleteArts(
+  userId: string,
+  ids: string[],
+): Promise<BulkDeleteResult> {
   const unique = [...new Set(ids.filter((id) => typeof id === "string" && id))];
   if (!unique.length) throw new Error("NO_IDS");
   if (unique.length > MAX_BULK_DELETE) throw new Error("TOO_MANY");

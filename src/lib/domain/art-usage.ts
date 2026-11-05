@@ -1,18 +1,25 @@
-// What a pool media is used for. After classic constructors are gone, the only
-// references are studio drafts and revisions. Those block deletion.
+// Pool media references in Studio and tournament covers/posters block deletion.
 
 export interface ArtRelationCounts {
   studioReferences: number;
+  trackCovers?: number;
+  segmentPosters?: number;
 }
 
 export interface UsageBreakdown {
   studio: number;
+  tournament?: number;
   total: number;
 }
 
 export function usageBreakdown(counts: ArtRelationCounts): UsageBreakdown {
   const studio = counts.studioReferences;
-  return { studio, total: studio };
+  const tournament = (counts.trackCovers ?? 0) + (counts.segmentPosters ?? 0);
+  return {
+    studio,
+    ...(tournament ? { tournament } : {}),
+    total: studio + tournament,
+  };
 }
 
 /** Sum the breakdowns of a selection (bulk delete warns about the whole batch). */
@@ -21,6 +28,9 @@ export function sumUsage(list: UsageBreakdown[]): UsageBreakdown {
     (acc, u) => ({
       studio: acc.studio + u.studio,
       total: acc.total + u.total,
+      ...((acc.tournament ?? 0) + (u.tournament ?? 0)
+        ? { tournament: (acc.tournament ?? 0) + (u.tournament ?? 0) }
+        : {}),
     }),
     { studio: 0, total: 0 },
   );
@@ -39,11 +49,22 @@ export function pluralRu(n: number, forms: [string, string, string]): string {
 /** Short "what uses it" line for a pool card. */
 export function describeUsage(u: UsageBreakdown): string {
   if (!u.total) return "не используется";
-  return `${u.studio} ${pluralRu(u.studio, ["ссылка", "ссылки", "ссылок"])} в проектах Studio`;
+  return [
+    u.studio
+      ? `${u.studio} ${pluralRu(u.studio, ["ссылка", "ссылки", "ссылок"])} в проектах Studio`
+      : "",
+    u.tournament
+      ? `${u.tournament} ${pluralRu(u.tournament, ["ссылка", "ссылки", "ссылок"])} в турнирах`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** What deletion will actually do. Studio references block the delete. */
 export function describeDeletion(u: UsageBreakdown): string {
+  if (u.tournament)
+    return "Удаление недоступно: медиа используется как обложка или постер в турнирах";
   if (u.studio)
     return "Удаление недоступно: медиа используется в черновиках или версиях Studio";
   return "";

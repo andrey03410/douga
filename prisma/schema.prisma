@@ -52,6 +52,7 @@ model Tournament {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  segments TournamentSegment[]
   studioReferences StudioAssetReference[]
   tracks       Track[]
   comparisons  Comparison[]
@@ -59,10 +60,37 @@ model Tournament {
   rankings     Ranking[]
 }
 
+model TournamentSegment {
+  id String @id @default(cuid())
+  tournamentId String
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  title String
+  subtitle String?
+  posterArtId String?
+  posterArt Art? @relation("SegmentPoster", fields: [posterArtId], references: [id], onDelete: Restrict)
+  order Int
+  status String @default("in_progress")
+  topSize Int?
+  bonusOpponents Int @default(0)
+  tracks Track[]
+  batches ComparisonBatch[]
+  rankings Ranking[]
+  @@index([tournamentId, order])
+}
+
 model Track {
   id           String  @id @default(cuid())
   tournamentId String
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  segmentId String?
+  segment TournamentSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  album String?
+  sourceFolder String?
+  comment String?
+  bestMomentSec Float?
+  coverPath String?
+  coverArtId String?
+  coverArt Art? @relation("TrackCover", fields: [coverArtId], references: [id], onDelete: Restrict)
   title        String
   artist       String?
   filePath     String
@@ -84,6 +112,8 @@ model ComparisonBatch {
   id           String   @id @default(cuid())
   tournamentId String
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  segmentId String?
+  segment TournamentSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   size         Int // tracks shown on the screen
   itemIds      String // JSON array of the shown track ids, in the order shown
   createdAt    DateTime @default(now())
@@ -108,6 +138,8 @@ model Ranking {
   id           String   @id @default(cuid())
   tournamentId String
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  segmentId String?
+  segment TournamentSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   trackId      String
   rank         Int
   score        Float
@@ -133,6 +165,8 @@ model Art {
   createdAt DateTime @default(now())
 
   studioReferences StudioAssetReference[]
+  trackCovers Track[] @relation("TrackCover")
+  segmentPosters TournamentSegment[] @relation("SegmentPoster")
 }
 
 // Background URL-import job (yt-dlp): downloads a video/audio into the pool.
