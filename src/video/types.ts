@@ -489,6 +489,7 @@ export interface CompiledScene {
   id: string;
   kind: "custom" | "top" | "picker" | "answer" | "board";
   boardEvents?: BoardEvent[];
+  boardState?: BoardState;
   from: number;
   durationInFrames: number;
   background: string;
