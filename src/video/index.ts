@@ -8,3 +8,4 @@ export * from "./patches";
 export * from "./assets";
 
 export * from "./board-state";
+export { boardFamilies } from "./board-presets";

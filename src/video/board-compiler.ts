@@ -204,5 +204,9 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
     const s = scene(`focus/${encodeURIComponent(slot.id)}`, focus, resolution.final, slot.label, slot.id);
     s.boardEvents!.push({ event: "board.summary", frame: 0, slotId: slot.id });
   }
+  if (focus) {
+    const overview = scene("summary-final", f(p.finalSec, 2, 1), resolution.final);
+    overview.boardEvents!.push({ event: "board.summary", frame: 0 });
+  }
   return scenes;
 }

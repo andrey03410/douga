@@ -1,4 +1,5 @@
 import type {
+  BoardDefinition,
   Participant,
   PickerRound,
   Time,
@@ -15,9 +16,11 @@ import {
   videoPresetSchema,
 } from "./schema";
 import { getBuiltinPreset, applyVideoPreset } from "./presets";
+import { createBoardDocument } from "./board-presets";
 import { videoResourceLimits } from "./resource-limits";
 export interface CreateVideoOptions {
-  kind: "top" | "picker";
+  kind: "top" | "picker" | "board";
+  board?: BoardDefinition;
   id?: string;
   title?: string;
   format?: VideoFormat;
@@ -40,11 +43,12 @@ export function createVideoDocument(
     ? videoPresetSchema.parse(options.preset)
     : getBuiltinPreset(
         options.presetId ??
-          `${options.kind}.classic.${options.format ?? "wide"}`,
+          `${options.kind}.${options.kind === "board" ? "tier" : "classic"}.${options.format ?? "wide"}`,
       );
   if (!preset) throw new Error(`Unknown preset: ${options.presetId}`);
   if (preset.kind !== options.kind)
     throw new Error("Preset kind does not match requested kind");
+  if (options.kind === "board") return createBoardDocument(options, preset);
   const participants: Participant[] = structuredClone(
     options.participants ??
       (options.kind === "top"

@@ -136,7 +136,7 @@ export function compileGlobalAudio(
               .filter(
                 (n) =>
                   n.type === "card" &&
-                  n.activeWindow &&
+                  n.activeWindow && n.activeWindow.to > n.activeWindow.from &&
                   (!a.cardId || n.cardId === a.cardId) &&
                   (!a.participantId || n.participantId === a.participantId),
               )

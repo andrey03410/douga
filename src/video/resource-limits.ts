@@ -170,7 +170,7 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
         const board = scene.board;
         const rounds = Array.isArray(board.rounds) ? board.rounds : [];
         const slots = Array.isArray(board.slots) ? board.slots.length : 0;
-        let candidates = 0, phases = 2 + ((board.presentation?.rowFocusSec ?? 0) > 0 ? slots : 0);
+        let candidates = 0, phases = 2 + ((board.presentation?.rowFocusSec ?? 0) > 0 ? slots + 1 : 0);
         for (const round of rounds) {
           const cards = Array.isArray(round?.cards) ? round.cards.length : 0;
           candidates += cards;

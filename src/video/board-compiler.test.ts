@@ -43,13 +43,15 @@ describe("board compilation", () => {
     d.bindings.song = { kind: "pool", assetId: "song" };
     d.bindings.hit = { kind: "pool", assetId: "hit" };
     d.audio = { cues: [{ id: "hit", asset: "hit", role: "sfx", at: { sec: 0 }, duration: { sec: .1 }, anchor: { event: "board.place", cardId: "c1" } }] };
+    d.audio.cues!.push({ id: "reveal", asset: "hit", role: "sfx", at: { sec: 0 }, duration: { sec: .1 }, anchor: { event: "card.reveal" } });
     const result = compileVideo(d, { song: { id: "song", kind: "audio", src: "song.wav", durationSec: 10 }, hit: { id: "hit", kind: "audio", src: "hit.wav", durationSec: 1 } });
     expect(result.ready).toBe(true);
     const primary = result.plan.audio.filter((a) => a.role === "primary");
     expect(primary).toHaveLength(1);
     expect(primary[0].durationInFrames).toBe(30);
     const placement = result.plan.scenes.find((s) => s.boardEvents?.some((e) => e.event === "board.place" && e.cardId === "c1"))!;
-    expect(result.plan.audio.find((a) => a.role === "sfx")!.from).toBe(placement.from);
+    expect(result.plan.audio.find((a) => a.id.startsWith("hit/"))!.from).toBe(placement.from);
+    expect(result.plan.audio.filter((a) => a.id.startsWith("reveal/"))).toHaveLength(2);
   });
   it("defers placements until all questions were shown and hides identities", () => {
     const b = board(); b.presentation = { ...b.presentation, answerReveal: "end", hideLabelsUntilPlaced: true, hideVisualsUntilPlaced: true };
@@ -66,7 +68,8 @@ describe("board compilation", () => {
     const d = doc(b); d.output.format = "vertical";
     const r = compileVideo(d); expect(r.ready).toBe(true);
     expect(r.plan.scenes.flatMap((s) => s.nodes).some((n) => n.text === "Power")).toBe(true);
-    expect(r.plan.scenes.at(-1)!.id).toContain("focus");
+    expect(r.plan.scenes.some((s) => s.id.includes("focus"))).toBe(true);
+    expect(r.plan.scenes.at(-1)!.nodes.filter((n) => n.id.includes("/slot-label/"))).toHaveLength(9);
     for (const s of r.plan.scenes) for (const n of s.nodes) {
       expect(n.rect.x).toBeGreaterThanOrEqual(0); expect(n.rect.y).toBeGreaterThanOrEqual(0);
       expect(n.rect.x + n.rect.width).toBeLessThanOrEqual(1080.01);

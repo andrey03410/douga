@@ -122,6 +122,7 @@ async function main() {
       ...["classic", "minimal", "cinematic"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `top.${name}.${format}`)),
       ...["classic", "portrait", "memory", "arc", "two-groups", "three-groups", "separate-answer"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `picker.${name}.${format}`)),
     ];
+    expected.push(...["tier", "kmk", "smash-pass", "blind-rank", "draft", "sort-quiz", "alignment", "budget-draft"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `board.${name}.${format}`)));
     const presets = [];
     let cursor;
     do {

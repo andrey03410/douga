@@ -267,6 +267,9 @@ function segmentRecipe(
 export function videoExamples() {
   return {
     items: [
+      ...(["tier", "kmk", "smash-pass", "blind-rank", "draft", "sort-quiz", "alignment", "budget-draft"] as const).map((family) => ({
+        id: `board-${family}`, document: sdk.createVideoDocument({ kind: "board", presetId: `board.${family}.vertical` }),
+      })),
       ...(
         [
           "rank-reveal",

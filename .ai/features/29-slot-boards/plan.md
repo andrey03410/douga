@@ -37,12 +37,12 @@
 Интерфейсы: BoardDefinition/BoardRound/BoardCard/BoardAction/BoardState;
 `createBoardState`, `applyBoardAction`, `resolveBoard` по tech T02.
 
-- [ ] RED: тесты вместимости, атомарной замены, возврата стоимости, блокировки,
+- [x] RED: тесты вместимости, атомарной замены, возврата стоимости, блокировки,
   сброса/carry, недоступной карточки и дублей ID; схема принимает board и отвергает CSS/лишние поля.
-- [ ] GREEN: типы, строгие схемы, reducer/resolver, asset keys, стабильные патчи и preflight.
-- [ ] Проверка: `npx vitest run src/video/board-state.test.ts src/video/board-schema.test.ts`.
+- [x] GREEN: типы, строгие схемы, reducer/resolver, asset keys, стабильные патчи и preflight.
+- [x] Проверка: `npx vitest run src/video/board-state.test.ts src/video/board-schema.test.ts`.
   Готово: корректные состояния/диагностика, вход не изменён, все тесты зелёные.
-- [ ] Коммит `feat(video): add declarative board rules and schema`.
+- [x] Коммит `feat(video): add declarative board rules and schema`.
 
 ### Задача 2. Компиляция досок
 
@@ -51,13 +51,13 @@
 
 Потребляет BoardResolution; выдаёт обычные CompiledScene[] и ctx.audio.
 
-- [ ] RED: итоговые позиции, промежуточное движение, очистка раунда/carry, скрытые
+- [x] RED: итоговые позиции, промежуточное движение, очистка раунда/carry, скрытые
   будущие кандидаты, матрица, бюджетный счётчик, звук активного кандидата и события.
-- [ ] GREEN: фазы, раскладка rows/grid/free, анимация действий, комментарии,
+- [x] GREEN: фазы, раскладка rows/grid/free, анимация действий, комментарии,
   фокус слотов, отложенное раскрытие, аудио и совместимость сегментов.
-- [ ] Проверка: `npx vitest run src/video/board-compiler.test.ts src/video/segments.test.ts`.
+- [x] Проверка: `npx vitest run src/video/board-compiler.test.ts src/video/segments.test.ts`.
   Готово: конечный и промежуточный кадры правильны, время и события детерминированы.
-- [ ] Коммит `feat(video): compile board sequences into video scenes`.
+- [x] Коммит `feat(video): compile board sequences into video scenes`.
 
 ### Задача 3. Пресеты и публичный SDK
 
@@ -68,13 +68,13 @@
 Интерфейсы: createVideoDocument(kind:board, board?), catalog, extract/apply;
 публичные schema/examples через существующий MCP.
 
-- [ ] RED: каждый из 24 пресетов даёт готовый документ; extraction не хранит
+- [x] RED: каждый из 24 пресетов даёт готовый документ; extraction не хранит
   участников/медиа; apply сохраняет назначения и отклоняет несовместимость;
   смешанный документ board/top/picker работает.
-- [ ] GREEN: фабрика, канонические и короткие ID, extraction/apply, schema/catalog/examples,
+- [x] GREEN: фабрика, канонические и короткие ID, extraction/apply, schema/catalog/examples,
   серверные типы и корректные подписи существующих проектов.
-- [ ] Проверка: `npx vitest run src/video src/mcp/instructions.test.ts`.
-- [ ] Коммит `feat(studio): expose board presets and SDK recipes`.
+- [x] Проверка: `npx vitest run src/video src/mcp/instructions.test.ts`.
+- [x] Коммит `feat(studio): expose board presets and SDK recipes`.
 
 ### Задача 4. Проверка и знания
 
