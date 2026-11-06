@@ -216,3 +216,7 @@ Gallery fresh5categories/profile/intensity/variants/realclipboard/mobile390/0err
 Root viewed latest watch/mobile screenshots. Session82059 exit0. Own dev allPIDs
 terminated,session17305 expected143;3000/3001free. No generalworker/probes remain.
 Task4 complete: finalQG2/review/live passed. Task5 docs coherent; next commit/push/PR.
+
+PR создан: https://github.com/andrey03410/douga/pull/11 (30: Моушен-кит Video SDK),
+ветка pushed origin/feat/30-motion-kit. Stage review; owner gate пропущен по
+явной автономности. QG2 source5a92ab0,после него только docs.

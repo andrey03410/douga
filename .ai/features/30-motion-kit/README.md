@@ -2,9 +2,9 @@
 id: 30
 title: Моушен-кит Video SDK
 track: product
-stage: build
+stage: review
 branch: feat/30-motion-kit
-pr:
+pr: https://github.com/andrey03410/douga/pull/11
 started: 2026-11-06
 merged:
 ---
@@ -29,7 +29,8 @@ merged:
 
 Реализация, финальный QG (1142теста/build/tsc), настоящее MCP, MP4,
 Studio/watch/offline и галерея проверены на5a92ab0. Итоговое ревью Approved,
-все FR01–FR03 закрыты. Создать PR и автономно влить в main.
+все FR01–FR03 закрыты. [PR #11](https://github.com/andrey03410/douga/pull/11)
+создан; следующий шаг — автономное вливание в main.
 Ход и evidence — в [execution.md](execution.md) и [verify.md](verify.md).
 
 ## Хвосты
