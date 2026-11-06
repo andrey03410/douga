@@ -1,3 +1,4 @@
+import { compiledMediaUsages } from "../video/compiled-media";
 import { playerPremountFrames } from "@/remotion/premount";
 import type { CompiledVideo, ResolvedAsset } from "@/video";
 
@@ -230,20 +231,17 @@ export function upcomingMedia(
   for (const cue of plan.audio)
     if (cue.durationInFrames > 0 && cue.from > afterFrame && cue.from <= end)
       sounds.add(cue.asset.src);
-  for (const scene of plan.scenes) {
-    const sceneEnd = scene.from + scene.durationInFrames;
+  for (const usage of compiledMediaUsages(plan)) {
     if (
-      scene.durationInFrames <= 0 ||
-      sceneEnd <= afterFrame ||
-      scene.from > end
+      !usage.media ||
+      usage.durationInFrames <= 0 ||
+      usage.from + usage.durationInFrames <= afterFrame ||
+      usage.from > end
     )
       continue;
-    for (const node of scene.nodes) {
-      const asset = node.media?.asset;
-      if (!asset) continue;
-      if (asset.kind === "image") stills.add(asset.src);
-      if (asset.posterSrc) stills.add(asset.posterSrc);
-    }
+    const asset = usage.asset;
+    if (asset.kind === "image") stills.add(asset.src);
+    if (asset.posterSrc) stills.add(asset.posterSrc);
   }
   return { sounds: [...sounds].filter(fetchable), stills: [...stills] };
 }
@@ -268,8 +266,6 @@ export function rewritePlanMedia(
       asset.posterSrc = watchMediaPath(token, name.poster);
     }
   };
-  for (const cue of next.audio) apply(cue.asset);
-  for (const scene of next.scenes)
-    for (const node of scene.nodes) if (node.media) apply(node.media.asset);
+  for (const usage of compiledMediaUsages(next)) apply(usage.asset);
   return next;
 }

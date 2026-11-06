@@ -6,7 +6,7 @@ import {
   renderStill,
   selectComposition,
 } from "@remotion/renderer";
-import type { ResolvedAsset } from "@/video";
+import { compiledMediaUsages, type ResolvedAsset } from "@/video";
 import { fileHash, safeFile } from "./assets";
 import { verifyEngine } from "./engine";
 import { absPath } from "@/lib/storage";
@@ -55,7 +55,10 @@ export async function renderStudioAttempt(
     }
   }
   const plan = structuredClone(frozen.plan);
+  const rewritten = new WeakSet<ResolvedAsset>();
   const rewrite = (asset: ResolvedAsset) => {
+    if (rewritten.has(asset)) return;
+    rewritten.add(asset);
     const src = sources.get(asset.src);
     if (!src) throw new StudioError("ASSET_RESOLUTION_FAILED");
     asset.src = src;
@@ -65,9 +68,7 @@ export async function renderStudioAttempt(
       asset.posterSrc = poster;
     }
   };
-  for (const scene of plan.scenes)
-    for (const node of scene.nodes) if (node.media) rewrite(node.media.asset);
-  for (const cue of plan.audio) rewrite(cue.asset);
+  for (const usage of compiledMediaUsages(plan)) rewrite(usage.asset);
   const inputProps = { plan, assetMode: "static" };
   const browserExecutable = process.env.REMOTION_BROWSER_EXECUTABLE;
   const composition = await selectComposition({

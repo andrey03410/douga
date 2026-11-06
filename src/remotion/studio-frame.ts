@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { spring } from "remotion";
+import { evaluateMotion } from "./motion-frame";
 import type {
   CompiledAnimation,
   CompiledAudio,
@@ -65,11 +66,18 @@ export function evaluateNode(node: CompiledNode, frame: number, fps: number) {
       state[animation.property] *= value;
     else state[animation.property] += value;
   }
+  const motion = evaluateMotion(node.motion ?? [], frame, fps, node.rect);
+  state.x += motion.x;
+  state.y += motion.y;
+  state.rotate += motion.rotate;
+  state.scale *= motion.scale;
+  state.opacity *= motion.opacity;
   const visible =
     frame >= node.from &&
     frame < node.from + node.durationInFrames &&
     inWindows(node.visible, frame);
   return {
+    ...motion,
     ...state,
     opacity: clamp(state.opacity),
     visible,
@@ -193,7 +201,8 @@ export function transitionAt(
   width: number,
 ) {
   const length = Math.min(transition.durationInFrames, duration / 2);
-  if (transition.type === "none" || length <= 0) return { opacity: 1, x: 0 };
+  if (!["fade", "slide"].includes(transition.type) || length <= 0)
+    return { opacity: 1, x: 0 };
   const enter = clamp(frame / length),
     exit = clamp((duration - frame) / length);
   return transition.type === "fade"

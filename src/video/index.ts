@@ -14,3 +14,5 @@ export * from "./motion-types";
 export * from "./motion-schema";
 export * from "./motion-catalog";
 export { applySceneMotion } from "./motion-compiler";
+
+export * from "./compiled-media";
