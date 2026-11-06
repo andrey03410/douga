@@ -40,9 +40,20 @@ export function mergeSettings(...layers: (Settings | undefined)[]): Settings {
     for (const key of Object.keys(layer) as (keyof Settings)[]) {
       const value = layer[key];
       if (value === undefined) continue;
-      if (typeof value === "object" && !Array.isArray(value)) {
+      if (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
         const previous = result.top?.snippet;
         (result as any)[key] = { ...((result[key] as object) ?? {}), ...value };
+        if (key === "backdrop" && layer.backdrop) {
+          // A new source is a semantic choice, not an extra paint property.
+          if (layer.backdrop.source && layer.backdrop.source !== "asset")
+            delete result.backdrop!.asset;
+          if (layer.backdrop.asset && layer.backdrop.source === undefined)
+            result.backdrop!.source = "asset";
+        }
         if (key === "top" && layer.top?.snippet)
           result.top!.snippet = { ...previous, ...layer.top.snippet };
       } else (result as any)[key] = value;

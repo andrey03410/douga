@@ -2,6 +2,39 @@
 
 Как Douga превращает план студии в MP4: одна композиция Remotion `Studio` в headless Chrome. Очередь, бюджеты и воркер описаны в [studio-sdk.md](studio-sdk.md). Нарезка офлайн-`.html` живёт отдельно.
 
+## Моушен и resolved media
+
+- [`motion-frame.ts`](../../src/remotion/motion-frame.ts) оценивает 40 закрытых
+  эффектов по scene-local frame/fps; движение складывается с keyframes.
+  [`MotionText.tsx`](../../src/remotion/MotionText.tsx) сохраняет пробелы,
+  графемы Unicode и конечное число;
+  переводы строк остаются в общем inline flow, а нейтральная поза возвращает
+  исходный text node для сохранения кернинга; [`MotionWidgets.tsx`](../../src/remotion/MotionWidgets.tsx)
+  рисует timer/VS/badge/progress, [`MotionBackdrop.tsx`](../../src/remotion/MotionBackdrop.tsx)
+  — пять фонов из seed/кадра. CSS animations и wall-clock не используются.
+- [`motion-transition.ts`](../../src/remotion/motion-transition.ts) соединяет
+  соседние сцены wipe/zoom/push/flash/iris/split/blur/crossfade. Outgoing удерживает
+  последний кадр и Freeze context (включая source frame видео), без собственного
+  fade/slide и без повторного аудио. Временной разрыв не перескакивается.
+  Новый переход duration>0 у непосредственно следующей сцены заменяет только
+  legacy exit предыдущей: её enter сохраняется, стык не возвращает уже исчезнувший
+  контент. Duration0, разрыв, последняя сцена и legacy→legacy сохраняют старую математику.
+  Ключ backdrop layer берётся из исходного массива до active filtering: продолжающий
+  video слой не перемонтируется, когда соседний слой заканчивает crossfade.
+- У crossfade/zoom/blur outgoing непрозрачен под incoming до конца перехода:
+  одновременные opacity .5/.5 дают провал покрытия и здесь запрещены.
+  Цвет с alpha строится через `studio-paint.ts:colorWithAlpha`, а не добавлением
+  hex-суффикса к произвольному валидному CSS color. Новые VS/badge имеют fallback
+  fontSize от rect; explicit style.fontSize приоритетнее.
+- [`compiled-media.ts`](../../src/video/compiled-media.ts): `compiledMediaUsages(plan)`
+  — общий обход audio, nodes.media и backdrop.layers.media. Его используют
+  worker rewrite, watch rewrite/preload и offline slices/posters/retarget/unresolved.
+  Фоновые видео не должны пропадать, даже если scene.nodes.media пуст.
+  Offline клонирует asset на usage: общий источник с разными обрезками не должен
+  перезаписывать src/duration соседнего usage. При rewrite shared asset обходится один раз.
+- Проверка задачи 30: старые picker answer/board move дают 5/5 одинаковых
+  декодированных RGBA кадров; новые эффекты требуют настоящего MP4 и live watch/offline.
+
 ## Где код
 - [`src/remotion/index.ts`](../../src/remotion/index.ts) → [`Root.tsx`](../../src/remotion/Root.tsx) — одна композиция `Studio` (`STUDIO_COMPOSITION_ID`). `calculateMetadata` берёт `durationInFrames`, `fps`, `width` и `height` из `props.plan`
 - [`src/remotion/StudioVideo.tsx`](../../src/remotion/StudioVideo.tsx) — кадр студии; `style.blur` применяется к картинке, видео и карточке. V1 без blur сохраняет прежний стиль. У `<Img>` стоит `pauseWhenLoading`, но только пока адрес не декодирован заранее (`imageDecoded` из [`image-ready.ts`](../../src/remotion/image-ready.ts)). Покадровый MP4 ждёт кадр через `delayRender`. `premountFor` (2 с, [`premount.ts`](../../src/remotion/premount.ts)) Remotion применяет только в Player

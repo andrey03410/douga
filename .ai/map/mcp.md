@@ -11,6 +11,29 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
 
 Сервер работает от имени одного аккаунта Douga, поэтому всё созданное видно на сайте этого аккаунта.
 
+## Моушен-кит
+
+- `video_capabilities.motion` объявляет catalogVersion1, 67 записей, четыре
+  профиля, три силы и маршруты discovery/галереи. Всего зарегистрировано 52 tools.
+- `video_motion_list({category?,limit?,cursor?})`: summaries без example,
+  limit1..100 (default20), version/total/items/nextCursor. Cursor — непрозрачный
+  ключ category:name последней записи; применять с тем же category.
+- `video_motion_get({name,category?})`: полная metadata и `entry.example`,
+  явно помеченный authoring-fragment. Flash существует в effect и transition;
+  без category — `MOTION_CATEGORY_REQUIRED`. Flip — alias flip-y. Unknown — NOT_FOUND.
+- `completeExampleId` ведёт к полному рецепту категории, не обязательно точному
+  выбранному эффекту. `video_examples({id?})` читает один либо все 27 документов:
+  15 прежних и 12 motion-рецептов. Новые items включают standInManifest и note;
+  synthetic pool IDs надо заменить собственными assetId перед сохранением.
+- [`motion-examples.ts`](../../src/video/motion-examples.ts) — общий browser-safe
+  builder всех 67 локальных превью; [`/studio/motion`](../../src/app/studio/motion/page.tsx)
+  требует вход, держит один StudioPreview и копирует подписанный fragment envelope.
+  Профиль/сила/вариант пересобирают тот же VideoDocument, compiler и renderer.
+- Timeline читает существующие motion.clip/window границы как composition-absolute
+  recommendedFrames, включая последний/следующий кадр перехода. Он не компилирует
+  авторский JSON повторно и не прибавляет node.from к уже scene-local clip.from.
+- [Задача 30](../features/30-motion-kit/README.md), [SDK-гид](../features/30-motion-kit/sdk-guide.md).
+
 ## Где код
 
 - [`src/mcp/server.ts`](../../src/mcp/server.ts) — точка входа. `new McpServer({name, version}, {instructions})` и `StdioServerTransport`. Обёртка `guard` перечитывает роль при каждом вызове

@@ -2,6 +2,43 @@
 
 Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
 
+## Моушен-кит
+
+- [`motion-types.ts`](../../src/video/motion-types.ts), [`motion-schema.ts`](../../src/video/motion-schema.ts),
+  [`motion-catalog.ts`](../../src/video/motion-catalog.ts) и [`motion-compiler.ts`](../../src/video/motion-compiler.ts)
+  — закрытый каталог v1: 40 эффектов, 10 хореографий, 8 новых переходов,
+  5 фонов и виджеты timer/versus/badge/progress. Короткий [SDK-гид](../features/30-motion-kit/sdk-guide.md).
+- `settings.motion`: profile `smooth|snappy|bouncy|cinematic`, intensity
+  `subtle|normal|bold`, общая `duration:Time`, каналы `enter/exit/loop/emphasis`,
+  `stagger:{interval:Time,order:forward|reverse|center|rows}`, `choreography`.
+  Узел переопределяет параметры через `motion`. Канал — имя либо
+  `{name,duration?,delay?,intensity?,direction?,at?}`; `flip` нормализуется в `flip-y`.
+- `at:Time` отсчитывается от node.from; `{event,offset?}` — от scene-local события.
+  События scene.start/card.reveal/timer.start/answer.reveal и board.*; board event
+  уточняется cardId/actionId/slotId. У card.reveal допустим cardId текущей сцены;
+  остальные phase events selectors не принимают. Недоступное событие/карточка —
+  диагностическая ошибка, fallback на начало первого reveal запрещён.
+- Отсутствие наследует настройку, `null` выключает канал/хореографию/фон.
+  Неявный global enter применяется к листьям. Собственный transform контейнера
+  не копируется детям; container.motion.stagger задаёт локальный каскад их анимаций.
+- IR сохраняет optional `node.motion[]` с scene-local from/duration/window;
+  старые keyframes, исходные окна, аудио и число кадров не переписываются.
+  Длительности вписываются в reveal/visible окно, включая короткие сцены.
+  Порядок versus-impact: карточки → VS → timer; rank-reveal: номер → арт → текст.
+- `settings.backdrop` выбирает art-blur/gradient-flow/light-orbs/particles/vignette.
+  Источники current-card/round/asset; explicit asset обязателен для source asset.
+  Переключение на round/current-card очищает унаследованный asset. В decision
+  фон раунда либо нейтральная подложка, победитель — только после answer.
+  Resolved медиа лежат в `scene.backdrop.layers[].media`; обходы медиа
+  обязаны учитывать эти слои. У preset перенос назначений независим по settings-уровням.
+- `settings.timer.variant`: digits/ring/segments/bar. Новые узлы versus
+  (clean/neon/slash/impact), badge (rank/round/winner/label) и progress (scene/video).
+  Explicit badge.text отключает auto-binding. Video progress получает общую длину
+  после сборки v2 и scene-local from = -scene.from.
+- Частицы ≤32, текстовые motion fragments ≤500 на сцену. Случайность по seed,
+  без wall-clock/произвольного JS/CSS. Без новых настроек старый IR не меняется;
+  проверка задачи 30 сравнивает полный JSON всех 54 пресетов × 5 FPS.
+
 ## Где код
 - [`src/video/`](../../src/video/) — домен SDK без I/O. Публичный вход — [`index.ts`](../../src/video/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
   - [`schema.ts`](../../src/video/schema.ts) / [`types.ts`](../../src/video/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`

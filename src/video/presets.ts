@@ -82,7 +82,8 @@ export function getBuiltinPresets(): VideoPreset[] {
   return [...presets, ...getBoardPresets()];
 }
 export function getBuiltinPreset(id: string): VideoPreset | undefined {
-  const canonical = id.startsWith("board.") && id.split(".").length === 2 ? `${id}.wide` : id;
+  const canonical =
+    id.startsWith("board.") && id.split(".").length === 2 ? `${id}.wide` : id;
   return getBuiltinPresets().find((p) => p.id === canonical);
 }
 export class PresetIncompatibleError extends Error {
@@ -139,8 +140,12 @@ function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
       const at = `${path}.${i}`;
       if (node.type === "container" && target.type === "container")
         transfer(node.children, target.children, `${at}.children`);
-      if (node.type === "text" && target.type === "text")
-        target.text = structuredClone(node.text);
+      if (
+        (node.type === "text" && target.type === "text") ||
+        (node.type === "badge" && target.type === "badge")
+      )
+        target.text =
+          node.text === undefined ? undefined : structuredClone(node.text);
       if (node.type === "card" && target.type === "card") {
         target.participantId = node.participantId;
         target.label =
@@ -169,27 +174,44 @@ function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
   doc.scenes.forEach((scene, i) => {
     const target = preset.scenes[i];
     if (scene.board) {
-      if (!target?.board || scene.board.slots.length !== target.board.slots.length)
+      if (
+        !target?.board ||
+        scene.board.slots.length !== target.board.slots.length
+      )
         throw new PresetIncompatibleError(`scenes.${i}.board.slots`);
       const remap = new Map<string, string>();
       scene.board.slots.forEach((slot, j) => {
         const to = target.board!.slots[j];
         const canonicalSlotId = `board-slot-${++boardSlotIndex}`;
-        if (to.id !== slot.id && to.id !== canonicalSlotId && !slot.id.endsWith(`:${to.id}`))
+        if (
+          to.id !== slot.id &&
+          to.id !== canonicalSlotId &&
+          !slot.id.endsWith(`:${to.id}`)
+        )
           throw new PresetIncompatibleError(`scenes.${i}.board.slots.${j}`);
         to.id = slot.id;
         remap.set(slot.id, slot.id);
         for (const field of ["image", "backgroundAsset", "sound"] as const) {
-          if (slot[field] && doc.bindings[slot[field]!]) to[field] = slot[field];
+          if (slot[field] && doc.bindings[slot[field]!])
+            to[field] = slot[field];
         }
       });
       const rounds = structuredClone(scene.board.rounds);
       rounds.forEach((r) => {
         r.clearSlotIds = r.clearSlotIds?.map((id) => remap.get(id)!);
-        r.actions.forEach((a) => { if ("slotId" in a) { const id = remap.get(a.slotId); if (!id) throw new PresetIncompatibleError(`scenes.${i}.board.actions`); a.slotId = id; } });
+        r.actions.forEach((a) => {
+          if ("slotId" in a) {
+            const id = remap.get(a.slotId);
+            if (!id)
+              throw new PresetIncompatibleError(`scenes.${i}.board.actions`);
+            a.slotId = id;
+          }
+        });
       });
       target.board.rounds = rounds;
-      if (resolveBoard(target.board, doc.source.participants).diagnostics.length)
+      if (
+        resolveBoard(target.board, doc.source.participants).diagnostics.length
+      )
         throw new PresetIncompatibleError(`scenes.${i}.board.rules`);
     }
     const structureMatches = match(scene.nodes, target?.nodes ?? []);
@@ -218,16 +240,34 @@ function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
     target.roundId = scene.roundId;
   });
 }
+function safeMotion(motion: Settings["motion"]): Settings["motion"] {
+  if (!motion) return motion;
+  const result = structuredClone(motion);
+  for (const channel of ["enter", "exit", "loop", "emphasis"] as const) {
+    const spec = result[channel];
+    if (spec && typeof spec === "object" && spec.at && "event" in spec.at) {
+      const { event, offset } = spec.at;
+      spec.at = { event, ...(offset ? { offset } : {}) };
+    }
+  }
+  return result;
+}
 function safeSettings(
   s: Settings | undefined,
   slots: Map<string, string>,
 ): Settings | undefined {
   if (!s) return;
   const out = structuredClone(s);
+  if (out.motion) out.motion = safeMotion(out.motion);
   if (out.picker?.tick) {
     const key = out.picker.tick;
     if (!slots.has(key)) slots.set(key, `slot:tick:${slots.size}`);
     out.picker.tick = slots.get(key)!;
+  }
+  if (out.backdrop?.asset) {
+    const key = out.backdrop.asset;
+    if (!slots.has(key)) slots.set(key, `slot:visual:${slots.size}`);
+    out.backdrop.asset = slots.get(key)!;
   }
   return out;
 }
@@ -265,10 +305,14 @@ export function extractVideoPreset(
       ...structuredClone(rest),
       id: `node-${++nodeIndex}`,
     } as VideoNode;
+    if (base.motion) base.motion = safeMotion(base.motion);
     if (base.type === "container") base.children = base.children.map(node);
-    if (base.type === "text")
+    if (
+      base.type === "text" ||
+      (base.type === "badge" && base.text !== undefined)
+    )
       base.text =
-        typeof base.text === "string" ? "Text" : { bind: base.text.bind };
+        typeof base.text === "string" ? "Text" : { bind: base.text!.bind };
     if (base.type === "card") {
       base.participantId = "$participant";
       if (base.label) base.label = { bind: "participant.label" };
@@ -300,7 +344,20 @@ export function extractVideoPreset(
     nodes: s.nodes.map(node),
   }));
   const first = doc.source.rounds[0];
-  const boards = doc.scenes.flatMap((s, i) => s.board ? [{ sceneId: `scene-${i + 1}`, roundCount: Math.max(1, s.board.rounds.length), cardsPerRound: Math.max(1, ...s.board.rounds.map((r) => r.cards.length)) }] : []);
+  const boards = doc.scenes.flatMap((s, i) =>
+    s.board
+      ? [
+          {
+            sceneId: `scene-${i + 1}`,
+            roundCount: Math.max(1, s.board.rounds.length),
+            cardsPerRound: Math.max(
+              1,
+              ...s.board.rounds.map((r) => r.cards.length),
+            ),
+          },
+        ]
+      : [],
+  );
   const playlist = doc.audio?.playlist;
   const formatSettings = doc.formatSettings
     ? Object.fromEntries(
@@ -320,8 +377,14 @@ export function extractVideoPreset(
     ...(formatSettings ? { formatSettings } : {}),
     scenes,
     skeleton: {
-      roundCount: doc.kind === "board" ? boards[0]?.roundCount ?? 1 : doc.source.rounds.length,
-      cardsPerRound: doc.kind === "board" ? boards[0]?.cardsPerRound ?? 1 : Math.max(1, first?.cards.length ?? 4),
+      roundCount:
+        doc.kind === "board"
+          ? (boards[0]?.roundCount ?? 1)
+          : doc.source.rounds.length,
+      cardsPerRound:
+        doc.kind === "board"
+          ? (boards[0]?.cardsPerRound ?? 1)
+          : Math.max(1, first?.cards.length ?? 4),
       groupCount: first?.groups?.length ?? 0,
       ...(boards.length ? { boards } : {}),
     },
@@ -379,6 +442,8 @@ function namespacePresetSlots(
     // even when extraction used the same abstract slot for their old sound.
     if (value?.picker?.tick?.startsWith("slot:"))
       value.picker.tick = allocate();
+    if (value?.backdrop?.asset?.startsWith("slot:"))
+      value.backdrop.asset = key(value.backdrop.asset);
   };
   const nodes = (items: VideoNode[]) => {
     for (const node of items) {
@@ -395,7 +460,10 @@ function namespacePresetSlots(
   Object.values(result.formatSettings ?? {}).forEach(settings);
   result.scenes.forEach((scene) => {
     settings(scene.settings);
-    scene.board?.slots.forEach((slot) => { for (const field of ["image", "backgroundAsset", "sound"] as const) if (slot[field]) slot[field] = key(slot[field]!); });
+    scene.board?.slots.forEach((slot) => {
+      for (const field of ["image", "backgroundAsset", "sound"] as const)
+        if (slot[field]) slot[field] = key(slot[field]!);
+    });
     nodes(scene.nodes);
   });
   result.audio?.cues?.forEach((cue) => {
@@ -453,7 +521,6 @@ export function applyVideoPreset(
         ...scene,
         id: `${prefix}${scene.id}`,
         nodes: scene.nodes.map(renameNode),
-
       }));
       const audio = structuredClone(segment.audio ?? local.audio);
       for (const cue of audio?.cues ?? []) {
@@ -489,6 +556,29 @@ export function applyVideoPreset(
       bindings[slot] = structuredClone(doc.bindings[current]);
   };
   bind(p.settings.picker?.tick, doc.settings.picker?.tick);
+  // Settings levels are independent assignments even when an extracted preset
+  // intentionally shares the same abstract slot. Keep the destination key on
+  // conflict instead of silently reusing the first level's binding.
+  const bindBackdrop = (
+    target: Settings | undefined,
+    current: Settings | undefined,
+  ) => {
+    const slot = target?.backdrop?.asset,
+      asset = current?.backdrop?.asset;
+    if (!slot || !asset || !doc.bindings[asset]) return;
+    if (
+      bindings[slot] &&
+      JSON.stringify(bindings[slot]) !== JSON.stringify(doc.bindings[asset])
+    )
+      target!.backdrop!.asset = asset;
+    else bind(slot, asset);
+  };
+  bindBackdrop(p.settings, doc.settings);
+  for (const format of ["wide", "vertical", "square"] as const)
+    bindBackdrop(p.formatSettings?.[format], doc.formatSettings?.[format]);
+  p.scenes.forEach((scene, i) =>
+    bindBackdrop(scene.settings, doc.scenes[i]?.settings),
+  );
   for (const format of ["wide", "vertical", "square"] as const)
     bind(
       p.formatSettings?.[format]?.picker?.tick,

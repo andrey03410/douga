@@ -1,3 +1,4 @@
+import { compiledMediaUsages } from "../video/compiled-media";
 import { downloadTitleStem } from "@/lib/domain/download-name";
 import type { CompiledVideo, ResolvedAsset } from "@/video";
 
@@ -37,7 +38,10 @@ function sourceFrames(asset: ResolvedAsset, fps: number): number {
   return Math.max(1, Math.round(asset.durationSec * fps));
 }
 
-function nodeWindow(media: NonNullable<CompiledVideo["scenes"][number]["nodes"][number]["media"]>, durationInFrames: number) {
+function nodeWindow(
+  media: NonNullable<CompiledVideo["scenes"][number]["nodes"][number]["media"]>,
+  durationInFrames: number,
+) {
   const length = media.loopFrames ?? durationInFrames;
   let end = media.offsetFrames + Math.max(1, length);
   if (media.freezeAtFrame != null) end = Math.max(end, media.freezeAtFrame + 1);
@@ -46,7 +50,10 @@ function nodeWindow(media: NonNullable<CompiledVideo["scenes"][number]["nodes"][
 
 function cueWindow(cue: CompiledVideo["audio"][number]) {
   const length = cue.loopFrames ?? cue.durationInFrames;
-  return { start: cue.offsetFrames, end: cue.offsetFrames + Math.max(1, length) };
+  return {
+    start: cue.offsetFrames,
+    end: cue.offsetFrames + Math.max(1, length),
+  };
 }
 
 /** The part of the source a window reaches: past the end of a short source, nothing plays. */
@@ -62,7 +69,11 @@ function withinSource(
 }
 
 function nodeRole(asset: ResolvedAsset): SliceRole {
-  return asset.kind === "image" ? "still" : asset.kind === "audio" ? "audio" : "visual";
+  return asset.kind === "image"
+    ? "still"
+    : asset.kind === "audio"
+      ? "audio"
+      : "visual";
 }
 
 function usages(plan: CompiledVideo): Usage[] {
@@ -82,20 +93,20 @@ function usages(plan: CompiledVideo): Usage[] {
       sourceFrames: sourceFrames(asset, plan.fps),
     });
   };
-  for (const cue of plan.audio) push(cue.asset, "audio", cueWindow(cue));
-  for (const scene of plan.scenes)
-    for (const node of scene.nodes) {
-      if (!node.media) continue;
-      push(
-        node.media.asset,
-        nodeRole(node.media.asset),
-        nodeWindow(node.media, node.durationInFrames),
-      );
-    }
+  for (const usage of compiledMediaUsages(plan)) {
+    const { asset, media, cue, durationInFrames } = usage;
+    if (cue) push(asset, "audio", cueWindow(cue));
+    else if (media)
+      push(asset, nodeRole(asset), nodeWindow(media, durationInFrames));
+  }
   return found;
 }
 
-const wholeSlice = (digest: string, role: SliceRole, source: number): MediaSlice => ({
+const wholeSlice = (
+  digest: string,
+  role: SliceRole,
+  source: number,
+): MediaSlice => ({
   id: `whole:${digest}`,
   hash: digest,
   role,
@@ -179,11 +190,8 @@ export const posterSliceId = (digest: string) => `poster:${digest}`;
 /** Sources whose poster frame a video node shows while it loads. A sound shows none. */
 export function posterHashes(plan: CompiledVideo): string[] {
   const found = new Set<string>();
-  for (const scene of plan.scenes)
-    for (const node of scene.nodes) {
-      const asset = node.media?.asset;
-      if (asset?.posterSrc && asset.hash) found.add(asset.hash);
-    }
+  for (const { asset, media } of compiledMediaUsages(plan))
+    if (media && asset.posterSrc && asset.hash) found.add(asset.hash);
   return [...found];
 }
 
@@ -197,7 +205,8 @@ function retarget(
 ) {
   asset.src = `slice:${slice.id}`;
   if (asset.posterSrc && sound) delete asset.posterSrc;
-  else if (asset.posterSrc) asset.posterSrc = `slice:${posterSliceId(slice.hash)}`;
+  else if (asset.posterSrc)
+    asset.posterSrc = `slice:${posterSliceId(slice.hash)}`;
   if (slice.whole) return offsetFrames;
   asset.durationSec = (slice.endFrame - slice.startFrame) / fps;
   return offsetFrames - slice.startFrame;
@@ -207,22 +216,44 @@ function retarget(
 export function applySlices(plan: CompiledVideo): CompiledVideo {
   const slices = mediaSlices(plan);
   const next = structuredClone(plan);
-  for (const cue of next.audio) {
-    if (!cue.asset.hash) continue;
-    const window = withinSource(cue.asset, cueWindow(cue), next.fps);
-    const slice = sliceFor(slices, cue.asset.hash, "audio", window);
-    cue.offsetFrames = retarget(cue.asset, slice, cue.offsetFrames, next.fps, true);
-  }
-  for (const scene of next.scenes)
-    for (const node of scene.nodes) {
-      const media = node.media;
-      if (!media?.asset.hash) continue;
-      const window = withinSource(media.asset, nodeWindow(media, node.durationInFrames), next.fps);
-      const slice = sliceFor(slices, media.asset.hash, nodeRole(media.asset), window);
-      media.offsetFrames = retarget(media.asset, slice, media.offsetFrames, next.fps, false);
+  for (const usage of compiledMediaUsages(next)) {
+    const { media, cue, durationInFrames } = usage;
+    // A compiled manifest asset can be shared by several independent trims.
+    const asset = { ...usage.asset };
+    if (!asset.hash) continue;
+    if (cue) cue.asset = asset;
+    else if (media) media.asset = asset;
+    const window = withinSource(
+      asset,
+      cue ? cueWindow(cue) : nodeWindow(media!, durationInFrames),
+      next.fps,
+    );
+    const slice = sliceFor(
+      slices,
+      asset.hash,
+      cue ? "audio" : nodeRole(asset),
+      window,
+    );
+    if (cue)
+      cue.offsetFrames = retarget(
+        asset,
+        slice,
+        cue.offsetFrames,
+        next.fps,
+        true,
+      );
+    else if (media) {
+      media.offsetFrames = retarget(
+        asset,
+        slice,
+        media.offsetFrames,
+        next.fps,
+        false,
+      );
       if (media.freezeAtFrame != null && !slice.whole)
         media.freezeAtFrame -= slice.startFrame;
     }
+  }
   return next;
 }
 
@@ -232,16 +263,10 @@ export function offlineMediaUnresolved(
   embedded: ReadonlySet<string>,
 ): boolean {
   const external = (src: string | undefined) =>
-    !!src && !(src.startsWith("slice:") && embedded.has(src.slice("slice:".length)));
-  return (
-    plan.audio.some((cue) => external(cue.asset.src) || external(cue.asset.posterSrc)) ||
-    plan.scenes.some((scene) =>
-      scene.nodes.some(
-        (node) =>
-          !!node.media &&
-          (external(node.media.asset.src) || external(node.media.asset.posterSrc)),
-      ),
-    )
+    !!src &&
+    !(src.startsWith("slice:") && embedded.has(src.slice("slice:".length)));
+  return [...compiledMediaUsages(plan)].some(
+    ({ asset }) => external(asset.src) || external(asset.posterSrc),
   );
 }
 

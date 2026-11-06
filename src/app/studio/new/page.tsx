@@ -18,6 +18,9 @@ export default async function NewStudioPage({
         Опишите видео каноническим JSON или создайте его через внешний MCP.
         Примеры используют тот же SDK и renderer.
       </p>
+      <p>
+        <a href="/studio/motion">Посмотреть моушен-кит →</a>
+      </p>
       <NewStudioProject sourceId={searchParams.sourceId} />
       <StudioSetup email={user.email} />
     </main>
