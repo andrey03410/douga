@@ -123,3 +123,53 @@ v1/v2, disabled segments, local/absolute frames, короткие/нулевые
 изменённых файлов — PASS. Новые проверки включают допустимые ID46/200,
 похожие Unicode/escape/slash identities, уникальность и стабильность issue/suggestion
 при перестановке сцен, реальные nextAction и patch targets, canonical no-op.
+
+## Дополнение P08: свойства и замечания до/после
+
+2026-11-06. Новый browser-safe `src/video/storyboard-diff.ts` закрывает чистую
+доменную часть gap P08 из final-review.md. Общие exports, server DTO и UI не
+менялись этим агентом.
+
+`compareStoryboardDocuments(before,after,options?)`, где каждая сторона содержит
+`document/plan/diagnostics/manifest?`. Опции: `maxChanges` (default50, 1..50),
+`maxIssues` (default20, 1..50, независимо для каждого issue-списка),
+`profile?:VideoReviewProfile` для обеих сторон.
+
+Возвращает:
+- `changes`: технический stable-ID `path:string[]`, русский `label`,
+  `kind:added|removed|changed|reordered`, строки `before/after` не длиннее160.
+  `changesTotal/changesTruncated` показывают полный размер без молчаливой потери.
+- `resolvedIssues/newIssues/remainingIssues`: короткие `id/code/severity`,
+  `sceneId?/segmentId?/nodeId?/frame?/message≤160`, без evidence/operations/JSON.
+  `totals:{resolved,new,remaining}` всегда считает полные наборы.
+- `coverage:{mode:static-document-and-plan,before,after,notChecked}`.
+  Before/after — штатный static-review coverage с максимум24 representative
+  examinedFrames и `framesTruncated`. Motion/audio/renderedFrames/pixelContrast
+  явно не проверены. Без двух полных manifest hashes не проверено mediaContent.
+- `contentChanged`: семантические изменения содержимого/сценария/медиа.
+  Чистая типографика, геометрия и оформление остаются видимыми changes, но не
+  объявляются изменением содержимого. Это не оценка красоты/визуальной регрессии.
+
+Массивы объектов сопоставляются по стабильным IDs, общие элементы сравниваются
+по свойствам. Изменённый относительный порядок retained IDs — одна запись
+`$order`; вставка/удаление сама по себе не создаёт ложный reordered.
+Порядок ключей объекта и undefined не создают изменений. Primitive arrays
+показываются ограниченным значением, перестановка одинакового набора ID-строк
+также отмечается явно.
+
+Две стороны проверяются штатным reviewVideo; issue categories сопоставляются по
+его коротким стабильным IDs, а не сообщениям/секундам. Оставшиеся issues берутся
+из стороны «после», resolved — из «до». Manifest сравнивается по logical identity,
+hash и media metadata. При одинаковом hash смена локального frozen src не
+считается изменением байтов. Новый hash отражается в changes/contentChanged,
+но сам по себе не создаёт issue или вывода о регрессии. Отсутствующий необязательный
+manifest не выдается за удаление медиа.
+
+**TDD:** 11 первых тестов RED на пустом exports-контракте (нет changes/issues/
+coverage/guards); после реализации GREEN. Дополнены проверки общего профиля,
+default50, excerpt диагностик. Итог:
+`npx vitest run src/video/storyboard-diff.test.ts src/video/video-review.test.ts`
+— **35 PASS** (14 diff +21 review). Targeted strict tsc новых двух файлов — PASS.
+Проверены реальный patch/устранение overflow, новое/оставшееся issue,
+stable-ID add/remove/reorder, v2 board slot paths, bounds/truncation,
+ожидаемая смена media hash и честное notChecked. Общий QG/рендер не запускался.
