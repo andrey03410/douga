@@ -2,7 +2,7 @@
 id: 31
 title: Типографика Video SDK
 track: product
-stage: plan
+stage: build
 branch: feat/31-typography
 pr:
 started: 2026-11-06
@@ -20,7 +20,7 @@ merged:
 - [x] Продукт — [product.md](product.md), предложение и последовательность работ готовы;
   расширенный объём принят владельцем 2026-11-06
 - [x] Техника — [tech.md](tech.md), решения агента в автономном режиме
-- [ ] План — `plan.md`
+- [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — `verify.md`
 - [ ] Проверка владельцем
 - [ ] Влито
