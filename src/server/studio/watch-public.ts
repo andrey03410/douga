@@ -2,7 +2,7 @@ import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import type { CompiledVideo } from "@/video";
-import { rewritePlanMedia, type WatchMediaName } from "@/watch/model";
+import { rewritePlanMedia, type WatchMediaName, watchMediaPath } from "@/watch/model";
 import { safeFile } from "./assets";
 import { streamStudioFile, studioMimeType } from "./http-media";
 import type { StudioFrozenRevision } from "./types";
@@ -39,7 +39,15 @@ function indexSnapshot(frozen: StudioFrozenRevision): SnapshotIndex {
     }
     names[file.hash] = name;
   }
-  return { title: frozen.document.title, plan: frozen.plan, names, files };
+  const plan = structuredClone(frozen.plan);
+  for (const face of plan.fonts ?? []) {
+    for (const hash of [face.hash, face.licenseHash]) {
+      const file = frozen.fontFiles?.[hash];
+      if (!file) throw new Error("PUBLIC_FONT_UNKNOWN");
+      files.set(`${hash}${path.extname(file.path)}`, { path: file.path, hash });
+    }
+  }
+  return { title: frozen.document.title, plan, names, files };
 }
 
 async function indexByToken(token: string): Promise<SnapshotIndex | null> {
@@ -64,11 +72,12 @@ async function indexByToken(token: string): Promise<SnapshotIndex | null> {
 export async function loadPublicWatch(token: string): Promise<PublicWatch> {
   const index = await indexByToken(token);
   if (!index) return { ok: false };
-  return {
-    ok: true,
-    title: index.title,
-    plan: rewritePlanMedia(index.plan, index.names, token),
-  };
+  const plan = rewritePlanMedia(index.plan, index.names, token);
+  for (const face of plan.fonts ?? []) {
+    face.src = watchMediaPath(token, `${face.hash}.ttf`);
+    face.license = watchMediaPath(token, `${face.licenseHash}.txt`);
+  }
+  return { ok: true, title: index.title, plan };
 }
 
 export async function publicWatchMedia(

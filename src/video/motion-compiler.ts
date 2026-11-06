@@ -1,3 +1,5 @@
+import { applySceneTypography } from "./typography-compiler";
+import { graphemes } from "./typography-schema";
 import type { CompileContext } from "./context";
 import { diagnostic, effectiveSettings, resolveAsset } from "./context";
 import type {
@@ -309,7 +311,10 @@ function compileChannel(
   let fragments: number | undefined;
   if (name.startsWith("text-")) {
     const text = node.text ?? "";
-    if (name === "text-counter" && !/^\s*[-+]?\d+(?:[.,]\d+)?\s*$/.test(text)) {
+    if (
+      name === "text-counter" &&
+      (!text.trim() || !Number.isFinite(Number(text.trim().replace(",", "."))))
+    ) {
       diagnostic(
         ctx,
         "MOTION_TEXT_COUNTER_INVALID",
@@ -321,11 +326,13 @@ function compileChannel(
     }
     fragments =
       name === "text-letters"
-        ? Array.from(text).length
+        ? node.textLayout
+          ? graphemes(text).length
+          : Array.from(text).length
         : name === "text-words"
           ? text.trim().split(/\s+/).filter(Boolean).length
           : name === "text-lines"
-            ? text.split("\n").length
+            ? (node.textLayout?.lines.length ?? text.split("\n").length)
             : 1;
     const otherFragments = budget.fragments - (budget.perNode.get(node) ?? 0);
     if (fragments + otherFragments > 500) {
@@ -664,6 +671,7 @@ export function applySceneMotion(
         : String(roundIndex + 1);
     scene.nodes.push(badge);
   }
+  applySceneTypography(ctx, scene, settings);
   const candidates = scene.nodes.filter(
     (n) =>
       (n.layer > -100 || authoredMotion.has(n)) &&

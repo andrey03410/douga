@@ -89,3 +89,26 @@
 composition-absolute. Проход по слотам заканчивается повторным обзором всей доски.
 Проверка: реальный MP4 со всеми семействами, кадры до/во время/после действия,
 вертикальная матрица, квадратный бюджетный драфт и декодированный звук.
+
+## Типографика (задача 31)
+
+`TypographyText.tsx` рисует подготовленные сервером textLayout lines/runs; браузер
+не считает новые переносы. Это общий путь text/card/group/timer/badge/VS/progress.
+`typography-fonts.tsx` / TypographyFontGate ждёт selected plan.fonts через FontFace,
+управляет delayRender/Player buffering, таймаутом и явной ошибкой. Синтез начертаний
+выключен, legacy путь остаётся прежним.
+
+Градиентная заливка и text-shadow рисуются раздельными слоями: иначе прозрачный
+background-clip:text позволяет тени закрыть градиент. Обводки/тени декоративные
+aria-hidden слои, основной текст доступен один раз. Текстовые анимации сохраняют
+полную раскладку, text-lines использует фактические строки; цифры резервируют
+однострочную максимальную ширину.
+
+Шрифты входят в engineId и bundle/public; snapshot.fontFiles хранит выбранные
+ресурсы/лицензии с проверкой hash. Renderer копирует frozen ресурсы в свой public
+каталог и переписывает URL. Старое задание закреплено за прежним engineId/снимком.
+
+Проверка: реальные still/clip/MP4, кадры before/during/after text motion, JP/rich
+strings и эффекты у края. Compare watch/offline строки и координаты на тех же
+кадрах, загрузи HTML с network offline; проверь document.fonts и отсутствие HTTP.
+Артефакты задачи 31: `storage/verification/31-typography/`.

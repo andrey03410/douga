@@ -1,0 +1,2 @@
+# Preserve pinned upstream license bytes, including their original CRLF and spaces.
+*-OFL.txt -whitespace

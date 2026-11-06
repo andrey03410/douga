@@ -140,3 +140,34 @@
 - В v2 `card.style.playSound:false` выключает и отдельный participant audio; прежняя семантика v1 сохраняется. При apply общего пресета создаваемые sound slots изолированы по сегментам, разные tick не смешиваются.
 - Четыре рецепта `video_examples`: rank-reveal, segment-intro, participant-summary, staircase.
 - Пул защищает cover/poster через FK и human 409 TOURNAMENT_ASSET_IN_USE; binding track cover замораживает файл как image.
+
+## Типографика (задача 31)
+
+- `src/video/typography-{types,schema,catalog,compiler,layout,examples}.ts` —
+  7 семейств, 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
+  `node.typography`, плоские text/bind runs. [SDK-гид](../features/31-typography/sdk-guide.md).
+- `compileVideo(doc, manifest, {measureText})` остаётся чистым; серверный
+  `typography-fonts.ts` измеряет Fontkit по локальным pinned TTF. Без провайдера
+  новые поля/runs дают TEXT_LAYOUT_REQUIRED; legacy без новых полей сохраняет IR.
+- `textLayout` хранит итоговые строки/runs/геометрию/fontSize; `plan.fonts` —
+  только нужные faces с SHA-256/bytes. JP fallback Noto; неизвестный glyph/face
+  диагностируется. Политики shrink/fixed и error/ellipsis/clip, readable minima,
+  графемы/японские переносы, балансирование и fitGroup; числа не разбиваются на строки.
+- `applyTypographyTheme`/`applyTypographyStyle` immutable, scopes document/segment/scene/node;
+  preserve сохраняет authored color/fontSize, replace сбрасывает текстовые overrides.
+  Источник/ранги/таймлайн/медиа не меняются; личные пресеты сохраняют оформление runs.
+- `public/fonts/typography-v1` содержит 10 variable TTF + OFL (25 635 784 байта
+  бинарников), 400/700 normal; italic Arimo/Rubik/Roboto Mono. Каталог не встраивает
+  шрифты в клиентский JS. Полные JP-файлы могут заметно увеличить offline HTML.
+- Снимок копирует selected font/OFL в `fontFiles`; public watch, engine и offline
+  используют pinned ресурсы, байты входят в квоты/оценку HTML. Дедупликация по hash.
+- `/studio/typography` — примерка текста/шрифтов/тем, рамки/формата/фона, сравнение,
+  применение к своему черновику. В workspace грязный буфер блокирует применение;
+  backend применяет тему через общий atomic CAS/receipt путь.
+- `src/server/studio/typography.ts`: readonly inspect читает owned persisted row
+  без reconcileSource. line/run details ограничены и продолжаются offsets. Diagnostic
+  PNG без commit/revision/job допускает только готовность либо TEXT_OVERFLOW,
+  использует общий heavy lease, bounded child и временные файлы с cleanup.
+- Проверка: `src/video/typography.test.ts`, `src/server/studio/typography*.test.ts`,
+  `src/integration/typography-*.integration.test.ts`, `src/mcp/typography-tools.test.ts`,
+  `src/remotion/typography*.test.ts`; реальная приёмка — verify.md задачи 31.

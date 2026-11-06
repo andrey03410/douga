@@ -88,3 +88,24 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
 - [спека 10](../specs/10-mcp-server.md), [спека 22](../specs/22-ai-video-sdk-contract.md), [спека 23](../specs/23-ai-video-service-contract.md)
 - Задача 26 оставила 46 инструментов и инструкцию сервера. Прежние инструменты сборки пикера и ручного топа удалены
 - [задача 27](../features/27-segments/README.md) добавила четыре инструмента подготовки турнира: всего 50 имён, ответы и ранги остаются у человека
+
+## Типографика (задача 31)
+
+Всего 57 инструментов: добавлены video_font_list/get, video_typography_list/get
+и video_text_inspect (`src/mcp/typography-tools.ts`). Каталоги дают 7 семейств,
+12 стилей и 6 тем с фрагментами, фильтрами языка/italic/category и пагинацией.
+Полные JSON: typography-ost, typography-picker-jp, typography-board-labels,
+typography-rich-title в video_examples. [Короткий рецепт](../features/31-typography/sdk-guide.md).
+
+video_text_inspect читает только принадлежащий актору проект/сохранённый черновик,
+без reconcileSource/commit/новой ревизии. expectedVersion проверяет origin данных;
+nodeId/segmentId/limit/cursor и lineLimit/lineOffset/runOffset ограничивают детали.
+Ответ содержит реальные строки, fontSize, faces, overflow и продолжения.
+preview:true отдаёт image block diagnostic PNG (≤12 MiB), без base64 в JSON.
+Ошибки схемы/прав/ресурсов не обходятся; допускается только TEXT_OVERFLOW.
+Тяжёлый слот занят — JOB_ACTIVE. Новые шрифты не требуют внешней сети/шрифтов ОС.
+
+Применение темы через существующий video_draft_patch + CAS, затем inspect/validate
+и штатные commit/jobs. Финальный render по-прежнему только admin. SDK/сайт также
+дают preserve/replace и scopes; dirty buffer не теряется. Настоящий stdio и
+реальные кадры/офлайн проверяются по verify.md задачи 31.

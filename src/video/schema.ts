@@ -1,4 +1,11 @@
 import {
+  textTypographySchema,
+  typographySettingsSchema,
+  boundedTextSchema,
+  typographyColorSchema,
+  graphemes,
+} from "./typography-schema";
+import {
   motionSettingsSchema,
   backdropSettingsSchema,
   timerSettingsSchema,
@@ -111,6 +118,7 @@ export const layoutSchema = z
   .strict();
 export const settingsSchema = z
   .object({
+    typography: opt(typographySettingsSchema.nullable()),
     background: opt(color),
     motion: opt(motionSettingsSchema),
     backdrop: opt(backdropSettingsSchema.nullable()),
@@ -211,13 +219,14 @@ export const roundSchema = z
     background: opt(id),
   })
   .strict();
-const text = z.union([
-  str,
+const plainText = z.union([
+  boundedTextSchema,
   z
     .object({
       bind: z.enum([
         "document.title",
         "participant.label",
+        "participant.displayLabel",
         "participant.rank",
         "participant.comment",
         "participant.album",
@@ -230,11 +239,47 @@ const text = z.union([
         "group.label",
       ]),
       groupId: opt(id),
-      prefix: opt(str),
-      suffix: opt(str),
+      prefix: opt(boundedTextSchema),
+      suffix: opt(boundedTextSchema),
     })
     .strict(),
 ]);
+export const textValueSchema = z.union([
+  plainText,
+  z
+    .object({
+      runs: z
+        .array(
+          z
+            .object({
+              text: plainText,
+              color: opt(typographyColorSchema),
+              weight: opt(z.union([z.literal(400), z.literal(700)])),
+              italic: opt(z.boolean()),
+              decoration: opt(z.enum(["none", "underline", "line-through"])),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+    })
+    .strict()
+    .refine(
+      (value) =>
+        value.runs.reduce(
+          (sum, run) =>
+            sum +
+            graphemes(
+              typeof run.text === "string"
+                ? run.text
+                : `${run.text.prefix ?? ""}${run.text.suffix ?? ""}`,
+            ).length,
+          0,
+        ) <= 10000,
+      "Text exceeds 10000 graphemes",
+    ),
+]);
+const text = textValueSchema;
 const animation = z
   .object({
     property: z.enum(["opacity", "x", "y", "scale", "rotate"]),
@@ -243,6 +288,7 @@ const animation = z
   })
   .strict();
 const base = {
+  typography: opt(textTypographySchema.nullable()),
   motion: opt(motionSettingsSchema),
   id,
   rect: opt(rectSchema),
@@ -366,6 +412,7 @@ export const videoNodeSchema: z.ZodType<VideoNode> = z.lazy(() =>
 );
 export const boardSlotSchema = z
   .object({
+    typography: opt(textTypographySchema.nullable()),
     id,
     label: str,
     capacity: opt(positive.int()),
@@ -943,8 +990,15 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
             : n.type === "card"
               ? n.label
               : undefined;
-        if (typeof textValue === "object" && textValue.groupId)
-          issue([...at, n.type === "text" ? "text" : "label", "groupId"]);
+        if (typeof textValue === "object") {
+          const key = n.type === "card" ? "label" : "text";
+          if ("runs" in textValue)
+            textValue.runs.forEach((run, index) => {
+              if (typeof run.text === "object" && run.text.groupId)
+                issue([...at, key, "runs", index, "text", "groupId"]);
+            });
+          else if (textValue.groupId) issue([...at, key, "groupId"]);
+        }
       });
     p.audio?.cues?.forEach((cue, i) => {
       if (

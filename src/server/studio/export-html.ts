@@ -13,6 +13,7 @@ import { StudioError } from "./errors";
 import { materializeSlices, type ExportAsset } from "./export-slice";
 import { getStudioProject } from "./projects";
 import { hash } from "./shared";
+import { verifyTypographyFonts } from "./typography-fonts";
 import type { StudioFile, StudioValidation } from "./types";
 
 /** Multiple of 4, so every chunk of the base64 text decodes on its own. */
@@ -58,6 +59,7 @@ var walk=function(value){
   if(!value||typeof value!=="object") return;
   if("src" in value) value.src=resolve(value.src);
   if("posterSrc" in value) value.posterSrc=resolve(value.posterSrc);
+  if("license" in value) value.license=resolve(value.license);
   var keys=Object.keys(value);
   for(var k=0;k<keys.length;k++) walk(value[keys[k]]);
 };
@@ -125,7 +127,9 @@ async function playerBundle() {
   return bundling;
 }
 
-async function fontCss() {
+async function fontCss(includeLegacy: boolean) {
+  const base = `body{margin:0;background:#05070c;color:#e7ebf5}.watch-boot{margin:0;min-height:100vh;display:grid;place-items:center;opacity:.7}`;
+  if (!includeLegacy) return base;
   if (fontCssCache) return fontCssCache;
   const dir = path.resolve("src/watch/fonts");
   const faces: string[] = [];
@@ -136,7 +140,7 @@ async function fontCss() {
         `@font-face{font-family:"Douga Fallback";src:url(data:font/woff2;base64,${data.toString("base64")}) format("woff2");font-weight:${weight};font-style:normal;font-display:swap;unicode-range:${range}}`,
       );
     }
-  fontCssCache = `${faces.join("")}.watch-root,.watch-root *{font-family:Arial,"Douga Fallback","Helvetica Neue",sans-serif !important}body{margin:0;background:#05070c;color:#e7ebf5}.watch-boot{margin:0;min-height:100vh;display:grid;place-items:center;opacity:.7}`;
+  fontCssCache = `${faces.join("")}.watch-root,.watch-root *:not([data-typography]):not([data-typography] *){font-family:Arial,"Douga Fallback","Helvetica Neue",sans-serif !important}${base}`;
   return fontCssCache;
 }
 
@@ -185,6 +189,7 @@ async function prepare(userId: string, projectId: string) {
     throw new StudioError("VALIDATION_FAILED", validation.diagnostics);
   const stored = JSON.parse(revision.assetsJson) as {
     files?: Record<string, StudioFile>;
+    fontFiles?: Record<string, StudioFile>;
   };
   const sliced = await materializeSlices({
     userId,
@@ -193,7 +198,7 @@ async function prepare(userId: string, projectId: string) {
     files: stored.files ?? {},
   });
   try {
-    return await assemble(projectId, project.document.title, sliced);
+    return await assemble(projectId, project.document.title, sliced, stored.fontFiles);
   } catch (error) {
     sliced.release();
     throw error;
@@ -204,13 +209,32 @@ async function assemble(
   projectId: string,
   title: string,
   sliced: Awaited<ReturnType<typeof materializeSlices>>,
+  fontFiles: Record<string, StudioFile> = {},
 ) {
-  const [bundle, css] = await Promise.all([playerBundle(), fontCss()]);
+  await verifyTypographyFonts(sliced.plan.fonts, fontFiles);
+  const fontAssets: ExportAsset[] = [];
+  const recorded = new Set<string>();
+  for (const face of sliced.plan.fonts ?? []) {
+    for (const [kind, digest] of [["font", face.hash], ["license", face.licenseHash]] as const) {
+      const id = `${kind}-${digest}`;
+      if (!recorded.has(id)) {
+        const file = fontFiles[digest];
+        fontAssets.push({ id, relativePath: file.path, bytes: file.bytes, mime: kind === "font" ? "font/ttf" : "text/plain" });
+        recorded.add(id);
+      }
+      if (kind === "font") face.src = `slice:${id}`;
+      else face.license = `slice:${id}`;
+    }
+  }
+  const legacy = sliced.plan.scenes.some((scene) => scene.nodes.some((node) =>
+    !node.typography && (["text", "timer", "versus", "badge", "progress"].includes(node.type) || !!node.label),
+  ));
+  const [bundle, css] = await Promise.all([playerBundle(), fontCss(legacy)]);
   const prefix = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>${css}</style></head><body><div class="watch-root"><div id="root"><p class="watch-boot" role="status">Загрузка…</p></div></div><script type="application/json" id="douga-plan">${jsonForScript(sliced.plan)}</script>`;
   // A function replacer: a title with "$&" or "$1" must stay as typed.
   const boot = BOOT.replace("__TITLE__", () => jsonForScript(title));
   const suffix = `<script>${boot}</script><script>${bundle}</script></body></html>`;
-  const assets = sliced.assets.map((asset: ExportAsset) => ({
+  const assets = [...sliced.assets, ...fontAssets].map((asset: ExportAsset) => ({
     ...asset,
     open: `<script type="text/plain" id="${asset.id}" data-mime="${asset.mime}">`,
     close: "</script>",

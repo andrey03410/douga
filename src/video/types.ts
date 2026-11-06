@@ -1,4 +1,12 @@
 import type {
+  TextTypography,
+  TypographySettings,
+  ResolvedTypography,
+  ResolvedTextRun,
+  CompiledTextLayout,
+} from "./typography-types";
+import type { TypographyFontAsset } from "./font-manifest";
+import type {
   MotionSettings,
   CompiledMotion,
   BackdropSettings,
@@ -16,12 +24,13 @@ export type Time = { sec: number } | { frame: number };
 export type Rect = { x: number; y: number; width: number; height: number };
 export type Window = { from: number; to: number };
 export type Crop = Rect;
-export type TextValue =
+export type PlainTextValue =
   | string
   | {
       bind:
         | "document.title"
         | "participant.label"
+        | "participant.displayLabel"
         | "participant.rank"
         | "participant.comment"
         | "participant.album"
@@ -35,6 +44,17 @@ export type TextValue =
       groupId?: string;
       prefix?: string;
       suffix?: string;
+    };
+export type TextValue =
+  | PlainTextValue
+  | {
+      runs: {
+        text: PlainTextValue;
+        color?: string;
+        weight?: 400 | 700;
+        italic?: boolean;
+        decoration?: "none" | "underline" | "line-through";
+      }[];
     };
 export type BackgroundGradient = {
   stops: { color: string; at: number }[];
@@ -69,6 +89,7 @@ export interface CardStyle {
   orientation?: "landscape" | "portrait";
 }
 export interface Settings {
+  typography?: TypographySettings | null;
   motion?: MotionSettings;
   backdrop?: BackdropSettings | null;
   timer?: TimerSettings;
@@ -196,6 +217,7 @@ export interface Animation {
   keyframes: { at: Time; value: number }[];
 }
 export interface NodeBase {
+  typography?: TextTypography | null;
   motion?: MotionSettings;
   id: string;
   rect?: Rect;
@@ -247,6 +269,7 @@ export type VideoNode = NodeBase &
   );
 /** Declarative board v1: authored choices, independent of playback and UI. */
 export interface BoardSlot {
+  typography?: TextTypography | null;
   id: string;
   label: string;
   capacity?: number;
@@ -482,6 +505,9 @@ export interface CompiledAnimation {
   keyframes: { frame: number; value: number }[];
 }
 export interface CompiledNode {
+  typography?: ResolvedTypography;
+  textRuns?: ResolvedTextRun[];
+  textLayout?: CompiledTextLayout;
   motion?: CompiledMotion[];
   timer?: Required<TimerSettings>;
   versus?: Required<VersusSettings>;
@@ -576,6 +602,7 @@ export interface CompiledAudio {
   muteWindows: Window[];
 }
 export interface CompiledVideo {
+  fonts?: TypographyFontAsset[];
   schemaVersion: 1;
   compilerVersion: "1.0.0";
   seed: number;

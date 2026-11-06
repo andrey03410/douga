@@ -5,6 +5,7 @@ import { ZodError } from "zod";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
+  applyTypographyTheme,
   videoDocumentSchema,
   patchVideoDocument,
   applyVideoPreset,
@@ -114,6 +115,7 @@ export async function addRevision(
         resolvedDocument: result.resolvedDocument,
         manifest: result.manifest,
         files: result.files,
+        ...(Object.keys(result.fontFiles).length ? { fontFiles: result.fontFiles } : {}),
         runtime,
       }),
     },
@@ -287,6 +289,7 @@ export async function createStudioProjectFromPreset(
         roundCount: input.roundCount,
         cardsPerRound: input.cardsPerRound,
       });
+      if (document.settings.typography === undefined) document.settings.typography = { version: 1, theme: "clean" };
       if (input.sourceId) {
         if (preset.kind !== "top") throw new StudioError("SOURCE_KIND_INVALID");
         document.source = {
@@ -472,6 +475,16 @@ export async function applyStudioPreset(
       }
     },
   );
+}
+/** Semantic typography requests share the same atomic CAS and receipt path as presets. */
+export async function applyStudioTypographyDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string; theme: Parameters<typeof applyTypographyTheme>[1] } & NonNullable<Parameters<typeof applyTypographyTheme>[2]>,
+) {
+  return writeDraft(userId, id, input, requestHash(`typography:${id}`, input), current => ({
+    document: applyTypographyTheme(editableDocument(current), input.theme, { scope: input.scope, mode: input.mode }),
+  }));
 }
 function editableDocument(current: StudioProjectView) {
   const parsed = videoDocumentSchema.safeParse(

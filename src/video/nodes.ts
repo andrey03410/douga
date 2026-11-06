@@ -1,3 +1,5 @@
+import { setNodeTypography } from "./typography-compiler";
+import type { ResolvedTextRun } from "./typography-types";
 import {
   setNodeMotion,
   normalizeTimer,
@@ -76,6 +78,8 @@ export function boundText(
   r?: PickerRound,
 ): string {
   if (typeof value === "string") return value;
+  if ("runs" in value)
+    return value.runs.map((run) => boundText(ctx, run.text, p, r)).join("");
   let result: string | number | undefined;
   switch (value.bind) {
     case "document.title":
@@ -83,6 +87,9 @@ export function boundText(
       break;
     case "participant.label":
       result = p?.label;
+      break;
+    case "participant.displayLabel":
+      result = p?.caption ?? p?.label;
       break;
     case "participant.rank":
       result = p?.rank;
@@ -274,6 +281,33 @@ export function compileCustomNodes(
         );
       }
     }
+    const textValue =
+      node.type === "text"
+        ? node.text
+        : node.type === "card"
+          ? node.label
+          : node.type === "badge"
+            ? node.text
+            : undefined;
+    let textRuns: ResolvedTextRun[] | undefined =
+      node.type !== "card" &&
+      textValue &&
+      typeof textValue !== "string" &&
+      "runs" in textValue
+        ? textValue.runs.map((run) => ({
+            ...run,
+            text: boundText(ctx, run.text, participant, round),
+          }))
+        : undefined;
+    setNodeTypography(
+      compiled,
+      settings,
+      node.typography,
+      undefined,
+      node.style,
+      textRuns,
+      node.motion,
+    );
     if (node.type === "text")
       compiled.text = boundText(ctx, node.text, participant, round);
     if (node.type === "shape")
@@ -428,6 +462,22 @@ export function compileCustomNodes(
           { ...local.motion, ...node.motion },
           node.motion,
         );
+        textRuns =
+          node.label && typeof node.label !== "string" && "runs" in node.label
+            ? node.label.runs.map((run) => ({
+                ...run,
+                text: boundText(ctx, run.text, p, round),
+              }))
+            : undefined;
+        setNodeTypography(
+          compiled,
+          local,
+          node.typography,
+          "label",
+          node.style,
+          textRuns,
+          node.motion,
+        );
         compiled.style = {
           ...local.card,
           ...(p.bestMomentSec !== undefined
@@ -540,7 +590,17 @@ export function compileCustomNodes(
           ctx,
           scene,
           node.children.map(clone),
-          effectiveSettings(ctx, settings, { card: node.style }),
+          effectiveSettings(ctx, settings, {
+            card: node.style,
+            ...(node.typography !== undefined
+              ? {
+                  typography:
+                    node.typography === null
+                      ? null
+                      : { defaults: node.typography },
+                }
+              : {}),
+          }),
           p,
           round,
           node.style?.playSound ?? authoredPlaySound,
@@ -556,7 +616,17 @@ export function compileCustomNodes(
         ctx,
         scene,
         node.children,
-        effectiveSettings(ctx, settings, { card: node.style }),
+        effectiveSettings(ctx, settings, {
+          card: node.style,
+          ...(node.typography !== undefined
+            ? {
+                typography:
+                  node.typography === null
+                    ? null
+                    : { defaults: node.typography },
+              }
+            : {}),
+        }),
         participant,
         round,
         node.style?.playSound ?? authoredPlaySound,

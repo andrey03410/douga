@@ -179,6 +179,8 @@ export interface StudioFrozenRevision {
   resolvedDocument: VideoDocument;
   manifest: AssetManifest;
   files: Record<string, StudioFile>;
+  /** Pinned selected font and OFL license bytes, keyed by content hash. */
+  fontFiles?: Record<string, StudioFile>;
   plan: CompiledVideo;
   validation: StudioValidation;
   runtime: StudioRuntime;

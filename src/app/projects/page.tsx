@@ -24,6 +24,7 @@ export default async function ProjectsPage() {
         </a>
         <p>
           <a href="/studio/motion">Посмотреть моушен-кит →</a>
+          <a href="/studio/typography">Шрифты и типографика →</a>
         </p>
         <StudioProjectList
           initial={{

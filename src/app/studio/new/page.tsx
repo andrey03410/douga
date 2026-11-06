@@ -20,6 +20,7 @@ export default async function NewStudioPage({
       </p>
       <p>
         <a href="/studio/motion">Посмотреть моушен-кит →</a>
+          <a href="/studio/typography">Шрифты и типографика →</a>
       </p>
       <NewStudioProject sourceId={searchParams.sourceId} />
       <StudioSetup email={user.email} />

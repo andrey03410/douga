@@ -1,4 +1,5 @@
 "use client";
+import TypographyPanel from "./TypographyPanel";
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { readLoadedJobWindow } from "./job-feed";
@@ -46,9 +47,11 @@ const ERROR_TEXT: Record<string, string> = {
     "Файл .html вышел бы больше 400 МБ. Сократите ролик или сделайте MP4-рендер.",
   EXPORT_QUOTA_EXCEEDED:
     "Закончилось место под нарезки для .html. Удалите ненужные проекты студии.",
-  EXPORT_SLICE_FAILED: "Не удалось нарезать медиа для .html. Попробуйте ещё раз.",
+  EXPORT_SLICE_FAILED:
+    "Не удалось нарезать медиа для .html. Попробуйте ещё раз.",
   EXPORT_MEDIA_UNRESOLVED: "Не все медиа удалось встроить в .html.",
-  ASSET_FILE_MISSING: "Файл медиа пропал из хранилища. Импортируйте его заново.",
+  ASSET_FILE_MISSING:
+    "Файл медиа пропал из хранилища. Импортируйте его заново.",
   VALIDATION_FAILED:
     "Сохранённая ревизия не проходит проверку. Исправьте ошибки и сохраните её.",
 };
@@ -129,9 +132,9 @@ export function StudioWorkspace({
     [inspected, setInspected] = useState<Asset | null>(null),
     [assetInfo, setAssetInfo] = useState<unknown>(null);
   const [jobs, setJobs] = useState<Page<StudioJobView>>({
-      items: [],
-      nextCursor: null,
-    });
+    items: [],
+    nextCursor: null,
+  });
   const [publication, setPublication] = useState<{
     token: string;
     revision: number;
@@ -351,7 +354,12 @@ export function StudioWorkspace({
     <>
       <a href="/projects">← Мои видео</a>
       <h1 style={{ marginTop: 16 }}>
-        SDK · {meta.kind === "top" ? "Топ" : meta.kind === "board" ? "Доска" : "Пикер"}
+        SDK ·{" "}
+        {meta.kind === "top"
+          ? "Топ"
+          : meta.kind === "board"
+            ? "Доска"
+            : "Пикер"}
       </h1>
       <p className="muted">
         Проект <code>{id}</code>. Код, ответы, медиа и звук скрыты до вашего
@@ -430,6 +438,32 @@ export function StudioWorkspace({
           {notice}
         </p>
       ) : null}
+      <TypographyPanel
+        projectId={id}
+        version={meta.version}
+        disabled={unsafe}
+        onApply={async (theme, mode) => {
+          await run(async () => {
+            const p = await studioRequest<StudioProjectView>(
+              `${base}/typography`,
+              "POST",
+              {
+                expectedVersion: meta.version,
+                theme,
+                mode,
+                scope: { type: "document" },
+                idempotencyKey: crypto.randomUUID(),
+              },
+            );
+            setMeta(metadata(p));
+            setValidation(p.validation);
+            setBuffer((current) => (current ? acceptRemote(current, p) : null));
+            setNotice(
+              "Тема применена к черновику. Проверьте превью перед фиксацией версии.",
+            );
+          });
+        }}
+      />
       {buffer ? (
         <section className="panel">
           <h2>Канонический JSON</h2>

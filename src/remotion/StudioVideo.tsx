@@ -38,13 +38,19 @@ import { playerPremountFrames } from "./premount";
 import { gradientToCss, shadowToCss } from "./studio-paint";
 import { MotionBackdrop } from "./MotionBackdrop";
 import { MotionText } from "./MotionText";
+import { TypographyText } from "./TypographyText";
+import { TypographyFontGate } from "./typography-fonts";
 import {
   MotionBadge,
   MotionProgress,
   MotionTimer,
   MotionVersus,
 } from "./MotionWidgets";
-import { isAdjacentTransition, transitionLayers } from "./motion-frame";
+import {
+  isAdjacentTransition,
+  progressAt,
+  transitionLayers,
+} from "./motion-frame";
 
 export interface StudioVideoProps {
   plan: CompiledVideo;
@@ -186,6 +192,56 @@ const Shape: React.FC<{ node: CompiledNode }> = ({ node }) => {
   );
 };
 
+const MeasuredNodeText: React.FC<{
+  node: CompiledNode;
+  frame: number;
+  fps: number;
+}> = ({ node, frame, fps }) => {
+  const text = <TypographyText node={node} frame={frame} fps={fps} />;
+  if (node.type === "timer")
+    return (
+      <MotionTimer
+        node={node}
+        frame={frame}
+        fps={fps}
+        renderValue={(value) => (
+          <TypographyText
+            node={node}
+            frame={frame}
+            fps={fps}
+            text={String(value)}
+          />
+        )}
+      />
+    );
+  if (node.type === "versus")
+    return <MotionVersus node={node}>{text}</MotionVersus>;
+  if (node.type === "badge")
+    return <MotionBadge node={node}>{text}</MotionBadge>;
+  if (node.type === "progress") {
+    const percentage = Math.round(
+      progressAt(
+        frame,
+        node.progress ?? { from: 0, durationInFrames: node.durationInFrames },
+      ) * 100,
+    );
+    return (
+      <>
+        <AbsoluteFill style={{ justifyContent: "center" }}>
+          <MotionProgress node={node} frame={frame} />
+        </AbsoluteFill>
+        <TypographyText
+          node={node}
+          frame={frame}
+          fps={fps}
+          text={`${percentage}%`}
+        />
+      </>
+    );
+  }
+  return text;
+};
+
 /** Pure visual boundary shared by Player, stills, clips, and full compositions. */
 export const StudioSceneFrame: React.FC<{
   scene: CompiledScene;
@@ -271,6 +327,7 @@ export const StudioSceneFrame: React.FC<{
         ? Math.max(1, rect.width - textPadding * 2) / (text.length * 0.72)
         : Infinity,
     );
+    const measured = !!node.typography && !!node.textLayout;
     return (
       <div
         key={node.id}
@@ -364,7 +421,21 @@ export const StudioSceneFrame: React.FC<{
                     : "◇"}
                 </AbsoluteFill>
               ) : null}
-              {["text", "timer", "versus", "badge", "progress"].includes(
+              {measured &&
+              [
+                "text",
+                "timer",
+                "versus",
+                "badge",
+                "progress",
+                "group",
+                "card",
+              ].includes(node.type) &&
+              (!card || (state.labelVisible && label)) ? (
+                <MeasuredNodeText node={node} frame={frame} fps={fps} />
+              ) : null}
+              {!measured &&
+              ["text", "timer", "versus", "badge", "progress"].includes(
                 node.type,
               ) ? (
                 <AbsoluteFill
@@ -402,7 +473,7 @@ export const StudioSceneFrame: React.FC<{
                   )}
                 </AbsoluteFill>
               ) : null}
-              {group ? (
+              {group && !measured ? (
                 <div
                   style={{
                     ...textStyle,
@@ -421,7 +492,7 @@ export const StudioSceneFrame: React.FC<{
                   {node.text}
                 </div>
               ) : null}
-              {card && state.labelVisible && label ? (
+              {card && !measured && state.labelVisible && label ? (
                 <div
                   style={{
                     ...textStyle,
@@ -624,34 +695,36 @@ export const StudioVideo: React.FC<StudioVideoProps> = ({
   plan,
   assetMode = "url",
 }) => (
-  <AbsoluteFill style={{ background: "#080c14" }}>
-    {plan.scenes
-      .filter((scene) => scene.durationInFrames > 0)
-      .map((scene) => (
-        <Sequence
-          key={scene.id}
-          from={scene.from}
-          durationInFrames={scene.durationInFrames}
-          premountFor={playerPremountFrames(plan.fps)}
-        >
-          <Scene scene={scene} plan={plan} mode={assetMode} />
-        </Sequence>
-      ))}
-    {plan.audio
-      .filter((cue) => cue.durationInFrames > 0)
-      .map((cue) => (
-        // Premounting needs a layout box; the box of a sound cue stays empty.
-        <Sequence
-          key={cue.id}
-          from={cue.from}
-          durationInFrames={cue.durationInFrames}
-          premountFor={playerPremountFrames(plan.fps)}
-          style={SOUND_LAYER}
-        >
-          <AudioCue cue={cue} mode={assetMode} />
-        </Sequence>
-      ))}
-  </AbsoluteFill>
+  <TypographyFontGate fonts={plan.fonts} assetMode={assetMode}>
+    <AbsoluteFill style={{ background: "#080c14" }}>
+      {plan.scenes
+        .filter((scene) => scene.durationInFrames > 0)
+        .map((scene) => (
+          <Sequence
+            key={scene.id}
+            from={scene.from}
+            durationInFrames={scene.durationInFrames}
+            premountFor={playerPremountFrames(plan.fps)}
+          >
+            <Scene scene={scene} plan={plan} mode={assetMode} />
+          </Sequence>
+        ))}
+      {plan.audio
+        .filter((cue) => cue.durationInFrames > 0)
+        .map((cue) => (
+          // Premounting needs a layout box; the box of a sound cue stays empty.
+          <Sequence
+            key={cue.id}
+            from={cue.from}
+            durationInFrames={cue.durationInFrames}
+            premountFor={playerPremountFrames(plan.fps)}
+            style={SOUND_LAYER}
+          >
+            <AudioCue cue={cue} mode={assetMode} />
+          </Sequence>
+        ))}
+    </AbsoluteFill>
+  </TypographyFontGate>
 );
 
 export const DEFAULT_STUDIO_PROPS: StudioVideoProps = {

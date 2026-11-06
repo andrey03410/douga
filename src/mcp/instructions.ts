@@ -23,6 +23,11 @@ export const MCP_TOOL_NAMES = [
   "video_capabilities",
   "video_motion_list",
   "video_motion_get",
+  "video_font_list",
+  "video_font_get",
+  "video_typography_list",
+  "video_typography_get",
+  "video_text_inspect",
   "video_schema_get",
   "video_examples",
   "video_preset_list",
@@ -65,5 +70,6 @@ export const MCP_INSTRUCTIONS = [
   "Подготовка турнира: list_local_media читает теги; tournament_create принимает segments с локальными path либо assetId пула. tournament_get и tournament_segments_update дают редактуру состава/подписей/постеров. Агент не отвечает на сравнения и не назначает места. requiresConfirmation и answersToReset требуют явного подтверждения перед confirmReset:true.",
   "Пикер: picker.*. Доски: board.* (тир-лист, KMK, слепой рейтинг, драфт, викторина, матрица, бюджет). Схема и готовые документы — video_schema_get и video_examples.",
   "Моушен: video_motion_list → video_motion_get (name + category; flash неоднозначен). Полные примеры со stand-in manifest — video_examples, живая галерея — /studio/motion.",
+  "Типографика: video_typography_list/get — темы и стили, video_font_list/get — шрифты. Применяйте settings.typography через patch; video_text_inspect проверит строки/размер и покажет диагностический PNG черновика. Галерея /studio/typography.",
   "Правки документа идут через CAS: передавайте expectedVersion. Повтор того же шага — с тем же idempotencyKey.",
 ].join("\n");

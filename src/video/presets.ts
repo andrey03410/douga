@@ -1,5 +1,7 @@
 import type {
   Settings,
+  TextValue,
+  PlainTextValue,
   VideoDocument,
   VideoFormat,
   VideoNode,
@@ -100,6 +102,29 @@ export class PresetIncompatibleError extends Error {
  * Keep project keys on matched nodes, so a slot alias cannot overwrite media
  * used by a participant or another scene in the destination document.
  */
+function transferCardLabelContent(
+  content: TextValue | undefined,
+  template: TextValue | undefined,
+): TextValue | undefined {
+  if (!template || typeof template === "string" || !("runs" in template))
+    return content === undefined ? undefined : structuredClone(content);
+  if (content === undefined) return template;
+  const texts =
+    typeof content === "object" && "runs" in content
+      ? content.runs.map((run) => run.text)
+      : [content];
+  // Keep every destination fragment, while taking presentation from the preset.
+  // A plain destination caption occupies the first run; other style slots stay empty.
+  return {
+    runs: Array.from(
+      { length: Math.max(template.runs.length, texts.length) },
+      (_, i) => ({
+        ...template.runs[Math.min(i, template.runs.length - 1)],
+        text: structuredClone(texts[i] ?? ""),
+      }),
+    ),
+  };
+}
 function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
   let index = 0;
   let boardSlotIndex = 0;
@@ -148,8 +173,7 @@ function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
           node.text === undefined ? undefined : structuredClone(node.text);
       if (node.type === "card" && target.type === "card") {
         target.participantId = node.participantId;
-        target.label =
-          node.label === undefined ? undefined : structuredClone(node.label);
+        target.label = transferCardLabelContent(node.label, target.label);
       }
       if (
         (node.type === "image" ||
@@ -271,6 +295,38 @@ function safeSettings(
   }
   return out;
 }
+function sanitizePresetText(
+  value: TextValue,
+  fallback?: PlainTextValue,
+): TextValue {
+  const plain = (text: PlainTextValue): PlainTextValue =>
+    fallback ?? (typeof text === "string" ? "Text" : { bind: text.bind });
+  if (typeof value !== "object" || !("runs" in value)) return plain(value);
+  if (fallback === undefined)
+    return {
+      runs: value.runs.map((run) => ({ ...run, text: plain(run.text) })),
+    };
+  const boundIndex = value.runs.findIndex(
+    (run) =>
+      typeof run.text === "object" &&
+      typeof fallback === "object" &&
+      (run.text.bind === fallback.bind ||
+        (fallback.bind === "participant.displayLabel" &&
+          run.text.bind === "participant.label")),
+  );
+  const nonemptyIndex = value.runs.findIndex(
+    (run) => typeof run.text !== "string" || run.text.length > 0,
+  );
+  const labelIndex = boundIndex >= 0 ? boundIndex : Math.max(0, nonemptyIndex);
+  // One safe name fills the default caption. Other runs retain their styles as
+  // empty slots for an explicit rich caption in the destination project.
+  return {
+    runs: value.runs.map((run, index) => ({
+      ...run,
+      text: index === labelIndex ? fallback : "",
+    })),
+  };
+}
 /** Explicit extraction: never serialize source, bindings, literal content or project identifiers. */
 export function extractVideoPreset(
   document: VideoDocument,
@@ -311,11 +367,13 @@ export function extractVideoPreset(
       base.type === "text" ||
       (base.type === "badge" && base.text !== undefined)
     )
-      base.text =
-        typeof base.text === "string" ? "Text" : { bind: base.text!.bind };
+      base.text = sanitizePresetText(base.text!);
     if (base.type === "card") {
       base.participantId = "$participant";
-      if (base.label) base.label = { bind: "participant.label" };
+      if (base.label)
+        base.label = sanitizePresetText(base.label, {
+          bind: "participant.displayLabel",
+        });
     }
     if (
       (base.type === "audio" ||
