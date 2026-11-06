@@ -1038,3 +1038,125 @@ describe("R6 choreography sequencing", () => {
     },
   );
 });
+
+describe("Fix round 2: VS readiness and semantic windows", () => {
+  it.each([false, true])(
+    "R6 waits for a revealed last card whose entrance is disabled (both=%s)",
+    (both) => {
+      const d = picker();
+      d.settings.motion = { choreography: "versus-impact" };
+      d.source.rounds[0].cards[1].settings = { motion: { enter: null } };
+      if (both)
+        d.source.rounds[0].cards[0].settings = { motion: { enter: null } };
+      const r = compile(d, arts);
+      expect(r.ready).toBe(true);
+      const s = r.plan.scenes[0],
+        last = s.nodes.find((n) => n.cardId === "cb")!,
+        vs = s.nodes
+          .find((n) => n.type === "versus")!
+          .motion!.find((c) => c.channel === "enter")!;
+      expect(last.motion?.some((c) => c.channel === "enter") ?? false).toBe(
+        false,
+      );
+      expect(vs.from).toBeGreaterThanOrEqual(last.visible[0].from);
+      expect(vs.from).toBeGreaterThanOrEqual(last.activeWindow!.from);
+      expect(vs.from).toBeLessThanOrEqual(s.phases.timerStartFrame!);
+    },
+  );
+  it.each([
+    { at: 0, duration: 10 },
+    { at: 80, duration: 9 },
+    { at: 150, duration: 10 },
+  ])(
+    "R7 rejects a non-overlapping VS window $at/$duration without moving the node",
+    ({ at, duration }) => {
+      const d = picker();
+      d.settings.motion = { choreography: "versus-impact" };
+      d.scenes[0].nodes = [
+        {
+          id: "short-vs",
+          type: "versus",
+          timing: { at: { frame: at }, duration: { frame: duration } },
+        },
+      ];
+      const baseline = structuredClone(d);
+      delete baseline.settings.motion;
+      const old = compile(baseline, arts).plan,
+        r = compile(d, arts);
+      expect(r.ready).toBe(false);
+      expect(
+        r.diagnostics.some(
+          (x) => x.code === "MOTION_CHOREOGRAPHY_INCOMPATIBLE",
+        ),
+      ).toBe(true);
+      const s = r.plan.scenes[0],
+        vs = s.nodes.find((n) => n.type === "versus")!;
+      expect(vs.from).toBe(at);
+      expect(vs.durationInFrames).toBe(duration);
+      expect(vs.visible).toEqual([{ from: at, to: at + duration }]);
+      for (const c of vs.motion ?? []) {
+        expect(c.from).toBeGreaterThanOrEqual(c.window.from);
+        expect(c.from + c.durationInFrames).toBeLessThanOrEqual(c.window.to);
+        expect(c.from).toBeGreaterThanOrEqual(vs.from);
+        expect(c.from + c.durationInFrames).toBeLessThanOrEqual(
+          vs.from + vs.durationInFrames,
+        );
+      }
+      expect(r.plan.audio).toEqual(old.audio);
+      expect(r.plan.scenes.map((s) => s.phases)).toEqual(
+        old.scenes.map((s) => s.phases),
+      );
+      expect(r.plan.durationInFrames).toBe(old.durationInFrames);
+    },
+  );
+  it.each([
+    { at: 80, duration: 10 },
+    { at: 89, duration: 1 },
+    { at: 135, duration: 1 },
+  ])(
+    "R7 compresses the VS entrance inside its own short valid window $at/$duration",
+    ({ at, duration }) => {
+      const d = picker();
+      d.settings.motion = { choreography: "versus-impact" };
+      d.scenes[0].nodes = [
+        {
+          id: "short-vs",
+          type: "versus",
+          timing: { at: { frame: at }, duration: { frame: duration } },
+        },
+      ];
+      const r = compile(d, arts);
+      expect(r.ready).toBe(true);
+      const s = r.plan.scenes[0],
+        vs = s.nodes.find((n) => n.type === "versus")!,
+        c = vs.motion!.find((c) => c.channel === "enter")!;
+      expect(c.from).toBeGreaterThanOrEqual(89);
+      expect(c.from).toBeGreaterThanOrEqual(at);
+      expect(c.from).toBeGreaterThanOrEqual(c.window.from);
+      expect(c.from).toBeLessThanOrEqual(s.phases.timerStartFrame!);
+      expect(c.durationInFrames).toBeGreaterThanOrEqual(1);
+      expect(c.from + c.durationInFrames).toBeLessThanOrEqual(at + duration);
+      expect(c.from + c.durationInFrames).toBeLessThanOrEqual(c.window.to);
+    },
+  );
+  it("preserves an explicit VS entrance override even when the recipe cannot coordinate its short window", () => {
+    const d = picker();
+    d.settings.motion = { choreography: "versus-impact" };
+    d.scenes[0].nodes = [
+      {
+        id: "explicit-vs",
+        type: "versus",
+        timing: { duration: { frame: 10 } },
+        motion: { enter: "fade" },
+      },
+    ];
+    const r = compile(d, arts);
+    expect(r.ready).toBe(true);
+    const vs = r.plan.scenes[0].nodes.find((n) => n.type === "versus")!;
+    expect(vs.motion?.[0]).toMatchObject({
+      name: "fade",
+      from: 0,
+      durationInFrames: 10,
+    });
+  });
+});

@@ -770,17 +770,31 @@ export function applySceneMotion(
         );
     }
   }
-  // A choreography coordinates the already-normalized visual clips, so short
-  // reveals and authored card overrides cannot make VS precede the cards.
-  const lastCardEnter = Math.max(
+  // A static card is ready at its reveal/visibility start. An animated card
+  // additionally waits for its normalized entrance; null never adds an effect.
+  const cardsReadyAt = Math.max(
     0,
     ...scene.nodes
       .filter((node) => node.type === "card")
-      .flatMap((node) =>
-        (node.motion ?? [])
-          .filter((clip) => clip.channel === "enter")
-          .map((clip) => clip.from + clip.durationInFrames),
-      ),
+      .map((node) => {
+        const firstVisible = node.visible.reduce((first, window) => {
+          const from = Math.max(node.from, window.from);
+          const to = Math.min(
+            node.from + node.durationInFrames,
+            window.to,
+            scene.durationInFrames,
+          );
+          return from < to ? Math.min(first, from) : first;
+        }, Infinity);
+        return Math.max(
+          node.from,
+          firstVisible,
+          node.activeWindow?.from ?? firstVisible,
+          ...(node.motion ?? [])
+            .filter((clip) => clip.channel === "enter")
+            .map((clip) => clip.from + clip.durationInFrames),
+        );
+      }),
   );
   for (const node of candidates) {
     if (
@@ -789,22 +803,39 @@ export function applySceneMotion(
       ownMotion.get(node)?.enter !== undefined
     )
       continue;
-    const enter = node.motion?.find((clip) => clip.channel === "enter");
-    if (!enter) continue;
     const boundary = scene.phases.timerStartFrame ?? scene.durationInFrames;
-    enter.from = Math.min(
-      Math.max(enter.from, lastCardEnter),
-      boundary,
-      scene.durationInFrames - 1,
-    );
-    enter.durationInFrames = Math.max(
-      1,
-      Math.min(
+    for (const enter of node.motion ?? []) {
+      if (enter.channel !== "enter") continue;
+      const from = Math.max(
+        enter.from,
+        cardsReadyAt,
+        enter.window.from,
+        node.from,
+      );
+      const to = Math.min(
+        enter.window.to,
+        node.from + node.durationInFrames,
+        scene.durationInFrames,
+      );
+      // The timer boundary permits VS to begin exactly on it, but the node and
+      // clip windows are half-open and must still contain a visible frame.
+      if (from > boundary || from >= to) {
+        diagnostic(
+          ctx,
+          "MOTION_CHOREOGRAPHY_INCOMPATIBLE",
+          "VS has no visible frame after all cards are ready and at or before the timer boundary. Extend its authored timing window or override its entrance.",
+          `nodes.${node.id}.motion.choreography`,
+          node.id,
+        );
+        continue;
+      }
+      enter.from = from;
+      enter.durationInFrames = Math.min(
         enter.durationInFrames,
-        boundary - enter.from,
-        scene.durationInFrames - enter.from,
-      ),
-    );
+        to - from,
+        Math.max(1, boundary - from),
+      );
+    }
   }
   compileBackdrop(ctx, scene, settings, template, round);
 }
