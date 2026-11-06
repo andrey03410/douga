@@ -6,6 +6,7 @@ import { motionCatalog } from "./motion-catalog";
 import { typographyExampleIds } from "./typography-examples";
 import { typographyStyles, typographyThemes } from "./typography-catalog";
 import { getTypographyMeasureText } from "../server/studio/typography-fonts";
+import { selectStoryboard } from "./storyboard";
 import { compileVideo } from "./compiler";
 describe("reproducible visual fixture matrix", () => {
   it("covers every legacy preset and current catalog entry without external media", async () => {
@@ -31,6 +32,18 @@ describe("reproducible visual fixture matrix", () => {
       expect(fixture.sampling.available.length).toBeGreaterThanOrEqual(fixture.frames.length);
       expect(fixture.sampling.strategy).toBe("representative-events-v1");
       expect(fixture.frames.every((f) => f.frame >= 0 && f.frame < result.plan.durationInFrames), fixture.id).toBe(true);
+    }
+  });
+  it("selects the stable first-scene representative of every preset and recipe for native thumbnails", async () => {
+    const measureText = await getTypographyMeasureText();
+    for (const fixture of buildVisualFixtures().filter((f) => f.coverage.presets?.length || f.coverage.recipes?.length)) {
+      const { plan, ready } = compileVideo(fixture.document, fixture.manifest, { measureText });
+      expect(ready, fixture.id).toBe(true);
+      const scene = plan.scenes[0], representative = selectStoryboard(plan, { sceneId: scene.id, segmentId: scene.segmentId, pageSize: 1 }).tiles[0];
+      expect(representative.analysis.limitations, fixture.id).not.toContain("no-stable-window");
+      expect(fixture.frames, fixture.id).toContainEqual(expect.objectContaining({ frame: representative.frame, reason: `${scene.id}:representative` }));
+      expect(fixture.sampling.selected, fixture.id).toContain(representative.frame);
+      expect(fixture.sampling.selected.length, fixture.id).toBeLessThanOrEqual(12);
     }
   });
   it("is byte-stable across calls and does not share mutable documents", () => {

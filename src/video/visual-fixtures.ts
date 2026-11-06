@@ -1,5 +1,6 @@
 import { createVideoDocument } from "./builders";
 import { compileVideo } from "./compiler";
+import { selectStoryboard } from "./storyboard";
 import { getBuiltinPresets } from "./presets";
 import { motionCatalog } from "./motion-catalog";
 import { createTypographyExample, typographyExampleIds } from "./typography-examples";
@@ -50,6 +51,8 @@ function semanticFrames(plan: CompiledVideo): VisualFixture["frames"] {
     if (!selected.some((f) => f.frame === frame && f.phase === phase && f.reason === reason)) selected.push({ frame, phase, reason });
   };
   for (const scene of plan.scenes) {
+    const representative = selectStoryboard(plan, { sceneId: scene.id, segmentId: scene.segmentId, pageSize: 1 }).tiles[0];
+    if (representative) add(representative.frame, "during", `${scene.id}:representative`);
     add(scene.from, "before", `${scene.id}:start`);
     add(scene.from + Math.min(6, Math.floor((scene.durationInFrames) / 2)), "during", `${scene.id}:enter`);
     add(scene.from + scene.durationInFrames - 1, "after", `${scene.id}:end`);
@@ -77,6 +80,9 @@ function fixture(id: string, document: VideoDocument, coverage: VisualFixture["c
   if (errors.length) throw new Error(`${id}: ${JSON.stringify(errors)}`);
   const available = semanticFrames(result.plan), selected = new Set<number>();
   const add = (frame: number | undefined) => { if (frame !== undefined && selected.size < 12) selected.add(frame); };
+  // The native preview must show a stable populated state, not an entrance/exit boundary.
+  const representatives = available.filter(frame => frame.reason.endsWith(":representative"));
+  add(representatives[0]?.frame); add(representatives.at(-1)?.frame);
   // Fixtures protect representative rendering; storyboard pagination owns full scene coverage.
   add(0); add(result.plan.durationInFrames - 1);
   const event = available.find((f) => /board\.swap/.test(f.reason))
