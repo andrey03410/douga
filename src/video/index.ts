@@ -30,3 +30,5 @@ export * from "./recipes";
 export * from "./content";
 export * from "./storyboard";
 export * from "./video-review";
+export * from "./storyboard-diff";
+export * from "./recipe-apply";

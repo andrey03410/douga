@@ -755,7 +755,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_preset_apply",
-    "Apply design/output as a draft preserving source counts, questions, answers, media and bindings. CAS required; commit separately.",
+    "Apply a preset to the draft. recipe.* defaults to mode:preserve (authored scenes, timing, media and local overrides kept); mode:replace resets appearance only. Legacy templates without mode keep full replacement semantics. CAS; no commit.",
     project.merge(studio.applyStudioPresetSchema),
     async ({ projectId, ...input }) =>
       studio.studioProjectMetadata(
@@ -940,6 +940,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
             mimeType: artifact.mimeType,
             bytes: artifact.bytes,
             hash: artifact.hash,
+            ...(result.inspection ? { inspection: result.inspection, ...(result.kind === "storyboard" ? { nextAction: result.nextPageAction ?? { tool: "video_review", arguments: { projectId: result.projectId, sourceJobId: result.id } } } : {}) } : {}),
             clientDisplayLimitation: displayLimitation,
           },
           true,

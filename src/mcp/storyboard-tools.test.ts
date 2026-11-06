@@ -28,3 +28,16 @@ it("returns a ready status action for queued work without creating per-tile jobs
   expect(result.structuredContent.nextAction).toMatchObject({ tool: "video_job_get", arguments: { jobId: "j" } });
   expect(mocks.start).toHaveBeenCalledTimes(1);
 });
+it("offers the frozen continuation as the next action when a ready sheet has more pages", async () => {
+  const nextPageAction = { tool: "video_storyboard", arguments: { projectId: "p", sourceJobId: "j", page: 1, pageSize: 12, mode: "overview" } };
+  mocks.start.mockResolvedValue({ id: "j", kind: "storyboard", status: "done", nextPageAction });
+  mocks.resource.mockResolvedValue({ blob: "aW1hZ2U=", mimeType: "image/png" });
+  const result = await registered.get("video_storyboard")!.run({ projectId: "p" });
+  expect(result.structuredContent.nextAction).toEqual(nextPageAction);
+});
+it("lets the service inherit a pinned continuation's mode and page size", async () => {
+  mocks.start.mockResolvedValue({ id: "j", kind: "storyboard", status: "queued" });
+  await registered.get("video_storyboard")!.run({ projectId: "p", sourceJobId: "old", page: 1 });
+  expect(mocks.start.mock.calls[0][2].mode).toBeUndefined();
+  expect(mocks.start.mock.calls[0][2].pageSize).toBeUndefined();
+});

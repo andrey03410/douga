@@ -9,6 +9,20 @@ import {
 import { compileVideo } from "./compiler";
 
 describe("semantic video content", () => {
+  it("keeps generated binding and card IDs valid for maximum-length authored IDs", () => {
+    const doc = createVideoDocument({ kind: "picker", roundCount: 0 });
+    const participantId = "p".repeat(200), roundId = "r".repeat(200);
+    const input = { kind: "picker" as const, mode: "replace" as const,
+      participants: [{ id: participantId, label: "Герой", visualAssetId: "art" }],
+      rounds: [{ id: roundId, cards: [{ participantId }] }] };
+    expect(videoContentInputSchema.safeParse(input).success).toBe(true);
+    const result = buildVideoContent(doc, input);
+    expect(result.source.rounds[0].cards[0].id.length).toBeLessThanOrEqual(200);
+    expect(result.source.participants[0].media!.visual!.length).toBeLessThanOrEqual(200);
+    expect(buildVideoContent(doc, input)).toEqual(result);
+    const other = buildVideoContent(doc, { ...input, participants: [{ ...input.participants[0], id: `${"p".repeat(199)}q` }], rounds: [{ id: roundId, cards: [{ participantId: `${"p".repeat(199)}q` }] }] });
+    expect(other.source.rounds[0].cards[0].id).not.toBe(result.source.rounds[0].cards[0].id);
+  });
   it("fills a manual top without changing styling or inventing ranks", () => {
     const doc = createVideoDocument({ kind: "top" });
     doc.settings!.card = { borderRadius: 41 };

@@ -29,8 +29,9 @@ export function registerStoryboardTools(server: McpServer, actor: Actor) {
       return response({ ...studioProjectMetadata(project), missingInputs: project.missingInputs,
         nextAction: { tool: "video_storyboard", arguments: { projectId, expectedVersion: project.version } } });
     }, false);
-  register("video_storyboard", "One semantic contact sheet of an owned draft/revision. No commit/source reconciliation. Returns native PNG when ready, otherwise one durable job and ready nextAction. Long videos use explicit pages; compare pins both origins.",
-    storyboardSchema.innerType().extend({ projectId, waitMs: z.number().int().min(0).max(2000).default(0) }), async ({ projectId, waitMs, ...input }) => {
+  register("video_storyboard", "One semantic contact sheet of an owned draft/revision. No commit/source reconciliation. Returns native PNG when ready, otherwise one durable job and ready nextAction. Continue pages using sourceJobId. Compare pins both origins; optional pixelDiff adds RGBA difference tiles/PSNR, not a beauty score.",
+    storyboardSchema.innerType().extend({ projectId, waitMs: z.number().int().min(0).max(2000).default(0) })
+      .partial({ mode: true, page: true, pageSize: true }), async ({ projectId, waitMs, ...input }) => {
       let job = await startStudioStoryboard(actor.userId, projectId, input);
       const deadline = Date.now() + waitMs;
       while (["queued", "running"].includes(job.status) && Date.now() < deadline) {
@@ -39,7 +40,7 @@ export function registerStoryboardTools(server: McpServer, actor: Actor) {
       }
       const ready = job.status === "done";
       const result = response({ ...job, nextAction: ready
-        ? { tool: "video_review", arguments: { projectId, ...(job.inspection?.origin.version ? { expectedVersion: job.inspection.origin.version } : { revision: job.inspection?.origin.revision }) } }
+        ? (job.nextPageAction ?? { tool: "video_review", arguments: { projectId, sourceJobId: job.id } })
         : ["failed", "canceled"].includes(job.status) ? null : { tool: "video_job_get", arguments: { jobId: job.id }, then: { tool: "video_job_inspect", arguments: { jobId: job.id } } },
         ...(job.status === "queued" ? { note: "Нужен запущенный studio:worker. Повтор запроса использует это же задание." } : {}) });
       if (ready) {

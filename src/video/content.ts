@@ -86,6 +86,14 @@ function unique(items: { id: string }[], path: string) {
   if (new Set(items.map((i) => i.id)).size !== items.length)
     fail("CONTENT_DUPLICATE_ID", path);
 }
+/** Preserve familiar short IDs; long authored identities still fit the SDK's 200-character budget. */
+function boundedContentId(readable: string, identity: unknown): string {
+  if (readable.length <= 200) return readable;
+  let digest = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(JSON.stringify(identity)))
+    digest = BigInt.asUintN(64, (digest ^ BigInt(byte)) * 0x100000001b3n);
+  return `content-generated:${digest.toString(16).padStart(16, "0")}`;
+}
 function mergeById<T extends { id: string }>(
   old: T[],
   updates: T[],
@@ -183,7 +191,7 @@ export function buildVideoContent(
         p.media[channel] = oldKey;
         continue;
       }
-      const base = `content:${p.id}:${channel}`;
+      const base = boundedContentId(`content:${p.id}:${channel}`, ["binding", p.id, channel]);
       let key = base,
         suffix = 0;
       while (
@@ -193,7 +201,7 @@ export function buildVideoContent(
           (doc.bindings[key] as { assetId: string }).assetId === assetId
         )
       )
-        key = `${base}:${++suffix}`;
+        key = boundedContentId(`${base}:${++suffix}`, ["binding", p.id, channel, suffix]);
       doc.bindings[key] = { kind: "pool", assetId };
       p.media[channel] = key;
     }
@@ -235,7 +243,7 @@ export function buildVideoContent(
                 ? { settings: previous.settings }
                 : {}),
             ...c,
-            id: c.id ?? previous?.id ?? `${update.id}:card:${c.participantId}`,
+            id: c.id ?? previous?.id ?? boundedContentId(`${update.id}:card:${c.participantId}`, ["card", update.id, c.participantId]),
           };
         });
       unique(result.cards, `rounds.${result.id}.cards`);

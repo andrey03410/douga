@@ -102,6 +102,7 @@ it("rechecks a real authoring fix and replays it without a second mutation", asy
     const before = await prisma.studioProject.findUniqueOrThrow({ where: { id: project.id } });
     const report = await reviewStudioVideo(uid, project.id, { expectedVersion: project.version });
     expect(await prisma.studioProject.findUnique({ where: { id: project.id } })).toEqual(before);
+    const beforeJob = await startStudioStoryboard(uid, project.id, { expectedVersion: project.version });
     const suggestion = report.suggestions.find(s => s.kind === "return-label-theme")!;
     expect(suggestion).toBeDefined();
     const input = { expectedVersion: project.version, reportId: report.reportId, suggestionIds: [suggestion.id], idempotencyKey: randomUUID() };
@@ -115,6 +116,14 @@ it("rechecks a real authoring fix and replays it without a second mutation", asy
     expect(draft.scenes[0].nodes[0]).toMatchObject({ text: "Имя героя" });
     expect(draft.source).toEqual(document.source);
     expect(draft.bindings).toEqual(document.bindings);
+    const comparison = await startStudioStoryboard(uid, project.id, { expectedVersion: fixed.version, mode: "compare", compareJobId: beforeJob.id });
+    expect(comparison.inspection?.comparison?.changesTotal).toBeGreaterThan(0);
+    expect(comparison.inspection?.comparison?.resolvedIssues.some(i => i.code === "LABEL_THEME_OVERRIDE")).toBe(true);
     await expect(applyStudioReview(uid, project.id, { ...input, expectedVersion: fixed.version, idempotencyKey: undefined })).rejects.toMatchObject({ code: "REVIEW_STALE" });
-  } finally { await deleteStudioProject(uid, project.id); }
+  } finally {
+    for (const job of await prisma.studioJob.findMany({ where: { projectId: project.id } })) {
+      await prisma.studioJob.delete({ where: { id: job.id } }); await removePath(`studio-jobs/${uid}/${job.id}`);
+    }
+    await deleteStudioProject(uid, project.id);
+  }
 });

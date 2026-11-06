@@ -470,12 +470,12 @@ export async function applyStudioPreset(
             const candidate = await getStudioPreset(userId, document.preset.id);
             if (candidate.version === document.preset.version) basePreset = candidate;
           } catch (error) {
-        if (error instanceof RecipeApplyError) throw new StudioError(error.code);
             if (!(error instanceof StudioError) || error.code !== "NOT_FOUND") throw error;
           }
         }
         return { document: applyVideoRecipe(document, preset, { mode: input.mode, basePreset }) };
       } catch (error) {
+        if (error instanceof RecipeApplyError) throw new StudioError(error.code);
         if (error instanceof PresetIncompatibleError)
           throw new StudioError("PRESET_INCOMPATIBLE", [
             {

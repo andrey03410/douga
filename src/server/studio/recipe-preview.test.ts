@@ -17,6 +17,7 @@ import {
 } from "./projects";
 import { hash } from "./shared";
 import * as sources from "./sources";
+import { StudioError } from "./errors";
 const baseline = vi.hoisted(() => ({
   manifest: null as string | null,
   files: new Map<string, Buffer>(),
@@ -279,6 +280,15 @@ it("returns a verified accepted baseline descriptor and declines missing or untr
     code: "PREVIEW_NOT_READY",
   });
 });
+it("prefers a declared stable representative over an earlier exit or transition sample", async () => {
+  const fixtureId = `preset.${recipeId}`;
+  const frames = [60, 90].map(frame => ({ fixtureId, frame,
+    file: `frames/${fixtureId}/${frame}.png`, pngHash: hash(png), width: 64, height: 64,
+    reasons: [{ frame, phase: "after", reason: `main:${frame === 90 ? "representative" : "end"}` }] }));
+  baseline.manifest = JSON.stringify({ version: 1, accepted: { reason: "test", at: "2026-11-06" }, frames });
+  for (const frame of frames) baseline.files.set(path.resolve(".ai/features/32-storyboard-reference/baselines", frame.file), png);
+  expect((await getStudioRecipePreview(owner, recipeId)).frame).toBe(90);
+});
 
 it("uses the same preserving recipe application for try-on and atomic writes", async () => {
   const original = await prisma.studioProject.findUniqueOrThrow({
@@ -362,6 +372,11 @@ it("uses the same preserving recipe application for try-on and atomic writes", a
       })
     ).version,
   ).toBe(replaced.version);
+  const wrongKind = await applyStudioPreset(owner, created.id, {
+    presetId: "recipe.clean.picker.wide", expectedVersion: replaced.version,
+  }).catch(error => error);
+  expect(wrongKind).toBeInstanceOf(StudioError);
+  expect(wrongKind.code).toBe("PRESET_KIND_MISMATCH");
   const legacy = await applyStudioPreset(owner, created.id, {
     presetId: "top.cinematic.wide",
     expectedVersion: replaced.version,

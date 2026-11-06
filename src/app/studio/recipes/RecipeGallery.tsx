@@ -95,6 +95,7 @@ export default function RecipeGallery({
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
     [detailLoading, setDetailLoading] = useState(false);
+  const [applyMode, setApplyMode] = useState<"preserve" | "replace">("preserve");
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [createdProject, setCreatedProject] = useState("");
@@ -207,6 +208,7 @@ export default function RecipeGallery({
         api<TryResult>(`recipes/${encodeURIComponent(id)}/try`, "POST", {
           projectId: currentProject.id,
           expectedVersion: currentProject.version,
+          mode: applyMode,
         }),
       ),
     );
@@ -230,6 +232,7 @@ export default function RecipeGallery({
       "POST",
       {
         presetId: recipe.id,
+        mode: applyMode,
         expectedVersion: currentProject.version,
         idempotencyKey: crypto.randomUUID(),
       },
@@ -576,6 +579,12 @@ export default function RecipeGallery({
               ))}
             </select>
           </label>
+          <label>Локальное оформление
+            <select value={applyMode} onChange={event => { setApplyMode(event.target.value as "preserve" | "replace"); setTries([]); setConsent(false); }}>
+              <option value="preserve">Сохранить мои настройки</option>
+              <option value="replace">Заменить оформление рецептом</option>
+            </select>
+          </label>
           <div className="studio-toolbar">
             <button
               className="btn ghost"
@@ -660,6 +669,7 @@ export default function RecipeGallery({
               {currentProject.title || kinds[currentProject.kind]} · серверный
               черновик v{currentProject.version}.
             </p>
+            <p className="muted">{applyMode === "preserve" ? "Авторские настройки оформления сохранятся." : "Локальные настройки оформления будут заменены."} Сцены, порядок, материалы и длительности сохраняются.</p>
             <label className="sb-fix">
               <input
                 type="checkbox"

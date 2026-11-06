@@ -191,6 +191,17 @@
   justify-content: center;
   margin: 24px 0;
 }
+.sb-comparison-summary {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.sb-comparison-summary li {
+  margin: 8px 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .storyboard-page details {
   margin: 18px 0;
 }

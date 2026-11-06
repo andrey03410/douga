@@ -149,18 +149,33 @@ export async function verifyStoryboard() {
     await finish(admin, (await call(admin, "video_storyboard", { projectId: picker.projectId, expectedVersion: picker.version, mode: "scene", sceneId: tile.sceneId, ...(tile.segmentId ? { segmentId: tile.segmentId } : {}) })).data, "scene-detail");
     await unchanged(picker.projectId, beforeScene, "readonly-scene-detail");
     const changed = (await call(admin, "video_content_set", { projectId: picker.projectId, expectedVersion: picker.version, content: { kind: "picker", mode: "merge", participants: [{ id: picker.content.participants![0].id, label: "Новое имя / 朝" }] } })).data;
+    const pinnedReview = (await call(admin, "video_review", { projectId: picker.projectId, sourceJobId: picker.storyboardJobId })).data;
+    await check(pinnedReview.origin.version === picker.version && pinnedReview.origin.contentHash === old.inspection.origin.contentHash, "review follows original frozen storyboard after live content changes");
     const beforeCompare = await snapshot(picker.projectId);
-    const comparison = await finish(admin, (await call(admin, "video_storyboard", { projectId: picker.projectId, expectedVersion: changed.version, mode: "compare", compareJobId: picker.storyboardJobId, pageSize: 12 })).data, "content-comparison");
+    const comparison = await finish(admin, (await call(admin, "video_storyboard", { projectId: picker.projectId, expectedVersion: changed.version, mode: "compare", compareJobId: picker.storyboardJobId, pixelDiff: true, pageSize: 12 })).data, "content-comparison");
     await check(comparison.job.inspection.origin.version === changed.version && comparison.job.inspection.compareOrigin.version === picker.version && comparison.job.inspection.origin.documentHash !== comparison.job.inspection.compareOrigin.documentHash, "comparison pins distinct current/previous content origins");
+    await check(comparison.job.inspection.comparison.contentChanged && comparison.job.inspection.comparison.changesTotal > 0, "comparison explains changed content properties");
+    await check(comparison.job.result.storyboard.pixelComparisons?.some((pair: any) => pair.status === "different"), "optional pixel diff measures changed image content");
+    const diffFrame = comparison.job.result.storyboard.frames.find((frame: any) => frame.side === "diff");
+    assert(diffFrame, "Missing owned diff frame");
+    const diffImage = await call(admin, "video_job_inspect", { jobId: comparison.job.id, frameId: diffFrame.id });
+    await check((diffImage.response.content as any[]).some(block => block.type === "image" && block.mimeType === "image/png"), "pixel diff is a native owned PNG frame");
     await unchanged(picker.projectId, beforeCompare, "readonly-compare");
     const longCreated = (await call(admin, "video_project_create", { presetId: picker.presetId, title: "Длинная проверка32" })).data;
     const longContent = structuredClone(picker.content); assert(longContent.kind === "picker", "Picker form required");
     longContent.rounds = Array.from({ length: 26 }, (_, i) => ({ ...structuredClone(longContent.rounds![0]), id: `long-round-${i + 1}`, prompt: `Раунд ${i + 1} / 光` }));
     const longFilled = (await call(admin, "video_content_set", { projectId: longCreated.id, expectedVersion: longCreated.version, content: longContent })).data;
     const beforeLong = await snapshot(longCreated.id), seen = new Set<string>(); let totalPages = 1, totalScenes = 0;
+    let continuation: Record<string, unknown> = { projectId: longCreated.id, expectedVersion: longFilled.version, page: 0, pageSize: 24 }, longOrigin: string | undefined;
     for (let page = 0; page < totalPages; page++) {
-      const completed = await finish(admin, (await call(admin, "video_storyboard", { projectId: longCreated.id, expectedVersion: longFilled.version, page, pageSize: 24 })).data, `long-page-${page}`);
+      const completed = await finish(admin, (await call(admin, "video_storyboard", continuation)).data, `long-page-${page}`);
       const selection = completed.job.inspection.selection; totalPages = selection.totalPages; totalScenes = selection.totalScenes;
+      longOrigin ??= completed.job.inspection.origin.contentHash;
+      await check(completed.job.inspection.origin.contentHash === longOrigin, `long page ${page} keeps frozen origin`);
+      if (page + 1 < totalPages) {
+        assert(completed.job.nextPageAction?.arguments.sourceJobId === completed.job.id, "Missing pinned continuation action");
+        continuation = completed.job.nextPageAction.arguments;
+      }
       await check(selection.tiles.length <= 24, `long page ${page} respects max24`);
       for (const selected of selection.tiles) { const key = JSON.stringify([selected.segmentId, selected.sceneId]); assert(!seen.has(key), `Overview repeats scene across pages: ${key}`); seen.add(key); }
     }
@@ -188,9 +203,11 @@ export async function verifyStoryboard() {
     await check(!afterReview.issues.some((i: any) => i.code === "TEXT_OVERFLOW"), "supported review apply removes measured overflow");
     const afterDocument = (await call(admin, "video_document_get", { projectId: reviewProject.id, section: "draft" })).data.document;
     await check(afterDocument.scenes[0].nodes[0].text === originalLabel.text && JSON.stringify(afterDocument.source) === JSON.stringify(custom.source) && JSON.stringify(afterDocument.bindings) === JSON.stringify(custom.bindings), "review apply preserves text/source/media");
+    const backup = (await call(admin, "video_document_get", applied.restore.arguments)).data;
+    await check(backup.document.scenes[0].nodes[0].text === originalLabel.text && backup.restore.tool === "video_draft_replace", "review apply exposes exact before document and ready restore action");
     await finish(admin, (await call(admin, "video_storyboard", { projectId: reviewProject.id, expectedVersion: applied.version, mode: "compare", compareJobId: reviewBefore.job.id })).data, "review-comparison"); summary.reviewProjectId = reviewProject.id;
     const deepCase = scenarios.find((s) => s.kind === "top" && s.format === "wide")!, beforeDeep = await snapshot(deepCase.projectId);
-    const deep = (await call(admin, "video_review", { projectId: deepCase.projectId, expectedVersion: deepCase.version, mode: "deep" })).data;
+    const deep = (await call(admin, "video_review", { projectId: deepCase.projectId, sourceJobId: deepCase.storyboardJobId, mode: "deep" })).data;
     await check(deep.deep.jobs.length > 0, "deep review enqueues bounded actual preview clips");
     const measurements = [];
     for (const [index, request] of deep.deep.jobs.entries()) {
@@ -204,7 +221,7 @@ export async function verifyStoryboard() {
       await check(!measurement.silent && measurement.sampleCount > 0, `deep clip ${index} contains decoded non-silent PCM`, measurement);
     }
     await save("audio-measurements.json", measurements); await unchanged(deepCase.projectId, beforeDeep, "readonly-deep-review-and-render");
-    const repeatedDeep = (await call(admin, "video_review", { projectId: deepCase.projectId, expectedVersion: deepCase.version, mode: "deep" })).data;
+    const repeatedDeep = (await call(admin, "video_review", { projectId: deepCase.projectId, sourceJobId: deepCase.storyboardJobId, mode: "deep" })).data;
     await check(repeatedDeep.deep.jobs.every((j: any) => j.status === "done") && repeatedDeep.deep.jobs.map((j: any) => j.id).join() === deep.deep.jobs.map((j: any) => j.id).join(), "deep preview cache returns same completed jobs");
     summary.status = "passed";
   } catch (error) {

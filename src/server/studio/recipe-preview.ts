@@ -189,6 +189,7 @@ const baselineFrameSchema = z.object({
   pngHash: digest,
   width: z.number().int().positive().max(1920),
   height: z.number().int().positive().max(1920),
+  reasons: z.array(z.object({ reason: z.string() }).passthrough()).optional(),
 });
 const baselineManifestSchema = z.object({
   version: z.literal(1),
@@ -212,7 +213,8 @@ export async function getStudioRecipePreview(userId: string, recipeId: string) {
     );
     // Prefer a stable mid-scene frame over an intentionally empty entrance frame.
     const record =
-      candidates.find((frame) => frame.frame >= 30) ?? candidates[0];
+      candidates.find(frame => frame.reasons?.some(reason => reason.reason.endsWith(":representative")))
+      ?? candidates.find((frame) => frame.frame >= 30) ?? candidates[0];
     if (!record) throw new Error("MISSING_RECIPE_BASELINE");
     const expectedFile = `frames/${record.fixtureId}/${record.frame}.png`;
     if (

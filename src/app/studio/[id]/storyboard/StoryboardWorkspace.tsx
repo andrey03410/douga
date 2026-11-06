@@ -12,7 +12,7 @@ import type { reviewStudioVideo } from "@/server/studio/review";
 
 type Report = Awaited<ReturnType<typeof reviewStudioVideo>>;
 type PlanView = { origin: InspectionOrigin; plan: CompiledVideo };
-type Tile = StoryboardTile & { side?: "before" | "after"; missing?: boolean };
+type Tile = StoryboardTile & { side?: "before" | "after" | "diff"; missing?: boolean };
 type Initial = { id: string; title: string; version: number; revision: number };
 const active = (job: StudioJobView | null) =>
   !!job && ["queued", "running"].includes(job.status);
@@ -37,6 +37,7 @@ const stateText = (state: string) =>
       end: "Конец",
       reveal: "Раскрытие",
       timer: "Таймер",
+      "pixel-diff": "Пиксельные различия",
     }) as Record<string, string>
   )[state] ??
   (state.startsWith("transition")
@@ -117,6 +118,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
   const [revision, setRevision] = useState(""),
     [compareRevision, setCompareRevision] = useState(String(initial.revision));
   const [baselineJob, setBaselineJob] = useState(""),
+    [pixelDiff, setPixelDiff] = useState(false),
     [comparisonSource, setComparisonSource] = useState<"revision" | "job">(
       "revision",
     );
@@ -263,9 +265,9 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
       : undefined;
   const tiles = (selection?.tiles ?? []) as Tile[];
   const stale =
-    origin?.version !== null &&
+    (origin?.version !== null &&
     origin?.version !== undefined &&
-    origin.version !== version;
+    origin.version !== version) || (!!origin && !!planView && origin.contentHash !== planView.origin.contentHash);
   const playerMatches =
     !!planView &&
     (!origin || planView.origin.contentHash === origin.contentHash);
@@ -282,7 +284,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
         ? { compareJobId: baselineJob }
         : { compareRevision: Number(compareRevision) }
       : {};
-    const options = {
+    const options: Record<string, unknown> = {
       ...scope(),
       mode: tab === "compare" ? "compare" : scene ? "scene" : "overview",
       ...(segment ? { segmentId: segment } : {}),
@@ -292,6 +294,12 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
       ...compare,
       ...overrides,
     };
+    if (options.sourceJobId) {
+      delete options.expectedVersion; delete options.revision;
+      delete options.compareJobId; delete options.compareRevision;
+    } else if (options.mode === "compare") {
+      options.pixelDiff = pixelDiff;
+    }
     const value = await request<StudioJobView>(
       `${base}/storyboard`,
       "POST",
@@ -300,11 +308,13 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
     acceptJob(value, options);
   }
   async function nextPage(page: number) {
-    if (!requestOptions.current || !origin)
+    if (!job || !origin)
       throw Error(
         "Соберите первую страницу заново, чтобы закрепить параметры просмотра.",
       );
-    const options = { ...requestOptions.current, page };
+    const previousOptions: Record<string, unknown> = requestOptions.current ?? { ...job.inspection?.scope };
+    const { compareJobId: _compareJob, compareRevision: _compareRevision, expectedVersion: _version, revision: _revision, ...pinnedScope } = previousOptions;
+    const options = { ...pinnedScope, sourceJobId: job!.id, page };
     const value = await request<StudioJobView>(
       `${base}/storyboard`,
       "POST",
@@ -326,8 +336,10 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
     deep = false,
     targetVersion = version,
   ) {
+    const jobOrigin = job?.inspection?.origin;
+    const pinnedSource = jobOrigin && (revision ? jobOrigin.revision === Number(revision) : jobOrigin.version === targetVersion) ? job?.id : undefined;
     const value = await request<Report>(`${base}/review`, "POST", {
-      ...(revision
+      ...(pinnedSource ? { sourceJobId: pinnedSource } : revision
         ? { revision: Number(revision) }
         : { expectedVersion: targetVersion }),
       mode: deep ? "deep" : "quick",
@@ -359,6 +371,15 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
       behavior: "smooth",
       block: "center",
     });
+  }
+  async function reviewMoment(issue: Report["issues"][number]) {
+    if (!report) return;
+    const focused = await request<Report>(`${base}/review`, "POST", {
+      ...(report.sourceJobId ? { sourceJobId: report.sourceJobId } : report.origin.revision ? { revision: report.origin.revision } : { expectedVersion: report.origin.version }),
+      mode: "deep", sceneId: issue.sceneId, segmentId: issue.segmentId, frame: issue.frame,
+    });
+    setReport(old => old && old.reportId === focused.reportId ? { ...old, deep: focused.deep } : focused);
+    setNotice("Клип запрошен для выбранной сцены и указанного момента. Результат появится в разделе движения и звука ниже.");
   }
   async function apply() {
     if (!report || !selected.length) return;
@@ -554,6 +575,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
         </div>
         {tab === "compare" && (
           <div className="sb-filter-row">
+            <label><input type="checkbox" checked={pixelDiff} onChange={e => setPixelDiff(e.target.checked)} />Показать пиксельные различия</label>
             <label>
               Сравнить с
               <select
@@ -653,8 +675,8 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
           )}
           {stale && (
             <p className="sb-alert">
-              Этот результат относится к прежней версии. Текущий черновик — v
-              {version}; соберите новую раскадровку.
+              Результат закреплён за прежним документом или материалами. Текущий черновик — v
+              {version}. Страницы этого снимка доступны; новую раскадровку можно собрать отдельно.
             </p>
           )}
           {selection && (
@@ -667,6 +689,18 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
               {selection.page + 1} из {selection.totalPages}.
             </p>
           )}
+          {job.inspection?.comparison && <div className="sb-comparison-summary">
+            <h3>Что изменилось</h3>
+            <p>Свойств изменено: {job.inspection.comparison.changesTotal}. Замечаний устранено: {job.inspection.comparison.totals.resolved}; новых: {job.inspection.comparison.totals.new}; осталось: {job.inspection.comparison.totals.remaining}.</p>
+            {job.inspection.comparison.contentChanged && <p className="muted">Содержание или материалы изменились. Разница изображений ожидаема.</p>}
+            <details><summary>Изменения свойств и замечаний</summary>
+              <ul>{job.inspection.comparison.changes.map((change, index) => <li key={index}><strong>{change.label}:</strong> {change.before || "—"} → {change.after || "—"}</li>)}</ul>
+              {job.inspection.comparison.changesTruncated && <p className="muted">Показаны первые 50 изменений.</p>}
+              {job.inspection.comparison.resolvedIssues.length > 0 && <><h4>Устранены</h4><ul>{job.inspection.comparison.resolvedIssues.map(issue => <li key={issue.id}>{issueText[issue.code] ?? issue.message}</li>)}</ul></>}
+              {job.inspection.comparison.newIssues.length > 0 && <><h4>Появились</h4><ul>{job.inspection.comparison.newIssues.map(issue => <li key={issue.id}>{issueText[issue.code] ?? issue.message}</li>)}</ul></>}
+            </details>
+            <p className="muted">Сравнены документ и статические измерения. Движение и звук проверяются отдельно.</p>
+          </div>}
           {active(job) && (
             <>
               <progress
@@ -763,6 +797,14 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                   alt={`Раскадровка: ${selection?.scenesCovered ?? 0} сцен, страница ${(selection?.page ?? 0) + 1}`}
                 />
               </a>
+              {result.pixelComparisons && <details className="sb-comparison-report">
+                <summary>Пиксельные различия: {result.pixelComparisons.length} пар</summary>
+                <p className="muted">Точное сравнение RGBA. Изменения содержания и оформления ожидаемо меняют пиксели.</p>
+                <ul>{result.pixelComparisons.map((pair, index) => <li key={index}>
+                  Кадры {pair.beforeFrame ?? "—"} / {pair.afterFrame ?? "—"}: {pair.status === "identical" ? "совпадают" : pair.status === "different" ? "различаются" : "не сопоставимы"}
+                  {pair.metrics && <> · PSNR {typeof pair.metrics.psnr === "number" ? pair.metrics.psnr.toFixed(2) : "∞"} · изменено {(pair.metrics.changedPixelRatio * 100).toFixed(3)}% · максимальная разница {pair.metrics.maxDelta}</>}
+                </li>)}</ul>
+              </details>}
               <div className="sb-tiles">
                 {tiles.map((tile, index) => {
                   const artifact = result.frames.find(
@@ -782,6 +824,8 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                             ? "До · "
                             : tile.side === "after"
                               ? "После · "
+                              : tile.side === "diff"
+                                ? "Разница · "
                               : ""}
                           {tile.label}
                         </strong>
@@ -833,6 +877,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                           disabled={
                             !playerMatches ||
                             tile.side === "before" ||
+                            tile.side === "diff" ||
                             tile.missing
                           }
                           onClick={() => seek(tile.frame)}
@@ -844,16 +889,19 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                           disabled={busy || active(job)}
                           onClick={() => {
                             setScene(tile.sceneId);
-                            setTab("video");
+                            setTab(tile.side ? "compare" : "video");
+                            setSegment(tile.segmentId ?? "");
                             void run(() =>
                               storyboard(0, {
-                                mode: "scene",
+                                mode: tile.side ? "compare" : "scene",
                                 sceneId: tile.sceneId,
+                                ...(tile.segmentId ? { segmentId: tile.segmentId } : {}),
+                                sourceJobId: job.id,
                               }),
                             );
                           }}
                         >
-                          Состояния сцены
+                          {tile.side ? "Сравнить состояния сцены" : "Состояния сцены"}
                         </button>
                       </div>
                     </article>
@@ -866,7 +914,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
             <div className="sb-pagination">
               <button
                 className="btn secondary"
-                disabled={busy || active(job) || selection.page === 0 || stale}
+                disabled={busy || active(job) || selection.page === 0}
                 onClick={() => void run(() => nextPage(selection.page - 1))}
               >
                 ← Назад
@@ -879,8 +927,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                 disabled={
                   busy ||
                   active(job) ||
-                  selection.page + 1 >= selection.totalPages ||
-                  stale
+                  selection.page + 1 >= selection.totalPages
                 }
                 onClick={() => void run(() => nextPage(selection.page + 1))}
               >
@@ -928,7 +975,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                     <strong>
                       {(
                         {
-                          layout: "Текстовый layout",
+                          layout: "Размещение текста",
                           textSafeArea: "Безопасная зона",
                           readableWindow: "Время чтения",
                           motion: "Движение",
@@ -990,6 +1037,9 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
                         Показать в плеере
                       </button>
                     )}
+                    {issue.nextAction?.type === "clip" && <button className="btn ghost" disabled={busy} onClick={() => void run(() => reviewMoment(issue))}>
+                      Проверить этот момент в движении
+                    </button>}
                     <details>
                       <summary>Измерения и правило</summary>
                       <pre className="studio-code">
