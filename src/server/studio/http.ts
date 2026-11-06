@@ -157,6 +157,8 @@ export async function studioHttp(
             ),
           );
       } else {
+        if (read && action === "review-backups" && detail)
+          return json(await studio.getStudioReviewBackup(uid, id, detail));
         if (read && action === "history") {
           if (!detail)
             return json(

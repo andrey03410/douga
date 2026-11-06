@@ -53,7 +53,7 @@ export async function renderStoryboardAttempt(request: RenderAttempt & { input: 
   const tileHeight = Math.round(tileWidth / ratio);
   const width = 1600, height = 118 + Math.ceil(tiles.length / columns) * (tileHeight + 80 + 14);
   const inputProps: StoryboardSheetProps = { width, height, columns, tileWidth, tileHeight,
-    title: compare ? "Раскадровка · до / после" : "Раскадровка",
+    title: `${summary.diagnostic ? "Диагностика · текст не помещается · " : ""}${compare ? "Раскадровка · до / после" : "Раскадровка"}`,
     subtitle: `Страница ${summary.selection.page + 1} из ${summary.selection.totalPages} · сцен ${summary.selection.scenesCovered}/${summary.selection.totalScenes} · ${summary.origin.revision ? `ревизия ${summary.origin.revision}` : `версия ${summary.origin.version}`}`,
     tiles: sheetTiles };
   const browserExecutable = process.env.REMOTION_BROWSER_EXECUTABLE;

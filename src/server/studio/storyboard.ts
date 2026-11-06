@@ -179,7 +179,8 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
       scenesCovered: matches.scenesCovered, remainingScenes: matches.remainingScenes };
   }
   if (!tiles.length) throw new StudioError("STORYBOARD_EMPTY");
-  const summary: InspectionSummary = { origin: prepared.origin, selection, ...(comparison ? { compareOrigin: comparison.origin } : {}) };
+  const summary: InspectionSummary = { origin: prepared.origin, selection, ...(comparison ? { compareOrigin: comparison.origin } : {}),
+    ...(!prepared.validation.ready ? { diagnostic: { ready: false as const, codes: [...new Set(prepared.validation.diagnostics.filter(d => d.severity === "error").map(d => d.code))] } } : {}) };
   const render: StoryboardRenderInput = { kind: "storyboard", tiles, summary };
   return enqueueInspection(userId, projectId, prepared, engineId, render, summary,
     { key: input.idempotencyKey, request, comparison });

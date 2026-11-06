@@ -6,7 +6,7 @@ import path from "node:path";
 import { release } from "node:os";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import ffmpeg from "ffmpeg-static";
 import { ensureBrowser } from "@remotion/renderer";
@@ -136,6 +136,7 @@ export async function renderVisualFixtures(options: ReturnType<typeof parseVisua
       run.frames.push({ id: `${fixture.id}@${frame.frame}`, fixtureId: fixture.id, frame: frame.frame, fixtureHash: sha256(json(fixture)), pngHash: sha256(png), file, width: image.width, height: image.height, environment: frameEnvironment, engineId, rois: pixelRegions(frozen.plan, frame.frame), reasons: fixture.frames.filter((f) => f.frame === frame.frame) });
     }
     await writeFile(path.join(verificationDirectory, "actual-manifest.json"), json(run));
+    await rm(path.join(directory, "render"), { recursive: true, force: true });
     console.log(`[${index + 1}/${selected.length}] ${fixture.id}: ${frames.length} frames`);
   }
   run.complete = selected.length === fixtures.length;

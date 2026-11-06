@@ -64,6 +64,26 @@ it("pins real recipe font and license bytes with the inspection input", async ()
     await deleteStudioProject(uid, project.id);
   }
 });
+it("labels the allowed overflowing-text image as diagnostic, never ordinary ready output", async () => {
+  const document = createVideoDocument({ kind: "picker", roundCount: 0 });
+  document.settings.typography = { theme: "clean" };
+  document.scenes = [{ id: "diagnostic", block: "custom", duration: { sec: 3 }, nodes: [{ id: "label", type: "text", text: "Имя", units: "px", rect: { x: 100, y: 100, width: 100, height: 50 }, typography: { role: "label", fontSize: 32, minFontSize: 20, fit: "fixed", maxLines: 1 } }] }];
+  const project = await createStudioProject(uid, { document });
+  try {
+    const label = document.scenes[0].nodes[0];
+    if (label.type !== "text") throw new Error("Expected text fixture");
+    label.text = "Очень длинное имя ".repeat(100);
+    const draft = await saveStudioDraft(uid, project.id, { expectedVersion: project.version, document });
+    expect(draft.validation.ready).toBe(false);
+    const job = await startStudioStoryboard(uid, project.id, { expectedVersion: draft.version });
+    expect(job.inspection?.diagnostic).toMatchObject({ ready: false, codes: ["TEXT_OVERFLOW"] });
+  } finally {
+    for (const job of await prisma.studioJob.findMany({ where: { projectId: project.id } })) {
+      await prisma.studioJob.delete({ where: { id: job.id } }); await removePath(`studio-jobs/${uid}/${job.id}`);
+    }
+    await deleteStudioProject(uid, project.id);
+  }
+});
 it("never substitutes a last-good preview for malformed current JSON", async () => {
   const p = await prisma.studioProject.findUniqueOrThrow({ where: { id: pid } });
   await saveStudioDraft(uid, pid, { expectedVersion: p.version, text: "{" });
@@ -92,7 +112,7 @@ it("rechecks a real authoring fix and replays it without a second mutation", asy
     const after = await reviewStudioVideo(uid, project.id, { expectedVersion: fixed.version });
     expect(after.issues.some(i => i.code === "LABEL_THEME_OVERRIDE")).toBe(false);
     const draft = fixed.draft!.document as typeof document;
-    expect(draft.scenes[0].nodes[0].text).toBe("Имя героя");
+    expect(draft.scenes[0].nodes[0]).toMatchObject({ text: "Имя героя" });
     expect(draft.source).toEqual(document.source);
     expect(draft.bindings).toEqual(document.bindings);
     await expect(applyStudioReview(uid, project.id, { ...input, expectedVersion: fixed.version, idempotencyKey: undefined })).rejects.toMatchObject({ code: "REVIEW_STALE" });

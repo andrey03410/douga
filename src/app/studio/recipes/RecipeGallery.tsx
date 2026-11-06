@@ -458,7 +458,7 @@ export default function RecipeGallery({
             <div className="sb-result-heading">
               <div>
                 <p className="sb-eyebrow">ЖИВОЙ ПРИМЕР</p>
-                <h2>{recipe.name}</h2>
+                <h2>{styles[recipe.style] ?? recipe.name}</h2>
               </div>
               <span className="sb-status">{formats[recipe.format]}</span>
             </div>
@@ -656,7 +656,7 @@ export default function RecipeGallery({
           <div className="recipe-apply">
             <h3>Применить выбранное оформление</h3>
             <p>
-              {recipe.name} →{" "}
+              {styles[recipe.style] ?? recipe.name} →{" "}
               {currentProject.title || kinds[currentProject.kind]} · серверный
               черновик v{currentProject.version}.
             </p>
@@ -677,7 +677,7 @@ export default function RecipeGallery({
               disabled={busy || !consent || currentProject.kind !== recipe.kind}
               onClick={() => void run(apply)}
             >
-              Применить {recipe.name}
+              Применить: {styles[recipe.style] ?? recipe.name}
             </button>
             {currentProject.kind !== recipe.kind && (
               <p className="muted">

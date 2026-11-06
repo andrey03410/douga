@@ -32,6 +32,23 @@ export const applyStudioReviewSchema = z.object({
 }).strict();
 const reportIdentity = (origin: unknown, profile: unknown) => hash(canonical({ origin, profile: profile ?? {}, version: 1 }));
 
+async function effectiveSuggestions(prepared: Awaited<ReturnType<typeof loadInspectionProject>>,
+  candidates: VideoReviewReport["suggestions"], profile: z.infer<typeof profileSchema> | undefined) {
+  const verified: VideoReviewReport["suggestions"] = [];
+  const measureText = candidates.length ? await getTypographyMeasureText() : undefined;
+  const oldErrors = new Set(prepared.validation.diagnostics.filter(d => d.severity === "error").map(d => `${d.code}:${d.path}:${d.nodeId ?? ""}`));
+  for (const suggestion of candidates) {
+    const document = patchVideoDocument(prepared.document, suggestion.operations);
+    if (canonical(document) === canonical(prepared.document)) continue;
+    const result = compileVideo(document, prepared.manifest, { measureText });
+    if (result.diagnostics.some(d => d.severity === "error" && !oldErrors.has(`${d.code}:${d.path}:${d.nodeId ?? ""}`))) continue;
+    const after = reviewVideo(result.plan, result.diagnostics, document, profile);
+    if (suggestion.issueIds.some(id => after.issues.some(i => i.id === id))) continue;
+    verified.push(suggestion);
+  }
+  return verified;
+}
+
 export async function reviewStudioVideo(userId: string, projectId: string, raw: z.input<typeof studioReviewSchema> = {}) {
   const input = studioReviewSchema.parse(raw);
   const prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
@@ -39,12 +56,17 @@ export async function reviewStudioVideo(userId: string, projectId: string, raw: 
   const reportId = reportIdentity(prepared.origin, input.profile);
   const issues = report.issues.slice(input.cursor, input.cursor + input.limit);
   const issueIds = new Set(issues.map(i => i.id));
-  const suggestions = report.suggestions.filter(s => s.issueIds.some(id => issueIds.has(id))).slice(0, 50);
+  const candidates = report.suggestions.filter(s => s.issueIds.some(id => issueIds.has(id)));
+  const suggestions = await effectiveSuggestions(prepared, candidates.slice(0, 20), input.profile);
+  const returnedIssues = issues.map(issue => ({ ...issue,
+    suggestionIds: issue.suggestionIds?.filter(id => suggestions.some(s => s.id === id)) }));
   const jobs = input.mode === "deep" ? await deepReviewJobs(userId, projectId, prepared) : [];
   const firstSuggestion = suggestions[0];
   const nextAction = firstSuggestion && prepared.origin.version !== null
     ? { tool: "video_review_apply", arguments: { projectId, expectedVersion: prepared.origin.version, reportId,
       suggestionIds: [firstSuggestion.id], ...(input.profile ? { profile: input.profile } : {}) }, title: firstSuggestion.title }
+    : issues[0]?.nextAction?.type === "clip" && input.mode !== "deep"
+      ? { tool: "video_review", arguments: { projectId, mode: "deep", ...(prepared.origin.revision ? { revision: prepared.origin.revision } : { expectedVersion: prepared.origin.version }) }, title: "Проверить момент в движении" }
     : issues[0]?.nextAction?.type === "text_inspect"
       ? { tool: "video_text_inspect", arguments: { projectId, expectedVersion: prepared.projectVersion,
         ...(issues[0].nodeId ? { nodeId: issues[0].nodeId } : {}) }, title: "Посмотреть измерения текста" }
@@ -55,9 +77,10 @@ export async function reviewStudioVideo(userId: string, projectId: string, raw: 
     projectId, reportId, origin: prepared.origin, ready: prepared.validation.ready,
     checked: "static-plan" as const, coverage: report.coverage,
     checks: report.checks.map(c => ({ ...c, id: c.code })),
-    totalIssues: report.issues.length, issues, suggestions,
+    totalIssues: report.issues.length, issues: returnedIssues, suggestions,
     counts: { errors: report.issues.filter(i => i.severity === "error").length,
-      warnings: report.issues.filter(i => i.severity === "warning").length, suggestions: report.suggestions.length },
+      warnings: report.issues.filter(i => i.severity === "warning").length, suggestions: suggestions.length },
+    suggestionsPending: Math.max(0, candidates.length - 20),
     nextCursor: input.cursor + issues.length < report.issues.length ? input.cursor + issues.length : null,
     nextAction,
     deep: { requested: input.mode === "deep", jobs: jobs.map(j => ({ id: j.id, kind: j.kind, status: j.status,
@@ -108,10 +131,14 @@ export async function applyStudioReview(userId: string, projectId: string, raw: 
   if (suggestions.some(s => !s)) throw new StudioError("SUGGESTION_NOT_FOUND");
   const operations = suggestions.flatMap(s => s!.operations);
   const document = patchVideoDocument(prepared.document, operations);
+  if (canonical(document) === canonical(prepared.document)) throw new StudioError("REVIEW_FIX_INEFFECTIVE");
   const verification = compileVideo(document, prepared.manifest, { measureText: await getTypographyMeasureText() });
   const priorErrors = new Set(prepared.validation.diagnostics.filter(d => d.severity === "error").map(d => `${d.code}:${d.path}:${d.nodeId ?? ""}`));
   const addedErrors = verification.diagnostics.filter(d => d.severity === "error" && !priorErrors.has(`${d.code}:${d.path}:${d.nodeId ?? ""}`));
   if (addedErrors.length) throw new StudioError("REVIEW_FIX_INVALID", addedErrors);
+  const rechecked = reviewVideo(verification.plan, verification.diagnostics, document, input.profile);
+  const selectedIssues = new Set(suggestions.flatMap(s => s!.issueIds));
+  if (rechecked.issues.some(i => selectedIssues.has(i.id))) throw new StudioError("REVIEW_FIX_INEFFECTIVE");
   // CAS and the atomic receipt are checked again by the common draft writer.
   return transformStudioDraft(userId, projectId, mutation, () => document);
 }

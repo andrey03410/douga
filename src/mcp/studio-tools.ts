@@ -270,6 +270,11 @@ function segmentRecipe(
 export function videoExamples() {
   return {
     items: [
+      ...(["top", "picker", "board"] as const).map(kind => {
+        const recipe = sdk.getVideoRecipe(`recipe.${kind === "board" ? "board-clear" : "clean"}.${kind}.wide`)!;
+        return { id: `guided-${kind}`, document: recipe.example, contentForm: recipe.contentForm,
+          note: "Создайте проект по recipe.preset.id и заполните contentForm своими assetId через video_content_set. Демонстрационные медиа не подставляются." };
+      }),
       ...sdk.typographyExamples.map((example, index) => ({ id: ["typography-ost", "typography-picker-jp", "typography-board-labels", "typography-rich-title"][index], document: example.document, standInManifest: example.manifest })),
       ...sdk.motionExamples(),
       ...(
@@ -348,6 +353,10 @@ const schemas = () => ({
     importStart: zodToJsonSchema(studio.startStudioImportSchema),
     assetInspect: zodToJsonSchema(studio.inspectStudioAssetSchema),
     timeline: zodToJsonSchema(studio.studioTimelineSchema),
+    contentSet: zodToJsonSchema(studio.setStudioContentSchema),
+    storyboard: zodToJsonSchema(studio.storyboardSchema),
+    review: zodToJsonSchema(studio.studioReviewSchema),
+    reviewApply: zodToJsonSchema(studio.applyStudioReviewSchema),
     runtimeConstraints: [
       "create: exactly one of document/presetId",
       "draft: exactly one of document/text",
@@ -531,12 +540,21 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     kind: z.enum(["top", "picker", "board"]).optional(), format: z.enum(["wide", "vertical", "square"]).optional(),
     style: z.enum(sdk.videoRecipeStyles).optional(), query: z.string().max(500).optional(), preview: z.boolean().default(true) }).strict();
   async function addRecipeImages(output: CallToolResult, ids: string[]) {
+    const delivered: string[] = [], states: { recipeId: string; status: string }[] = [];
     for (const recipeId of ids) {
       try {
         const artifact = await getStudioRecipePreview(uid, recipeId);
-        if (artifact.bytes > 4 * 1024 * 1024) continue;
+        if (artifact.bytes > 4 * 1024 * 1024) { states.push({ recipeId, status: "byteLimit" }); continue; }
         output.content.push({ type: "image", mimeType: "image/png", data: (await readFile(artifact.path)).toString("base64"), annotations: { audience: ["assistant"] } });
-      } catch (e) { if (!(e instanceof studio.StudioError && e.code === "PREVIEW_NOT_READY")) throw e; }
+        delivered.push(recipeId); states.push({ recipeId, status: "ready" });
+      } catch (e) { if (!(e instanceof studio.StudioError && e.code === "PREVIEW_NOT_READY")) throw e;
+        states.push({ recipeId, status: "notReady" }); }
+    }
+    if (output.structuredContent) {
+      output.structuredContent.previewOrder = delivered;
+      output.structuredContent.previews = states;
+      const main = output.content.find(c => c.type === "text");
+      if (main?.type === "text") main.text = JSON.stringify(output.structuredContent);
     }
     return output;
   }
@@ -664,12 +682,20 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
           ])
           .default("head"),
         revision: z.number().int().positive().optional(),
+        reviewBackupId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
       })
       .refine(
-        (input) => input.section !== "draft" || input.revision === undefined,
+        (input) => (input.section !== "draft" || input.revision === undefined)
+          && (!input.reviewBackupId || (input.revision === undefined && ["head", "draft"].includes(input.section))),
         "Historical revisions contain saved documents, not drafts",
       ),
-    async ({ projectId, section, revision }) => {
+    async ({ projectId, section, revision, reviewBackupId }) => {
+      if (reviewBackupId) {
+        const backup = await studio.getStudioReviewBackup(uid, projectId, reviewBackupId);
+        const current = await prisma.studioProject.findFirst({ where: { id: projectId, userId: uid }, select: { version: true } });
+        if (!current) throw new studio.StudioError("NOT_FOUND");
+        return { ...backup, restore: { tool: "video_draft_replace", arguments: { projectId, expectedVersion: current.version, document: backup.document } }, clientDisplayLimitation: displayLimitation };
+      }
       const current = await studio.getStudioProject(uid, projectId);
       let document: unknown =
         section === "draft"
@@ -925,7 +951,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
           output.content.push({
             type: artifact.mimeType.startsWith("image/") ? "image" : "audio",
             data: resource.blob,
-            mimeType: resource.mimeType,
+            mimeType: artifact.mimeType,
             annotations: { audience: ["assistant"] },
           });
         }

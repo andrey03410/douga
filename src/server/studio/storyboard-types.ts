@@ -13,6 +13,7 @@ export interface InspectionSummary {
   origin: InspectionOrigin;
   selection: StoryboardSelection;
   compareOrigin?: InspectionOrigin;
+  diagnostic?: { ready: false; codes: string[] };
 }
 export interface StoryboardRenderInput {
   kind: "storyboard";

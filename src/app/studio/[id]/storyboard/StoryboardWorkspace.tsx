@@ -125,6 +125,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
     [pollNote, setPollNote] = useState("");
   const [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+  const [draftBackupId, setDraftBackupId] = useState("");
   const player = useRef<PlayerRef>(null),
     playerSection = useRef<HTMLElement>(null),
     alive = useRef(true),
@@ -183,6 +184,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
     let saved: string | null = null;
     try {
       saved = sessionStorage.getItem(storageKey);
+      setDraftBackupId(sessionStorage.getItem(`${storageKey}:review-backup`) ?? "");
     } catch {
       /* Optional resume only. */
     }
@@ -369,7 +371,7 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
       throw Error(
         "Сначала соберите раскадровку этой версии: она нужна для проверяемого сравнения до и после.",
       );
-    const project = await request<{ version: number }>(
+    const project = await request<{ version: number; draftBackupId?: string }>(
       `${base}/review-apply`,
       "POST",
       {
@@ -380,6 +382,10 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
       },
     );
     setVersion(project.version);
+    if (project.draftBackupId) {
+      setDraftBackupId(project.draftBackupId);
+      try { sessionStorage.setItem(`${storageKey}:review-backup`, project.draftBackupId); } catch {}
+    }
     setSelected([]);
     setBaselineJob(before);
     setComparisonSource("job");
@@ -406,6 +412,17 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
     setNotice(
       "Выбранные правки применены к черновику. Проверка повторена; сравнение до и после готовится в очереди.",
     );
+  }
+  async function restoreBeforeReview() {
+    if (!draftBackupId) return;
+    const backup = await request<{ document: unknown }>(`${base}/review-backups/${encodeURIComponent(draftBackupId)}`);
+    const restored = await request<{ version: number }>(`${base}/draft`, "PUT", {
+      expectedVersion: version, document: backup.document, idempotencyKey: crypto.randomUUID(),
+    });
+    setVersion(restored.version); setDraftBackupId(""); setReport(null); setSelected([]); setRevision("");
+    try { sessionStorage.removeItem(`${storageKey}:review-backup`); } catch {}
+    await readPlan(restored.version);
+    setNotice("Состояние до исправлений возвращено в серверный черновик. Проверьте его перед сохранением ревизии.");
   }
   return (
     <>
@@ -609,10 +626,14 @@ export default function StoryboardWorkspace({ initial }: { initial: Initial }) {
           >
             Обновить версию
           </button>
+          {draftBackupId && <button className="btn ghost" disabled={busy || active(job)} onClick={() => void run(restoreBeforeReview)}>
+            Вернуть состояние до исправлений
+          </button>}
         </div>
       </section>
       {job && (
         <section className="panel" aria-label="Результат раскадровки">
+          {job.inspection?.diagnostic && <p className="sb-alert error">Диагностический просмотр: текст не помещается. Эта картинка помогает исправить документ; обычный рендер ещё не готов.</p>}
           <div className="sb-result-heading">
             <h2>{statusText[job.status]}</h2>
             <span className={`sb-status ${job.status}`}>

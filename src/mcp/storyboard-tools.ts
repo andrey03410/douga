@@ -53,6 +53,8 @@ export function registerStoryboardTools(server: McpServer, actor: Actor) {
   register("video_review_apply", "Apply selected deterministic suggestions from an exact report to the current draft with CAS/idempotency. Recomputes report and rejects stale or unknown fixes. No ranking/media/content changes, commit or publish.",
     applyStudioReviewSchema.extend({ projectId }), async ({ projectId, ...input }) => {
       const project = await applyStudioReview(actor.userId, projectId, input);
-      return response({ ...studioProjectMetadata(project), nextAction: { tool: "video_review", arguments: { projectId, expectedVersion: project.version, ...(input.profile ? { profile: input.profile } : {}) } } });
+      return response({ ...studioProjectMetadata(project), draftBackupId: project.draftBackupId,
+        ...(project.draftBackupId ? { restore: { tool: "video_document_get", arguments: { projectId, reviewBackupId: project.draftBackupId } } } : {}),
+        nextAction: { tool: "video_review", arguments: { projectId, expectedVersion: project.version, ...(input.profile ? { profile: input.profile } : {}) } } });
     }, false);
 }

@@ -15,6 +15,21 @@ export const selectStudioRecipesSchema = z
 export type SelectStudioRecipesInput = z.input<
   typeof selectStudioRecipesSchema
 >;
+const directionHints: Record<string, string[]> = {
+  clean: ["длин", "чита", "ясн", "миним", "clean", "readab"],
+  cinematic: ["кино", "спокой", "музык", "ost", "cinemat", "calm"],
+  "anime-impact": ["энерг", "ярк", "динами", "аниме", "impact", "energet"],
+  manga: ["манг", "комик", "manga", "comic"],
+  neon: ["неон", "свеч", "neon", "glow"],
+  "board-clear": ["доск", "слот", "распредел", "board"],
+};
+function queryScore(recipe: ReturnType<typeof getVideoRecipes>[number], query = "") {
+  const text = query.toLocaleLowerCase();
+  const description = `${recipe.name} ${recipe.description}`.toLocaleLowerCase();
+  const tokens = text.split(/[^\p{L}\p{N}]+/u).filter(t => t.length >= 3);
+  return (directionHints[recipe.style] ?? []).filter(hint => text.includes(hint)).length * 20
+    + tokens.filter(token => description.includes(token.slice(0, Math.min(4, token.length)))).length;
+}
 export async function selectStudioRecipes(
   userId: string,
   raw: SelectStudioRecipesInput = {},
@@ -30,16 +45,10 @@ export async function selectStudioRecipes(
   const scored = compatible
     .filter((r) => !input.style || r.style === input.style)
     .map((recipe) => {
-      const query = input.query?.toLocaleLowerCase() ?? "";
-      const match =
-        query.length &&
-        `${recipe.style} ${recipe.name} ${recipe.description}`
-          .toLocaleLowerCase()
-          .includes(query);
       return {
         recipe,
         score:
-          (match ? 10 : 0) +
+          queryScore(recipe, input.query) +
           (recipe.style === "clean" || recipe.style === "board-clear" ? 2 : 0),
       };
     })
@@ -72,7 +81,7 @@ export async function listStudioRecipeGallery(userId: string, raw: z.input<typeo
   if (!all) return selected;
   const items = getVideoRecipes().filter(r => (!filters.kind || r.kind === filters.kind)
     && (!filters.format || r.format === filters.format) && (!filters.style || r.style === filters.style)
-    && (!filters.query || `${r.name} ${r.description}`.toLowerCase().includes(filters.query.toLowerCase())))
+    && (!filters.query || queryScore(r, filters.query) > 0))
     .map(({ preset: _, example: __, ...metadata }) => metadata);
   return { ...selected, items, total: items.length };
 }
