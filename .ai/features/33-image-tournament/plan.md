@@ -5,37 +5,37 @@
 
 ## 1. Engine v2 и прежние алгоритмы
 
-- [ ] Файлы: `src/lib/domain/engines/{index,types,merge,swiss,round-robin}.ts`,
+- [x] Файлы: `src/lib/domain/engines/{index,types,merge,swiss,round-robin}.ts`,
   `src/lib/domain/scheme-settings.ts`, `src/lib/domain/group-answer.ts`, `src/lib/domain/types.ts`.
-- [ ] Тесты: `engines.test.ts` и `group.test.ts` переписаны на `EngineInput` с прежними
+- [x] Тесты: `engines.test.ts` и `group.test.ts` переписаны на `EngineInput` с прежними
   утверждениями. Новый `scheme-settings.test.ts` проверяет настройки по умолчанию и отказы.
 - Готово: три прежних движка на новом входе, `SCHEME_INFO` и `plannedScreens` через движок,
   юниты зелёные.
 
 ## 2. Новые алгоритмы и симуляция
 
-- [ ] Файлы: `engines/{insertion,top-k,tiers,rating,bracket}.ts`, `engines/pair-index.ts`
+- [x] Файлы: `engines/{insertion,top-k,tiers,rating,bracket}.ts`, `engines/pair-index.ts`
   (быстрый поиск ответа), `decodePickAnswer` в `group-answer.ts`.
-- [ ] Тесты: по одному файлу на движок (ручные случаи) и `engines/simulation.test.ts`
+- [x] Тесты: по одному файлу на движок (ручные случаи) и `engines/simulation.test.ts`
   (T19: точность, завершение, бюджет экранов, смена алгоритма, шумный оракул).
 - Готово: восемь движков, симуляция зелёная, реальные числа экранов записаны в `verify.md`.
 
 ## 3. Данные и сервис турнира
 
-- [ ] `prisma/schema.prisma`:
+- [x] `prisma/schema.prisma`:
   - Track: `subtitle`, `sourceUrl`, `sourceKey`, `note`, `excluded`;
   - Segment: `scheme`, `schemeSettings`, `insertBase`;
   - Tournament: `schemePending`, `schemeSettings`;
   - Batch: `kind`, `tier`.
   Затем `npm run db:push`.
-- [ ] `src/server/tournaments.ts`, `src/server/tournament-segments.ts`:
+- [x] `src/server/tournaments.ts`, `src/server/tournament-segments.ts`:
   - схема сегмента, срез без исключённых;
   - `nextComparison` с видами вопроса;
   - `recordAnswer` (rank, pick, tier), undo корзины;
   - `setSegmentScheme`, `setTier`;
   - исключение и возврат, `insertBase`;
   - `finalize` и рейтинг только placed, `reorderRanking`.
-- [ ] Тест: `src/integration/tournament-algorithms.integration.test.ts`. Пять сценариев:
+- [x] Тест: `src/integration/tournament-algorithms.integration.test.ts`. Пять сценариев:
   - pick/tier и undo;
   - смена алгоритма без потери ответов;
   - «для всех сегментов»;
@@ -46,27 +46,27 @@
 
 ## 4. Участники-картинки: импорт
 
-- [ ] Файлы:
+- [x] Файлы:
   - `src/lib/upload.ts` — картинки архива и россыпь, `inspect`;
   - `src/server/tournament-items.ts` — источники, Shikimori пачками, пул, диск, повторы,
     `skipped`, добавление и удаление;
   - `src/lib/shikimori.ts` — `fetchShikimoriCards`;
   - `src/server/track-metadata.ts` — `subtitle`, `note`, `excluded`;
   - создание турнира с картинками.
-- [ ] Тесты: `upload` (юнит, архив картинок), `tournament-items.integration.test.ts`
+- [x] Тесты: `upload` (юнит, архив картинок), `tournament-items.integration.test.ts`
   на локальном стенде Shikimori.
 - Готово: картинки из архива, пула, диска и Shikimori становятся участниками с обложкой,
   повтор отклонён, сбой одного Shikimori-участника уходит в `skipped`.
 
 ## 5. HTTP API
 
-- [ ] Файлы:
+- [x] Файлы:
   - маршруты `next`, `compare`, `scheme`, `tier`, `items`, `tracks/[id]`, `tournaments` (POST),
     `inspect`;
   - `tracks/[id]/cover?size=thumb`;
   - `shikimori/characters`;
   - `scripts/e2e-run.mjs`.
-- [ ] Тест: HTTP-интеграция `tournament-images-http.integration.test.ts`. Создание из картинок,
+- [x] Тест: HTTP-интеграция `tournament-images-http.integration.test.ts`. Создание из картинок,
   pick/tier через `compare`, `scheme`, миниатюра.
 - Готово: HTTP-контракт T14.
 

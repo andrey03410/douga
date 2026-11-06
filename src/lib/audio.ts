@@ -69,6 +69,25 @@ export async function extractPoster(inputPath: string, outputPath: string): Prom
   await run(["-y", "-i", inputPath, "-frames:v", "1", "-q:v", "3", outputPath]);
 }
 
+/**
+ * Task 33: a small JPEG of a picture participant for the compare grid. The
+ * first frame only (GIFs are served as is by the caller, they keep moving).
+ */
+export async function makeThumbnail(inputPath: string, outputPath: string, width = 480): Promise<void> {
+  await run([
+    "-y",
+    "-i",
+    inputPath,
+    "-vf",
+    `scale='min(${width},iw)':-2`,
+    "-frames:v",
+    "1",
+    "-q:v",
+    "4",
+    outputPath,
+  ]);
+}
+
 /** Decode a file to mono float32 PCM at ANALYSIS_RATE for RMS analysis. */
 export async function decodePcm(
   inputPath: string,

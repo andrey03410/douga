@@ -8,8 +8,9 @@ import {
 } from "@/lib/api";
 import { formatBytes, quotasFor } from "@/lib/domain/permissions";
 import { isScheme } from "@/lib/domain/types";
-import { extractTracksFromZip, groupArchiveTracks } from "@/lib/upload";
 import { createTournament, listTournaments } from "@/server/tournaments";
+import { participantsFromForm } from "@/server/tournament-upload";
+import { tournamentErrorMessage } from "@/lib/tournament-errors";
 
 export async function GET() {
   const auth = await userOr401();
@@ -18,6 +19,11 @@ export async function GET() {
   return NextResponse.json({ tournaments });
 }
 
+/**
+ * Create a tournament from archives, loose files and/or a draft of Shikimori
+ * and pool sources (task 33). `scheme` is optional: without it the person
+ * picks the algorithm on the tournament page.
+ */
 export async function POST(req: Request) {
   const auth = await permissionOr403(
     "tournament:create",
@@ -36,71 +42,62 @@ export async function POST(req: Request) {
 
   const form = await req.formData();
   const title = String(form.get("title") ?? "").trim();
-  const scheme = String(form.get("scheme") ?? "");
+  const schemeRaw = String(form.get("scheme") ?? "");
   const blindMode = String(form.get("blindMode") ?? "") === "on";
   const groupSize = Number(form.get("groupSize") ?? 2);
   const files = form.getAll("file").filter((f): f is File => f instanceof File);
-  const splitFolders = String(form.get("splitFolders") ?? "") === "true";
-  let segmentTitles: string[] = [];
-  try {
-    const value = JSON.parse(String(form.get("segmentTitles") ?? "[]"));
-    if (!Array.isArray(value) || value.some((t) => typeof t !== "string"))
-      throw new Error();
-    segmentTitles = value;
-  } catch {
-    return badRequest("Некорректные названия сегментов");
-  }
 
   if (!title) return badRequest("Укажите название");
-  if (!isScheme(scheme)) return badRequest("Неизвестная схема");
-  if (!files.length) return badRequest("Прикрепите ZIP-архив с треками");
+  if (schemeRaw && !isScheme(schemeRaw)) return badRequest("Неизвестная схема");
+  if (!files.length && !form.get("sources"))
+    return badRequest("Добавьте архив, файлы или участников из Shikimori и пула");
+  if (files.reduce((n, f) => n + f.size, 0) > maxArchiveBytes) return tooLarge(limitMsg);
 
-  if (files.reduce((n, f) => n + f.size, 0) > maxArchiveBytes)
-    return tooLarge(limitMsg);
-  const tracks: Awaited<ReturnType<typeof extractTracksFromZip>> = [];
-  const segments: { title: string; trackIndexes: number[] }[] = [];
+  let parsed;
   try {
-    for (const [i, file] of files.entries()) {
-      const extracted = await extractTracksFromZip(
-        Buffer.from(await file.arrayBuffer()),
-      );
-      const title =
-        segmentTitles[i]?.trim() ||
-        (files.length > 1 ? file.name.replace(/\.zip$/i, "") : "Все треки");
-      const offset = tracks.length;
-      segments.push(
-        ...groupArchiveTracks(
-          extracted,
-          files.length === 1 && splitFolders,
-          title,
-        ).map((s) => ({
-          ...s,
-          trackIndexes: s.trackIndexes.map((i) => i + offset),
-        })),
-      );
-      tracks.push(...extracted);
-    }
-  } catch {
-    return badRequest("Не удалось прочитать архив");
+    parsed = await participantsFromForm(auth.userId, form, maxArchiveBytes);
+  } catch (e) {
+    const code = String((e as Error).message);
+    if (code === "ARCHIVE_QUOTA") return tooLarge(limitMsg);
+    if (["IMAGE_TOO_LARGE", "BAD_EXT", "NOT_FOUND", "TOO_MANY_SHIKIMORI"].includes(code))
+      return badRequest(tournamentErrorMessage(code === "NOT_FOUND" ? "BAD_EXT" : code));
+    return badRequest("Не удалось прочитать архив или файлы");
   }
-  if (!tracks.length)
-    return badRequest("В архиве должны быть аудио- или видеофайлы");
+  if (!parsed.tracks.length)
+    return badRequest(
+      parsed.skipped.length
+        ? "Ни одного участника не удалось загрузить из Shikimori"
+        : "В архиве должны быть аудио, видео или картинки",
+    );
 
   try {
     const tournament = await createTournament(
       auth.userId,
-      { title, scheme, blindMode, groupSize, segments },
-      tracks,
+      {
+        title,
+        scheme: isScheme(schemeRaw) ? schemeRaw : undefined,
+        blindMode,
+        groupSize,
+        segments: parsed.segments,
+      },
+      parsed.tracks,
       { maxTournaments: quotasFor(auth.user.role).maxTournaments },
     );
-    return NextResponse.json({ id: tournament.id, trackCount: tracks.length });
+    return NextResponse.json({
+      id: tournament.id,
+      trackCount: parsed.tracks.length,
+      skipped: parsed.skipped,
+    });
   } catch (e) {
-    if ((e as Error).message === "TOURNAMENT_LIMIT") {
+    const code = (e as Error).message;
+    if (code === "TOURNAMENT_LIMIT") {
       return forbidden(
         "Достигнут лимит архивов. Удалите существующий в личном кабинете",
       );
     }
-    if ((e as Error).message === "ARCHIVE_QUOTA") return tooLarge(limitMsg);
+    if (code === "ARCHIVE_QUOTA") return tooLarge(limitMsg);
+    if (code.startsWith("DUPLICATE_ITEM") || code === "TOO_MANY_PARTICIPANTS")
+      return badRequest(tournamentErrorMessage(code));
     throw e;
   }
 }
