@@ -311,7 +311,10 @@ function compileChannel(
   let fragments: number | undefined;
   if (name.startsWith("text-")) {
     const text = node.text ?? "";
-    if (name === "text-counter" && !/^\s*[-+]?\d+(?:[.,]\d+)?\s*$/.test(text)) {
+    if (
+      name === "text-counter" &&
+      (!text.trim() || !Number.isFinite(Number(text.trim().replace(",", "."))))
+    ) {
       diagnostic(
         ctx,
         "MOTION_TEXT_COUNTER_INVALID",

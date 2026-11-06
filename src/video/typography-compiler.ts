@@ -253,39 +253,78 @@ function reserveDynamic(
       v === "text-counter" ||
       (v && typeof v === "object" && "name" in v && v.name === "text-counter"),
   );
-  if (
-    counter &&
-    ["text", "badge"].includes(node.type) &&
-    /^\s*[-+]?\d+\s*$/.test(node.text ?? "")
-  ) {
-    const target = Number(node.text),
-      max = Math.abs(target);
-    let text = "0",
-      width = -1;
-    if (max <= 10000) {
-      for (let i = 0; i <= max; i++) {
-        const candidate = String(target < 0 ? -i : i),
-          value = measure(candidate, style).width;
-        if (value > width) {
+  const widest = (initial: string) => {
+    let text = initial,
+      width = measure(initial, style).width;
+    return {
+      consider(candidate: string) {
+        const candidateWidth = measure(candidate, style).width;
+        if (candidateWidth > width) {
           text = candidate;
-          width = value;
+          width = candidateWidth;
         }
-      }
-    } else {
-      let digit = "0";
-      for (let i = 0; i < 10; i++)
-        if (measure(String(i), style).width > measure(digit, style).width)
-          digit = String(i);
-      text = (target < 0 ? "-" : "") + digit.repeat(String(max).length);
-    }
-    return text;
-  }
+      },
+      get text() {
+        return text;
+      },
+    };
+  };
+  const widestDigit = () => {
+    const result = widest("0");
+    for (let i = 1; i < 10; i++) result.consider(String(i));
+    return result.text;
+  };
   if (counter && ["text", "badge"].includes(node.type)) {
-    let digit = "0";
-    for (let i = 0; i < 10; i++)
-      if (measure(String(i), style).width > measure(digit, style).width)
-        digit = String(i);
-    return (node.text ?? "").replace(/\d/g, digit);
+    const source = node.text ?? "",
+      trimmed = source.trim();
+    const target = Number(trimmed.replace(",", "."));
+    // Match counterText's parser. Invalid effects must not change text layout.
+    if (!trimmed || !Number.isFinite(target)) return;
+    const decimals = Math.min(12, source.match(/[.,](\d+)/)?.[1].length ?? 0);
+    const scale = 10 ** decimals,
+      steps = Math.ceil(Math.abs(target) * scale);
+    const prefix = source.match(/^\s*/)?.[0] ?? "",
+      suffix = source.match(/\s*$/)?.[0] ?? "";
+    const formatted = (value: number) => {
+      const text = value.toFixed(decimals);
+      return `${prefix}${source.includes(",") ? text.replace(".", ",") : text}${suffix}`;
+    };
+    // The animation returns the exact authored source at its end: plus signs,
+    // leading zeros and whitespace can be wider than every canonical value.
+    const result = widest(source);
+    result.consider(formatted(0));
+    result.consider(formatted(target));
+    if (Number.isSafeInteger(steps) && steps <= 10000) {
+      for (let i = 0; i <= steps; i++)
+        result.consider(formatted((target < 0 ? -i : i) / scale));
+    } else {
+      const digit = widestDigit(),
+        sign = target < 0 ? "-" : "";
+      const integerDigits = Math.min(
+        21,
+        Math.max(1, Math.floor(Math.log10(Math.max(1, Math.abs(target)))) + 1),
+      );
+      const decimal = decimals
+        ? `${source.includes(",") ? "," : "."}${digit.repeat(decimals)}`
+        : "";
+      // toFixed emits ordinary decimal strings below 1e21. Include each length
+      // because negative tracking can make shorter values wider than long ones.
+      for (let length = 1; length <= integerDigits; length++)
+        result.consider(
+          `${prefix}${sign}${digit.repeat(length)}${decimal}${suffix}`,
+        );
+      if (Math.abs(target) >= 1e21) {
+        // Beyond that threshold toFixed uses canonical scientific notation,
+        // with up to 17 significant digits and a positive exponent <= 308.
+        const exponentDigits = String(
+          Math.floor(Math.log10(Math.abs(target))),
+        ).length;
+        result.consider(
+          `${prefix}${sign}${digit}.${digit.repeat(16)}e+${digit.repeat(exponentDigits)}${suffix}`,
+        );
+      }
+    }
+    return result.text;
   }
   if (node.type !== "timer" && node.type !== "progress") return;
   const max =
@@ -295,25 +334,12 @@ function reserveDynamic(
           Math.ceil((node.timerFrames ?? node.durationInFrames) / fps),
         )
       : 100;
-  let text = "0",
-    width = -1;
+  const result = widest("0");
   if (max <= 10000) {
-    for (let i = 0; i <= max; i++) {
-      const candidate = `${i}${node.type === "progress" ? "%" : ""}`,
-        value = measure(candidate, style).width;
-      if (value > width) {
-        text = candidate;
-        width = value;
-      }
-    }
-  } else {
-    let digit = "0";
-    for (let i = 0; i < 10; i++)
-      if (measure(String(i), style).width > measure(digit, style).width)
-        digit = String(i);
-    text = digit.repeat(String(max).length);
-  }
-  return text;
+    for (let i = 0; i <= max; i++)
+      result.consider(`${i}${node.type === "progress" ? "%" : ""}`);
+  } else result.consider(widestDigit().repeat(String(max).length));
+  return result.text;
 }
 function groupSignature(s: ResolvedTypography): string {
   return JSON.stringify([
@@ -428,6 +454,21 @@ export function applySceneTypography(
     }
     try {
       const reserve = reserveDynamic(node, style, measure, ctx.fps);
+      if (reserve !== undefined) {
+        if (style.overflow !== "error")
+          diagnostic(
+            ctx,
+            "TEXT_DYNAMIC_OVERFLOW_POLICY",
+            "Dynamic numbers require overflow:error; enlarge the box or lower the bounded minimum instead of truncating a timer or counter.",
+            path,
+            node.id,
+          );
+        // The renderer substitutes each dynamic value in a single frozen line.
+        // Keep this normalization on node.typography for later fitGroup reflow.
+        style.wrap = "none";
+        style.maxLines = 1;
+        style.overflow = "error";
+      }
       const measuringRuns = reserve ? [{ text: reserve }] : runs;
       if (reserve) dynamic.set(node, reserve);
       const box = textBox(node);

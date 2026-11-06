@@ -48,3 +48,34 @@ rich card bindings, rich preset extraction, aggregate budget, segment fit groups
 
 Общий QG и живая проверка выполняются root после интеграции. Полный suite/build
 этим агентом не запускались согласно делегированным границам.
+
+## Исправления независимого ревью F31-03 / F31-05
+
+Основание: `.ai/features/31-typography/review.md`; исходный доменный коммит
+`8734801`. Два воспроизведённых разрыва закрыты отдельным scoped fix.
+
+- F31-03: timer/progress и числовой text-counter всегда получают одну готовую
+  строку (`wrap:none`, `maxLines:1`). Default shrink доходит до читаемого минимума;
+  явный fixed сохраняется. Непоместившееся число даёт `TEXT_OVERFLOW`.
+  Явный ellipsis/clip для динамического числа отвергается понятной ошибкой
+  `TEXT_DYNAMIC_OVERFLOW_POLICY`, IR нормализован к error для диагностического кадра.
+  Такой же style остаётся при повторной подгонке explicit fitGroup через scenes.
+- Резерв counter включает точный исходный final text (плюс, ведущие нули,
+  whitespace), и canonical формы renderer: Number(trim/decimal comma), finite и
+  непустой ввод, toFixed с precision ≤12, сохранённые внешние пробелы. Ограниченное
+  количество отображаемых значений перечисляется, более широкий диапазон имеет
+  консервативный резерв десятичной и, при необходимости, научной формы. Нечисловой
+  текст не переводится в числовую однострочную раскладку. Проверены `.001` и `1e3`.
+- F31-05: общий sanitizer сохраняет color/weight/italic/decoration rich card runs,
+  удаляет private literals/group selectors/prefixes и подставляет безопасную
+  participant binding. Apply переносит destination copy в rich style template;
+  при отсутствии explicit label сохраняет binding шаблона. Participant ID назначения
+  остаётся от destination.
+
+RED: 20 новых тестов воспроизвели неправильные две строки, ложную готовность,
+потерянные плюс/нули/пробелы, reflow и потерю rich оформления/небезопасное содержимое.
+GREEN после исправления и форматирования, под Node 22:
+
+- `npx vitest run src/video`: 16 файлов, 374 теста, все зелёные.
+- `npx tsc --noEmit --project /tmp/douga31-domain.tsconfig.json`: зелёный.
+- Полный QG и настоящий renderer остаются у root; renderer/сервисы не менялись.

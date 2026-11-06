@@ -767,3 +767,287 @@ describe("segment fit groups and readable defaults", () => {
     );
   });
 });
+
+describe("review F31-03 dynamic numeric layout", () => {
+  function dynamicDoc(
+    type: "timer" | "progress" | "text",
+    width = 60,
+  ): VideoDocument {
+    const common = {
+      id: "numeric",
+      units: "px" as const,
+      rect: { x: 0, y: 0, width, height: 120 },
+      typography: {
+        font: "arimo" as const,
+        fontSize: 48,
+        minFontSize: 24,
+        maxLines: 2,
+        wrap: "word" as const,
+      },
+    };
+    return doc([
+      type === "timer"
+        ? { ...common, type, duration: { sec: 1000 } }
+        : type === "progress"
+          ? { ...common, type }
+          : {
+              ...common,
+              type,
+              text: "1000",
+              motion: { enter: "text-counter" },
+            },
+    ]);
+  }
+  it.each(["timer", "progress", "text"] as const)(
+    "fits %s numeric reserves into one measured line",
+    (type) => {
+      const r = compile(dynamicDoc(type));
+      const node = r.plan.scenes[0].nodes[0];
+      expect(r.ready).toBe(true);
+      expect(node.textLayout?.lines).toHaveLength(1);
+      expect(node.textLayout?.fontSize).toBe(30);
+      expect(node.textLayout?.lines[0].width).toBeLessThanOrEqual(60);
+      expect(node.typography).toMatchObject({ wrap: "none", maxLines: 1 });
+    },
+  );
+  it.each(["timer", "progress", "text"] as const)(
+    "reports %s overflow when one line cannot fit at the minimum",
+    (type) => {
+      const r = compile(dynamicDoc(type, 40));
+      expect(r.ready).toBe(false);
+      expect(r.diagnostics.map((d) => d.code)).toContain("TEXT_OVERFLOW");
+      expect(r.plan.scenes[0].nodes[0].textLayout?.fontSize).toBe(24);
+      expect(r.plan.scenes[0].nodes[0].textLayout?.lines).toHaveLength(1);
+    },
+  );
+  it.each(["+100", "00100", " 100 ", " -00100 "])(
+    "includes the exact final source %j in counter reserve measurement",
+    (source) => {
+      const d = dynamicDoc("text", 400);
+      (d.scenes[0].nodes[0] as Extract<VideoNode, { type: "text" }>).text =
+        source;
+      const n = textNode(compile(d));
+      expect(n.text).toBe(source);
+      expect(n.textLayout?.reservedText).toBe(source);
+      expect(n.textLayout?.lines[0].width).toBe(source.length * 24);
+    },
+  );
+  it("keeps dynamic reserves single-line after an explicit cross-scene fit group", () => {
+    const d = dynamicDoc("text", 90);
+    d.scenes[0].nodes[0].typography!.fitGroup = "counters";
+    const second = dynamicDoc("text", 60).scenes[0];
+    second.id = "second";
+    second.nodes[0].id = "other-counter";
+    second.nodes[0].typography!.fitGroup = "counters";
+    d.scenes.push(second);
+    const r = compile(d),
+      nodes = r.plan.scenes.map((s) => s.nodes[0]);
+    expect(r.ready).toBe(true);
+    expect(nodes.map((n) => n.textLayout?.fontSize)).toEqual([30, 30]);
+    expect(nodes.every((n) => n.textLayout?.lines.length === 1)).toBe(true);
+  });
+});
+
+describe("review F31-05 rich card preset round trip", () => {
+  const richLabel = {
+    runs: [
+      {
+        text: { bind: "participant.label" as const },
+        color: "yellow",
+        weight: 400 as const,
+        italic: true,
+        decoration: "underline" as const,
+      },
+    ],
+  };
+  it("retains rich run styles during extract and apply to another card", () => {
+    const source = doc([
+      {
+        id: "card",
+        type: "card",
+        participantId: "source",
+        label: richLabel,
+        typography: { font: "arimo" },
+      },
+    ]);
+    source.source.participants = [
+      { id: "source", label: "Private source label" },
+    ];
+    const preset = extractVideoPreset(source, {
+      id: "rich-card",
+      name: "Rich card",
+    });
+    const saved = preset.scenes[0].nodes[0] as Extract<
+      VideoNode,
+      { type: "card" }
+    >;
+    expect(saved.label).toEqual(richLabel);
+    const destination = doc([
+      { id: "card", type: "card", participantId: "destination" },
+    ]);
+    destination.source.participants = [{ id: "destination", label: "Акира" }];
+    const applied = sdk.applyVideoPreset(destination, preset);
+    const card = applied.scenes[0].nodes[0] as Extract<
+      VideoNode,
+      { type: "card" }
+    >;
+    expect(card.label).toEqual(richLabel);
+    expect(card.participantId).toBe("destination");
+    expect(compile(applied).plan.scenes[0].nodes[0].textRuns).toEqual([
+      {
+        text: "Акира",
+        color: "yellow",
+        weight: 400,
+        italic: true,
+        decoration: "underline",
+      },
+    ]);
+  });
+  it("clears private literals and group selectors while retaining rich card styles", () => {
+    const source = doc([
+      {
+        id: "card",
+        type: "card",
+        participantId: "source",
+        label: {
+          runs: [
+            { text: "Private caption", color: "yellow" },
+            {
+              text: {
+                bind: "group.label",
+                groupId: "private-group",
+                prefix: "Private prefix",
+              },
+              weight: 400,
+              italic: true,
+            },
+          ],
+        },
+      },
+    ]);
+    source.source.participants = [{ id: "source", label: "Source" }];
+    const preset = extractVideoPreset(source, {
+      id: "safe-rich",
+      name: "Safe rich",
+    });
+    const card = preset.scenes[0].nodes[0] as Extract<
+      VideoNode,
+      { type: "card" }
+    >;
+    expect(card.label).toEqual({
+      runs: [
+        { text: { bind: "participant.label" }, color: "yellow" },
+        { text: { bind: "participant.label" }, weight: 400, italic: true },
+      ],
+    });
+    expect(JSON.stringify(preset)).not.toMatch(
+      /Private caption|private-group|Private prefix/,
+    );
+  });
+});
+
+describe("review F31-03 numeric output forms", () => {
+  it.each([".001", "1e3", "+100", " 0,001 "])(
+    "covers canonical counter output as well as final %j",
+    (source) => {
+      const d = doc([
+        {
+          id: "canonical",
+          type: "text",
+          text: source,
+          units: "px",
+          rect: { x: 0, y: 0, width: 400, height: 120 },
+          typography: {
+            font: "arimo",
+            fontSize: 40,
+            minFontSize: 24,
+            maxLines: 2,
+          },
+          motion: { enter: "text-counter" },
+        },
+      ]);
+      const r = compile(d),
+        n = textNode(r),
+        canonical =
+          source.includes("001") && !source.includes("100")
+            ? source.startsWith(" ")
+              ? " 0,000 "
+              : "0.000"
+            : String(Number(source));
+      expect(r.ready).toBe(true);
+      expect(n.textLayout?.lines).toHaveLength(1);
+      expect(n.textLayout!.lines[0].width).toBeGreaterThanOrEqual(
+        Math.max(source.length, canonical.length) * 20,
+      );
+    },
+  );
+  it("includes preserved whitespace on the widest intermediate proportional counter value", () => {
+    const d = doc([
+      {
+        id: "spaced",
+        type: "text",
+        text: " 100 ",
+        typography: { font: "arimo", fontSize: 40 },
+        motion: { enter: "text-counter" },
+      },
+    ]);
+    const metric: MeasureText = (text, style) => ({
+      ...measureText(text, style),
+      width: Array.from(text).reduce(
+        (sum, char) =>
+          sum + (char === "8" ? style.fontSize : style.fontSize / 4),
+        0,
+      ),
+    });
+    const n = textNode(compileVideo(d, {}, { measureText: metric }));
+    expect(n.textLayout?.reservedText).toBe(" 88 ");
+    expect(n.textLayout?.lines[0].width).toBe(100);
+  });
+  it("rejects an explicit truncation policy for dynamic values", () => {
+    const d = doc([
+      {
+        id: "number",
+        type: "text",
+        text: "1000",
+        units: "px",
+        rect: { x: 0, y: 0, width: 40, height: 120 },
+        typography: {
+          font: "arimo",
+          fontSize: 48,
+          minFontSize: 24,
+          maxLines: 2,
+          overflow: "ellipsis",
+        },
+        motion: { enter: "text-counter" },
+      },
+    ]);
+    const r = compile(d);
+    expect(r.ready).toBe(false);
+    expect(r.diagnostics.map((d) => d.code)).toContain(
+      "TEXT_DYNAMIC_OVERFLOW_POLICY",
+    );
+  });
+  it("does not coerce nonnumeric counter text into a numeric single-line layout", () => {
+    const d = doc([
+      {
+        id: "not-a-number",
+        type: "text",
+        text: "one two three",
+        units: "px",
+        rect: { x: 0, y: 0, width: 100, height: 120 },
+        typography: {
+          font: "arimo",
+          fontSize: 20,
+          minFontSize: 20,
+          maxLines: 3,
+          wrap: "word",
+        },
+        motion: { enter: "text-counter" },
+      },
+    ]);
+    const n = textNode(compile(d));
+    expect(n.typography?.wrap).toBe("word");
+    expect(n.textLayout?.lines.length).toBeGreaterThan(1);
+    expect(n.textLayout?.reservedText).toBeUndefined();
+  });
+});
