@@ -104,19 +104,19 @@ StudioWorkspace.tsx/new, studio.css, MCP/HTTP tests.
 
 ### Задача 6: эталоны, QG и независимое ревью
 
-- [ ] Сгенерировать/посмотреть baselines, повторно render/check, внести контрольную
+- [x] Сгенерировать/посмотреть baselines, повторно render/check, внести контрольную
   pixel/ROI регрессию и подтвердить fail; сравнить реальный MP4 и decoded audio.
-- [ ] Сохранить воспроизводимые scripts/SDK guide и verify.md с evidence.
-- [x] npm test → npm run build → npx tsc --noEmit:122files/1413tests,build/tscPASS.
+- [x] Сохранить воспроизводимые scripts/SDK guide и verify.md с evidence.
+- [x] npm test → npm run build → npx tsc --noEmit:122 files / 1420 tests,build/tscPASS.
 - [x] Свежий ревьюер получает полный diff; FR01–03 исправлены,повторный scopedPASS.
 - [ ] PR, stage review; автономная приёмка, stage merged/history и merge PR.
 
 ### Задача 7: знания
 
-- [ ] Обновить map/studio-sdk.md, mcp.md, render.md, dev-env.md и при необходимости
+- [x] Обновить map/studio-sdk.md, mcp.md, render.md, dev-env.md и при необходимости
   AGENTS.md: контракты, новые tools/ресурсы, recipe/content route, budgets,
   baseline command и условия воспроизведения. Проверить ссылки.
-- [ ] Коммит docs(32): update storyboard and regression knowledge.
+- [x] Карты, README, SDK-гид и доказательства обновлены и сохранены в коммитах задачи.
 
 ## Самопроверка плана
 

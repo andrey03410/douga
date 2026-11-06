@@ -1,166 +1,153 @@
 # Проверка задачи 32
 
-Статус: финальная проверка после1d6f94e выполняется. Предыдущая тройка PASS;
-последний полный SW/Chrome157 visual QG FAIL (22/1675). Новый bundled149
-профиль проходит полную матрицу. Merge запрещён до полного green.
-Продукт принят, автономный режим до merge. Независимое ревью исправлений PASS.
+Визуальный QG: **PASS — 1675 кадров**, из них 1674 точных и 1 в измеренном микродопуске.
+Финальная тройка после калибровки и последней правки HTML: **PASS**.
+Продукт принят; разрешён автономный режим до вливания этой задачи.
 
 ## Обязательная тройка
 
-Предыдущая тройка после4f2ded8/rootintegration — строго по порядку. После
-нового browser pin1d6f94e тройка повторяется; старые логи сохранены с suffix
-before-browser-pin, окончательные результаты будут записаны ниже.
+Строго после последних исходных правок: `npm test` → `npm run build` → `npx tsc --noEmit`.
+- `npm test`: **122 файла / 1420 тестов PASS**, 400.43 сек, exit 0.
+- `npm run build`: **PASS**, exit 0.
+- `npx tsc --noEmit`: **PASS**, 0 ошибок, exit 0 после build.
 
-- `npm test` — **122 файла,1413 тестов PASS**,382.93sec,exit0.
-- `npm run build` — production build PASS,exit0,новые routes собраны.
-- `npx tsc --noEmit` — PASS,0 diagnostics,exit0 после build.
+Предыдущие тройки и неудачные прогоны сохранены отдельно; готовность основана
+на последнем прогоне после всех изменений исходников.
+Наш Next dev остановлен до сборки; временные серверы Remotion не используют `.next`.
+Логи: `storage/verification/32-storyboard/qg-{test,build,tsc}.log`.
 
-Наш Next dev остановлен до тройки. Временный listener3000 принадлежал нашему
-Remotion render CLI и не использовал .next. Логи:
-`storage/verification/32-storyboard/qg-{test,build,tsc}.log`.
-Первый fulltest1409/1410 выявил сокращение get в initialize; адресный
-RED→GREEN3files/20tests. Промежуточный прогон захватил новый env-test до его
-реализации и не считается финальным. Исходные логи сохранены отдельно;
-финальная тройка начата после всех изменений исходников.
+## Полная визуальная матрица
 
-## Настоящий MCP и renderer
+187 наборов / 1675 уникальных PNG: все 54 прежних пресета, 33 рецепта,
+67 записей motion, типографика и граничные случаи RU/JP, три формата.
+До 12 выбранных кадров на набор; доступные и выбранные события сохранены.
+Это репрезентативная выборка, а не проверка каждого кадра и всех сочетаний.
 
-Последний полный `scripts/verify-storyboard.ts`:
+CLI использует штатный headless-shell закреплённой версии Remotion и `swangle`.
+В этой приёмке: Chrome for Testing 149.0.7790.0; версия и SHA-256 бинарника,
+платформа, Node, ffmpeg и хеши шрифтов записаны в manifest. Системный браузер
+worker сохраняет прежнюю настройку. Разные среды, размеры, fixture hash и
+отсутствующие файлы дают отказ; engineId не освобождает кадр от сравнения.
+
+После полного рендера просмотрены все 187 основных образцов на 8 контактных
+листах. Выполнено явное принятие, затем **новый полный независимый рендер**:
+
+- 1674 PNG совпали по SHA-256 и RGBA; PSNR ∞, изменённых пикселей 0.
+- `preset.board.tier.wide@123`: один пиксель, разница одного канала на 1,
+  PSNR 117.31865 dB. Сохранены обе картинки и сырые метрики.
+- Фиксированный предел golden CLI: **не более 4 изменённых пикселей И maxDelta ≤1**
+  на весь кадр. Записанные ROI остаются exact 0. Предел не подбирается по кадрам.
+- ROI построены по исходным compiled rect и не следуют перемещениям/масштабу.
+  Поэтому пиксель вне записанного ROI может находиться в анимированной карточке.
+  Глобальный предел 4×1 действует и там; полное покрытие критичного текста ROI
+  не утверждается. SDK и сравнение пользовательских проектов сохраняют exact default.
+- `report.json/html`: complete=true, passed=true, exactFrames=1674,
+  boundedNoiseFrames=1, failed=[]; политика и её ограничения видны в отчёте.
+
+Первый эталон 149 после независимого повтора **не переписывался**. Калибровка
+применяется к проверке, без нового accept. Это автономная приёмка синтетических
+образцов, а не утверждение вкуса владельца.
+
+Доказательства в `storage/verification/32-storyboard/`:
+`baseline-render-headless.log`, `baseline-accept-headless.log`,
+`baseline-render-headless-repeat.log`, `baseline-check-final.log`,
+`report.json`, `report.html`, `contact-sheets/`. Эталоны: [baselines/](baselines/).
+
+## Отрицательные контроли и диагностика
+
+Оба контроля обнаружены на окончательном профиле, исходные файлы восстановлены:
+
+- Исчезнувшая подпись: caption ROI FAIL, 292520 изменённых пикселей,
+  maxDelta 224, PSNR 25.74 dB.
+- Застывший переход: кадр 426, 412003 изменённых пикселя,
+  maxDelta 239, PSNR 17.89 dB.
+- Границы калибровки: RED → GREEN. 4 пикселя × Δ1 вне записанных ROI допускаются;
+  5 пикселей, Δ2, любое изменение внутри ROI и прежний drift 550 пикселей × Δ60
+  отвергаются. Проверки размера, среды и отсутствующего эталона сохранены.
+
+Материалы: `regression-control/`, `regression-control-headless.log`.
+
+Неудачные попытки сохранены: системный Chrome 157 дал 2/1675 расхождения в
+обычном режиме и 22/1675 в `swangle`. Одного SW backend оказалось недостаточно.
+Prewarm, принудительный масштаб и 2 rAF проблему не исправили; fromSurface=false
+дал ошибки захвата, OOM по тексту обёртки не доказан. Double capture не внедрён.
+Штатный headless-shell выбран после 37 кадров × 3 серии, затем проверен полной
+матрицей. У исходных ROI обнаружено ограничение motion; оно явно отражено выше.
+История и данные: `repeat-first-report.json`, `repeat-swangle-first-report.json`,
+`drift-probe2/`, `scale-probe/`, `raf-probe/`, `headless-probe/`,
+[отчёт политики](rasterizer-policy-report.md).
+
+## Настоящий MCP, renderer и звук
+
+Полный `scripts/verify-storyboard.ts`:
 `storage/verification/32-storyboard/live-da636332-6f31-48ac-8719-f63c4607524f/`.
 
-- PASS: 61 tool,106 настоящих stdio вызовов,113 assertions,6/6 сценариев
-  top/picker/board × wide/vertical по опубликованным content forms.
-- 12 PNG-сеток,12 отдельных tile PNG и отдельный native diff PNG,
-  2 настоящих MP4 с decoded frames/PCM. Ресурсы сверены по SHA256 и bytes.
-- Кэш возвращает тот же job.26 сцен покрыты страницами24+2 через готовый
-  nextPageAction/sourceJobId; origin сохраняется. Review и deep читают frozen
-  storyboard, даже после изменения live content; engine тоже закреплён.
-- Отдельный native recipe stdio smoke после SW accept:3 вызова,7 image/png
-  (top3,picker3,board1),previewOrder и ready статусы совпали,bytes сверены.
-  Evidence `storage/verification/32-storyboard/recipe-native/`.
-- Compare содержит разные origins, changed properties и измеренный pixel diff.
-  Measured overflow устранён selected suggestion; текст/source/media сохранены.
-  Ответ содержит точный before backup и готовое restore действие.
-- Inspection/deep не меняют project row/version/revision/source/snapshot count.
-  Чужие IDs, неправильный expectedVersion и malformed draft отвергаются.
-- Два клипа: каждый290816 PCM samples,6.059sec,peak−19.31dBFS,RMS0.04342,
-  silent=false. Container flag не использован как доказательство звука.
-  Извлечённые кадры просмотрены; successful decode не считается доказательством
-  художественной плавности, прослушивание агентом не заявляется.
+- PASS: 61 инструмент, 106 настоящих stdio вызовов, 113 assertions,
+  6/6 сценариев top/picker/board × wide/vertical по опубликованным формам.
+- 12 PNG-сеток, 12 отдельных кадров, native diff PNG, 2 настоящих MP4.
+  Ресурсы проверены по SHA-256, размеру и MIME.
+- Кэш возвращает тот же job. 26 сцен покрыты страницами 24+2 через готовый
+  nextPageAction/sourceJobId; origin сохраняется. Review/deep используют тот же
+  frozen snapshot и engine после изменения текущего содержимого.
+- Compare показывает origins, свойства, устранённые/новые замечания и pixel diff.
+  Реальный overflow устранён выбранной правкой; текст/source/media сохранены.
+  Доступны точный before backup и готовое восстановление.
+- Inspection/deep не меняют project/version/revision/source/snapshot count.
+  Чужие IDs, неправильная версия и malformed draft отвергаются.
+- Каждый клип: 290816 декодированных PCM samples, 6.059 сек,
+  peak −19.31 dBFS, RMS 0.04342, silent=false. Container flag не подменяет decode.
+  Кадры просмотрены; художественная плавность и прослушивание агентом не заявляются.
+- После окончательного accept отдельный native recipe smoke: 3 вызова,
+  7 image/png (top 3, picker 3, board 1), верные previewOrder и ready статусы.
+  Данные: `recipe-native/`.
 
-Предыдущий полный прогон `live-4ca970ae-3737-48cf-84d1-8424bd5361cf/`:
-103calls/106assertions PASS. Самый первый `live-817d…` сохранил RED дефекта MIME
-отдельного tile; повтор после исправления прошёл. Неудачные логи не скрыты.
+Ранний full run `live-4ca970ae-3737-48cf-84d1-8424bd5361cf/` прошёл 106 assertions.
+Первый `live-817d…` сохранил RED ошибки MIME отдельного кадра; повтор прошёл.
 Секреты уникальных проверочных аккаунтов остаются только в ignored storage.
 
 ## Контроль слабым агентом
 
-Отдельный `gpt-6-luna`,reasoning medium, получил только задачу собрать шесть
-роликов и MCP транспорт. Исходники/чужие отчёты читать запрещено; подсказок по
-формам не давалось. Результат6/6: filled content→nativePNG→review ready,
-без ручных nodes/bindings/координат и без исправления JSON владельцем.
-
-Были исправляемые ошибки аргументов, опечатка job ID и два отказа параллельного
-create; последовательный повтор прошёл. Все уложились в≤2 попытки на случай,
-ручных подсказок0. Это контроль конкретной модели/инструкции, не гарантия любой
-модели и не автоматическая оценка вкуса. Trace/results/images:
-`storage/verification/32-storyboard/weak-agent/`.
+Отдельный `gpt-6-luna`, reasoning medium: только задача на шесть роликов и MCP
+транспорт, без исходников и специальных подсказок по формам. Результат **6/6**:
+заполнение → native PNG → review ready, без ручных nodes/bindings/координат
+и без исправления JSON владельцем. Ошибки аргументов, опечатка ID и два отказа
+параллельного create исправлены в пределах двух попыток на случай; подсказок 0.
+Это проверка конкретной модели/инструкции, а не гарантия любой модели или вкуса.
+Trace/results/images: `storage/verification/32-storyboard/weak-agent/`.
 
 ## Браузер и восстановление
 
-Puppeteer-core, настоящий локальный Next и отдельные проверочные аккаунты:
+Настоящий Next, Puppeteer-core и собственные проверочные аккаунты:
 
-- Галерея с принятыми native thumbnails, живой recipe example, storyboard,
-  замечания и тройки before/after/pixel diff.
-- Desktop1440×1000/mobile390×844: pageErrors0,unexpected HTTP errors0,
-  horizontal overflow=false, pixelDiffShown=true.
-- Реальный клик «Следующая» отправил sourceJobId исходного job,page1,pageSize24;
-  показал2 оставшиеся сцены,originStable=true,errors0.
-- Доказательства: `storage/verification/32-storyboard/ui-final/`,
-  drivers `ui-probe.mjs` и `ui-continuation.mjs` рядом.
-- Полный live restore: собственный проектv5→applyv6→restorev7,revision1,
-  before/restored hashes равны;Rubik52/yellow/source text восстановлены,
-  95 остальных проектов не изменены. Evidence `ui-restore/`,
-  [отчёт](ui-restore-report.md).
+- Галерея с native thumbnails, живой пример, storyboard, замечания и pixel diff.
+- Desktop 1440×1000 / mobile 390×844: pageErrors 0, неожиданных HTTP ошибок 0,
+  горизонтального переполнения нет. После последней сборки наш dev-сервер
+  перезапущен, весь браузерный smoke повторён с теми же зелёными результатами.
+- Клик «Следующая» передал sourceJobId исходного job, page=1, pageSize=24;
+  показал 2 оставшиеся сцены, сохранил origin, ошибок 0.
+- Полный restore: свой проект v5 → apply v6 → restore v7, revision 1;
+  before/restored hashes равны, Rubik 52 / жёлтый цвет / исходный текст возвращены.
+  Остальные 95 проектов не изменены. [Отчёт](ui-restore-report.md).
 
-## Эталоны
+Материалы: `storage/verification/32-storyboard/ui-final/` и `ui-restore/`,
+драйверы `ui-probe.mjs`, `ui-continuation.mjs` рядом.
 
-Полная матрица:187fixtures/1675uniquePNG,≤12 выбранных кадров на fixture.
-Все54 прежних пресета,33 рецепта,67motion entries,типографика и границы RU/JP.
-Available/selected events сохранены; representative sampling не выдаётся за
-проверку каждого кадра или всех комбинаций. Все187 representative samples
-просмотрены на8 contact sheets; initial explicit accept сохранён в manifest.
-Это автономная приёмка синтетических образцов, а не утверждение вкуса владельца.
+## Независимое ревью и знания
 
-Первый fresh default-raster repeat:1673/1675exact,2FAIL (455px/max3 и100px/max177).
-Растровая нестабильность исследована в isolated и повторных полных batch;
-программныйswangle дал exact3/3 между собой на всех21 кадрах двух проблемных
-fixtures. 4f2ded8 закрепил rasterizer с environment guard; новый fullSWrender завершён,
-все187 representative образцов просмотрены заново и приняты явно с reason.
-Fresh полный SW repeat/check выполняется, старый default не выдаётся за PASS.
-Первый отказ сохранён в repeat-first-report.json,дрейф — drift-probe/.
+[Inspection review](inspection-review.md): IR01–04 исправлены, повторный PASS.
+[Финальное ревью](final-review.md): FR01–03 исправлены; source/policy review PASS
+с честными ограничениями ROI и измеренного шума. Существенных открытых замечаний
+к коду нет. QG выполнялся координатором отдельно от ревью.
 
-Отрицательные контроли уже обнаружили исчезнувшую подпись (caption ROI failed,
-PSNR25.74) и застывший переход (frame426,PSNR17.89). Изменённые actual/diff/reference
-сохранены в regression-control/,исходные файлы восстановлены. После нового backend оба контроля снова обнаружены; исходные файлы
-восстановлены. Финальный полный check выполняется.
-Предыдущая matrix1561 была предварительной; её не принимали. Эталоны в
-[baselines/](baselines/), runtime evidence в `storage/verification/32-storyboard/`.
-По умолчанию exact RGBA, scale1, pinned environment. EngineId не отменяет diff.
+Обновлены README, map/studio-sdk, mcp, render, dev-env и [SDK-гид](sdk-guide.md).
+Локальные ссылки проверены без ошибок. Статическая сетка и PSNR не оценивают
+художественный вкус; deep окна ограничены 15 сек / 720, notChecked сохраняется.
 
-## Адресные проверки исправлений
+## Что открыть руками
 
-- FR01 preserve/replace: исходные intro+main остаются510frames,13sec,override77;
-  try-on и запись используют один helper. Legacy replacement отдельно сохранён.
-- FR02 адресный deep включает scene/segment/frame риска; generic sampled scope
-  по-прежнему явно ограничен. RED→GREEN с исходным пропуском s2.
-- FR03 continuation/history/current tests и real worker: замена live cover
-  не меняет pinned pages/review/deep. Оба сравниваемых origin закреплены.
-- PixelDiff: same/different/alpha/missing/dimensions/hash/budgets и настоящий
-  worker/ledger/storageBytes —5files/25tests PASS. Missing/размеры notComparable.
-- Неэффективные/пустые suggestions не выдаются/не применяются, IDs ограничены,
-  before backup атомарен с CAS/ownership/quota. Generated content IDs длиной200
-  остаются допустимыми; controlled digest не удлиняет canonical keys.
-- RecipeApplyError mapping: meaningful instanceof assertion RED7/8→GREEN8/8.
-  Historical nextAction: RED4/5→GREEN5/5, не отправляет inspect на live draft.
+1. `/studio/recipes`: образцы, до трёх примерок, отдельное применение preserve/replace.
+2. `/studio/<id>/storyboard`: страницы, состояния сцены, кадры, Player, замечания.
+3. Выбранные исправления → до/после → восстановление before в новый draft.
+4. `npm run test:visual`: HTML с эталоном, текущим кадром, diff и сырыми метриками.
 
-## Независимое ревью
-
-[inspection-review.md](inspection-review.md): IR01–04 воспроизведены/исправлены,
-повторный PASS. [final-review.md](final-review.md): широкий просмотр выявил
-FR01–03; после исправлений адресное повторное ревью PASS по всем существенным
-находкам, P08/properties/pixel/nextPageAction/long IDs. Сам ревьюер не присваивает
-себе QG/рендер координатора. Существенных открытых замечаний нет.
-
-## Что посмотреть руками
-
-1. `/studio/recipes`: направление,живой пример,до трёх read-only примерок;
-   отдельное применение preserve/replace сохраняет сцены и тайминги.
-2. `/studio/<id>/storyboard`: весь ролик/страницы,состояния сцены,полный PNG,
-   отдельный кадр,переход в Player только при совпадении origin.
-3. Замечания→selected fixes→повторная проверка/до-после/pixel diff;
-   «Вернуть состояние до исправлений» возвращает точный before в новый draft.
-4. `npm run test:visual`: fresh render/check,HTML reference/actual/diff.
-
-## Знания и ограничения
-
-Обновлены map/studio-sdk,mcp,render,dev-env и [SDK-гид](sdk-guide.md).
-Проверены208 локальных ссылок в29 документах,broken0; также обновлён README.
-Сетка не проверяет художественный вкус/плавность/весь звук; отчёты сохраняют
-notChecked,окна deep ограничены15sec/720. Exact baseline требует среды manifest;
-другая среда получает отдельный отказ. Baseline не обновляется автоматически.
-
-## Замечания владельца
-
-Нет; разрешена автономная приёмка до вливания этой задачи.
-
-## Повтор SW: отрицательный результат и текущая диагностика
-
-Полный SWrepeat тоже обнаружил pixel drift; это не принято как green и не
-лечится silentaccept или ослаблением ROI. `repeat-swangle-first-report.json`
-сохранён. Главная разница — AA-края SVG/рамок; missing font/image не подтверждён.
-Prewarm только первого кадра и explicit deviceScaleFactor1 не исправили drift.
-FromSurfacefalse дал9 capture errors/0PNG; OOM по тексту обёртки не доказан.
-Doublecapture всего batch37frames×3 дал111chosenexact; это локальная выборка,
-не доказательство всей матрицы. Проверяются headlessshell и paint settling.
-Источники/принятые эталоны на этой диагностике не менялись.
+Замечаний владельца нет; разрешена автономная приёмка до вливания.

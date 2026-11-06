@@ -106,5 +106,7 @@ Queued/running — выполните nextAction video_job_get, после done 
 Remotion и программный Chromium rasterizer `swangle` через
 общий `renderStudioFrames`. Режим входит в environment identity: другой режим
 даёт environment-mismatch даже при совпадающих пикселях. Штатный worker
-сохраняет прежний default; это настройка воспроизводимых эталонов. Критерий
-RGBA/ROI остаётся точным, без послабления допуска.
+сохраняет прежний default; это настройка воспроизводимых эталонов. SDK/project сравнение и записанные ROI остаются точными. Golden CLI имеет
+фиксированный измеренный глобальный предел4пикселя×1уровень; raw metrics и
+число bounded-noise frames видны в отчёте. ROI статические, не следуют motion;
+движущиеся области тоже ограничены глобальными4×1, а не объявляются точными.

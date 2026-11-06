@@ -127,3 +127,25 @@
   fingerprint/selectComposition/openBrowser; workerENVfallbackне меняется.
   Нуженновыйполныйrender/view/accept/freshrepeat/check. Не выдаёмлокальную
   выборкузагарантиювсейматрицы.
+
+- Full149repeat завершён:1675PNG,1674побайтноравныfirst149baseline;
+  единственнаяразницаtier.wide@123:1pixelΔ1,PSNR117.31865. Пиксельвреальной
+  анимированнойкарточке,внезаписанныхstaticROI;необъявляетсяфоном.
+- RulingT07calibration:CLI-onlyfixedglobal≤4changedpixelsANDmaxDelta≤1;
+  записанныеROIexact0,ноtracksMotionfalse. SDK/projectexactdefaultunchanged.
+  5новыхboundaryRED→GREENcases. Никакогоновогоacceptпослеrepeat,first149
+  referencePNGнепереписаны. Caption/transitionnegativecasesобнаружены/restored.
+- c645283policycode+rootHTMLRU,sourcefreeze. IndependentscopedreviewPASS
+  сограничениями;finalfullcheckиmandatorytrioвыполняютсяпослеправок.
+
+## Финальная приёмка координатора
+
+- Bundled149 + SW full render/view/explicit accept/fresh full repeat завершены.
+  Full check: 1675 PASS, 1674 exact, 1 bounded-noise (один pixel Δ1), ROI failures0.
+  First149 PNG reference после независимого повтора не переписывался.
+- Оба отрицательных контроля обнаружены после калибровки, actual восстановлены.
+- Последняя тройка после c645283 и HTML RU:122 files /1420 tests PASS,
+  build PASS, tsc0. Отчёты и предыдущие отказы сохранены.
+- Независимое scoped review политики PASS с указанными ограничениями.
+  Автономная приёмка выполнена в рамках дословного разрешения владельца.
+  Далее PR и merge по feature, без нового ожидания гейта.

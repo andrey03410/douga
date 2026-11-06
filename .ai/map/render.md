@@ -35,7 +35,12 @@ EngineId — provenance, его изменение не отключает ср�
 - `npm run visual:accept -- --confirm --reason "…"` — только после просмотра;
   baseline в .ai/features/32-storyboard-reference/baselines версионируется.
 
-Совпадение — точное в закреплённой среде. У baseline есть browser/platform/node/fonts
+SDK/project comparator сравнивает RGBA точно. Эталонный CLI после измерений
+использует фиксированный предел: максимум4 изменённых пикселя и maxDelta≤1
+на весь кадр; raw metrics/exactFrames/boundedNoiseFrames сохраняются. Записанные
+ROI остаются exact0,но построены по compiled rect и не учитывают motion;
+движущиеся области сохраняют тот же глобальный предел4×1. Крупные/структурные
+изменения и любые превышения остаются FAIL. Режим закреплённой среды обязателен. У baseline есть browser/platform/node/fonts
 и условия RGBA; несовместимая среда даёт отдельный отказ, не pass. Новый каталог
 без fixture обнаруживается автоматическими тестами. Проверка маленькой пропавшей
 подписи не прячется за высоким средним PSNR всего кадра.
@@ -156,4 +161,5 @@ Remotion и программный Chromium rasterizer `swangle` через
 общий `renderStudioFrames`. Режим входит в environment identity: другой режим
 даёт environment-mismatch даже при совпадающих пикселях. Штатный worker
 сохраняет прежний default; это настройка воспроизводимых эталонов. Критерий
-RGBA/ROI остаётся точным, без послабления допуска.
+SDK/project RGBA и записанные ROI остаются точными; golden CLI имеет
+измеренный глобальный предел4пикселя×1уровень с явным отчётом.
