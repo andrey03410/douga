@@ -24,3 +24,9 @@ npx tsx --tsconfig tsconfig.mcp.json scripts/visual-regression.ts check
 Локальные SVG и PCM создаются чистой функцией `visualFixtureMedia()`, шрифты
 копируются из проверенного штатного каталога. Медиа владельца и сеть не нужны.
 Сначала измеряется повторяемость рендера. Допуски из памяти не вводятся.
+
+Эталонный CLI явно использует программный Chromium rasterizer `swangle` через
+общий `renderStudioFrames`. Режим входит в environment identity: другой режим
+даёт environment-mismatch даже при совпадающих пикселях. Штатный worker
+сохраняет прежний default; это настройка воспроизводимых эталонов. Критерий
+RGBA/ROI остаётся точным, без послабления допуска.
