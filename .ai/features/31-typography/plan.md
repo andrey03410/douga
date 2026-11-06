@@ -36,13 +36,13 @@ selected font manifest; renderer не измеряет и не меняет ст
 types.ts/schema.ts/settings.ts/nodes.ts/blocks.ts/board-compiler.ts/compiler.ts/index.ts.
 Интерфейс: compileVideo(doc, manifest?, {measureText}?) и типы из tech T01–T03.
 
-- [ ] Красный тест: неизвестный font/произвольный CSS/runs>100 отвергнуты;
+- [x] Красный тест: неизвестный font/произвольный CSS/runs>100 отвергнуты;
   локальный enable оставляет другие узлы legacy; null/reset/overrides соблюдаются.
-- [ ] Каталоги/схема/наследование и semantic roles, rich bindings.
-- [ ] Красный→зелёный layout: JP punctuation, графемы/newlines, balance, effect bounds,
+- [x] Каталоги/схема/наследование и semantic roles, rich bindings.
+- [x] Красный→зелёный layout: JP punctuation, графемы/newlines, balance, effect bounds,
   minSize/ellipsis/clip, fitGroup и диапазон timer/counter; fake measurer для алгоритма.
-- [ ] Все 54 legacy пресета ×3 формата без измерителя дают прежний IR.
-- [ ] Коммит feat(video): add typography contracts and measured text layout.
+- [x] Все 54 legacy пресета ×3 формата без измерителя дают прежний IR.
+- [x] Коммит feat(video): add typography contracts and measured text layout.
 
 ## Задача 2. Ресурсы, реальное измерение и все выходы
 
@@ -50,50 +50,50 @@ types.ts/schema.ts/settings.ts/nodes.ts/blocks.ts/board-compiler.ts/compiler.ts/
 assets.ts/engine.ts/render.ts/revisions.ts/export-html.ts, scripts/studio-render-child.ts,
 package.json/lock. Интерфейс провайдера совпадает с задачей 1.
 
-- [ ] Красный тест реальных font widths/JP fallback/missing/unsupported face и hash.
-- [ ] Поставка OFL fonts, pinned hashes/bytes/licenses; Fontkit provider с bounded cache.
-- [ ] evaluate передаёт measureText; план содержит только нужные font assets.
-- [ ] engine/snapshot pin ресурсов; offline встраивает только selected faces и лицензии,
+- [x] Красный тест реальных font widths/JP fallback/missing/unsupported face и hash.
+- [x] Поставка OFL fonts, pinned hashes/bytes/licenses; Fontkit provider с bounded cache.
+- [x] evaluate передаёт measureText; план содержит только нужные font assets.
+- [x] engine/snapshot pin ресурсов; offline встраивает только selected faces и лицензии,
   честно считает bytes, legacy CSS не перебивает data-typography.
-- [ ] Реальные тесты ресурсов, повторной компиляции, frozen/export без CDN.
-- [ ] Коммит feat(studio): package and measure pinned typography fonts.
+- [x] Реальные тесты ресурсов, повторной компиляции, frozen/export без CDN.
+- [x] Коммит feat(studio): package and measure pinned typography fonts.
 
 ## Задача 3. Renderer
 
 Файлы: src/remotion/TypographyText.tsx, typography-fonts.tsx, StudioVideo.tsx,
 MotionText.tsx/MotionWidgets.tsx и профильные тесты.
 
-- [ ] Красный→зелёный тест стилей/строк/включения/динамических чисел.
-- [ ] FontGate ждёт реальные face; TypographyText рисует готовые линии и rich runs,
+- [x] Красный→зелёный тест стилей/строк/включения/динамических чисел.
+- [x] FontGate ждёт реальные face; TypographyText рисует готовые линии и rich runs,
   тени/обводки/градиенты/плашки, выравнивание и анимации без перевёрстки.
-- [ ] Охват text/card/group/timer/badge/versus/progress, legacy путь неизменен.
-- [ ] Коммит feat(render): render measured typography and text effects.
+- [x] Охват text/card/group/timer/badge/versus/progress, legacy путь неизменен.
+- [x] Коммит feat(render): render measured typography and text effects.
 
 ## Задача 4. Сервисы, MCP и галерея
 
 Файлы: src/server/studio/typography.ts и index/http; src/mcp/studio-tools.ts/instructions;
 src/app/studio/typography/*, StudioWorkspace.tsx, навигация projects/new.
 
-- [ ] Красный→зелёный тест ownership/version/pagination/diagnostic restrictions.
-- [ ] font_list/get, typography_list/get, text_inspect с optional diagnostic PNG;
+- [x] Красный→зелёный тест ownership/version/pagination/diagnostic restrictions.
+- [x] font_list/get, typography_list/get, text_inspect с optional diagnostic PNG;
   краткие ответы/примеры; HTTP и MCP используют те же сервисы.
-- [ ] Галерея: свой текст/формат/рамка/фон, все темы/стили/шрифты, настоящий Player,
+- [x] Галерея: свой текст/формат/рамка/фон, все темы/стили/шрифты, настоящий Player,
   строки/размер/ошибки, копирование и применение к своему проекту.
-- [ ] SDK apply helper preserve/replace и CAS apply в проекте, грязный буфер сохраняется.
-- [ ] Четыре примера и рецепт агента; новые factory-проекты явно включают clean.
-- [ ] Коммит feat(studio): expose typography tools and gallery.
+- [x] SDK apply helper preserve/replace и CAS apply в проекте, грязный буфер сохраняется.
+- [x] Четыре примера и рецепт агента; новые factory-проекты явно включают clean.
+- [x] Коммит feat(studio): expose typography tools and gallery.
 
 ## Задача 5. QG и приёмка
 
-- [ ] npm test → npm run build → npx tsc --noEmit после последних правок.
-- [ ] Настоящий MCP: discover/apply/inspect/validate/PNG; overflow/чужой проект/CAS.
-- [ ] Живой сайт wide и 320px, применение и сравнение на своих ru/JP названиях.
-- [ ] PNG/MP4/watch/offline без сети; кадры на одинаковом времени, декодированный звук.
-- [ ] Независимое ревью до отсутствия существенных находок; исправления перепроверены.
-- [ ] verify.md с числами, файлами свидетельств и ручными маршрутами.
+- [x] npm test → npm run build → npx tsc --noEmit после последних правок.
+- [x] Настоящий MCP: discover/apply/inspect/validate/PNG; overflow/чужой проект/CAS.
+- [x] Живой сайт wide и 320px, применение и сравнение на своих ru/JP названиях.
+- [x] PNG/MP4/watch/offline без сети; кадры на одинаковом времени, декодированный звук.
+- [x] Независимое ревью до отсутствия существенных находок; исправления перепроверены.
+- [x] verify.md с числами, файлами свидетельств и ручными маршрутами.
 
 ## Задача 6. Знания
 
-- [ ] Обновить .ai/map/studio-sdk.md, render.md, mcp.md и SDK-гид задачи.
+- [x] Обновить .ai/map/studio-sdk.md, render.md, mcp.md и SDK-гид задачи.
 - [ ] PR, stage review; затем history/merged, merge PR и проверить main.
 - [ ] Убрать свой диагностический сервер/worktree, сохранив доказательства в storage.

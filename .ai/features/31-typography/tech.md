@@ -94,3 +94,23 @@ legacy/смешанные документы, все 54 пресета ×3 фо�
 PNG/MP4/watch/offline с сетью off, декодированный звук. Итоговая тройка строго
 npm test → npm run build → npx tsc --noEmit. Независимое ревью и устранение существенного.
 Обновляются карты studio-sdk/render/mcp; DB-миграция не нужна.
+
+## Уточнения по результатам реализации и ревью
+
+- Поставлены полные variable TTF, 10 бинарников 25 635 784 байта, face API400/700.
+  Offline включает только использованные binaries/OFL по hash; нарезки отдельных
+  JP-глифов нет. Это осознанный выбор простоты/проверяемости с честной ценой HTML.
+- Rich-only runs тоже включают провайдер. Inspector использует owned+view без
+  source reconciliation; default details ≤100 lines/200 runs на страницу, offsets
+  дают продолжения, строки/источник в отчёте представлены ограниченными excerpts.
+- Динамические числа только однострочные; ellipse/clip не должны скрывать счёт:
+  явная несовместимая политика диагностируется. Резерв учитывает оригинальную
+  финальную запись (плюс, нули, пробелы) и фактические промежуточные числа.
+- Градиент и тень разделены по слоям после реальной PNG-проверки: обычный CSS
+  text-shadow на прозрачном background-clipped glyph закрывает заливку.
+
+- После полногоQG проверенывсе162 populatedfactories (54×3formats) realFontkit.
+  Дляминиатюрcard-labelвнутреннийinset=min(10,w×.03,h×.03) сохраняетminFontSize,
+  анебессмысленноуменьшаетшрифт;largecardsпрежние10px. Коммитыbf96e59/54fc0d4.
+- participant.displayLabel = caption??label — безопасныйsemanticdefaultдляrich
+  personalpresets,вт.чrepeat:$participant;прочиеstyle-slotsпустые,имянеразмножается.
