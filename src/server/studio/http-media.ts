@@ -8,6 +8,9 @@ import { actor } from "./shared";
 import { safeFile } from "./assets";
 import { StudioError } from "./errors";
 const mime: Record<string, string> = {
+  ".ttf": "font/ttf",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
   ".m4a": "audio/mp4",
@@ -47,7 +50,7 @@ export async function ownedStudioMedia(userId: string, relative: string) {
   ]) {
     if (!json) continue;
     const ledger = JSON.parse(json);
-    const files = ledger.files ?? {};
+    const files = { ...ledger.files, ...ledger.fontFiles };
     if (
       Object.values(files).some((raw) => {
         const f = raw as { path?: string; posterPath?: string };

@@ -1,5 +1,5 @@
 import { prisma } from "../src/lib/db";
-import { mkdir } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { bundle } from "@remotion/bundler";
 import { importStudioAttempt } from "../src/server/studio/import-attempt";
@@ -10,6 +10,13 @@ const terminate = () => {
 };
 process.once("disconnect", terminate);
 process.once("message", async (request: any) => {
+  const diagnosticLease = async () => !!(await prisma.studioWorkerLease.findFirst({
+    where: { id: "heavy", token: request.leaseToken, until: { gt: new Date() } },
+  }));
+  if (request.operation === "diagnostic")
+    setInterval(async () => {
+      try { if (!(await diagnosticLease())) terminate(); } catch { terminate(); }
+    }, 5000).unref();
   if (request.operation === "render" || request.operation === "import")
     setInterval(async () => {
       try {
@@ -29,7 +36,8 @@ process.once("message", async (request: any) => {
   try {
     let result: unknown;
     if (request.operation === "bundle") {
-      await mkdir(request.publicDir, { recursive: true });
+      await mkdir(resolve(request.publicDir, "fonts"), { recursive: true });
+      await cp(resolve("public/fonts/typography-v1"), resolve(request.publicDir, "fonts/typography-v1"), { recursive: true });
       await bundle({
         entryPoint: resolve("src/remotion/index.ts"),
         outDir: request.outDir,
@@ -43,6 +51,9 @@ process.once("message", async (request: any) => {
         }),
       });
       result = { built: true };
+    } else if (request.operation === "diagnostic") {
+      if (!(await diagnosticLease())) throw new Error("LEASE_LOST");
+      result = await renderStudioAttempt({ ...request, operation: "render" });
     } else {
       if (
         !(await prisma.studioJob.findFirst({

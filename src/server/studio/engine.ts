@@ -29,6 +29,7 @@ export async function filesUnder(directory: string): Promise<string[]> {
 async function sourceId() {
   const files = [
     "package-lock.json",
+    ...(await filesUnder("public/fonts/typography-v1")),
     ...(await filesUnder("src/remotion")),
     ...(await filesUnder("src/video")),
     ...(await filesUnder("src/lib")),

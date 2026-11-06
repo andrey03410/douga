@@ -31,6 +31,7 @@ import {
   type Participant,
 } from "@/video";
 import { mergeSettings } from "@/video/settings";
+import { freezeTypographyFonts, getTypographyMeasureText } from "./typography-fonts";
 import { actor, type Db } from "./shared";
 import { StudioError } from "./errors";
 import { studioManifestModeSchema } from "./types";
@@ -524,6 +525,7 @@ export async function evaluate(
       resolvedDocument: null,
       manifest: {},
       files: {},
+      fontFiles: {},
     };
   const parsed = videoDocumentSchema.safeParse(input);
   if (!parsed.success) {
@@ -537,6 +539,7 @@ export async function evaluate(
       resolvedDocument: null,
       manifest: {},
       files: {},
+      fontFiles: {},
     };
   }
   const assets = await resolveAssets(userId, parsed.data, "url", directory);
@@ -555,7 +558,19 @@ export async function evaluate(
       path: "settings.top.snippet",
     });
   }
-  const compiled = compileVideo(resolvedDocument, assets.manifest);
+  const usesTypography = (value: unknown): boolean => {
+    if (!value || typeof value !== "object") return false;
+    return Object.entries(value).some(([key, child]) =>
+      (key === "typography" && !!child) || usesTypography(child),
+    );
+  };
+  const measureText = usesTypography(resolvedDocument)
+    ? await getTypographyMeasureText()
+    : undefined;
+  const compiled = compileVideo(resolvedDocument, assets.manifest, { measureText });
+  const fontFiles = directory && compiled.plan?.fonts?.length
+    ? await freezeTypographyFonts(compiled.plan.fonts, directory)
+    : {};
   const diagnostics = [...assets.diagnostics, ...compiled.diagnostics];
   return {
     validation: {
@@ -566,6 +581,7 @@ export async function evaluate(
     resolvedDocument,
     manifest: assets.manifest,
     files: assets.files,
+    fontFiles,
   };
 }
 export async function cleanupDirectory(directory: string) {

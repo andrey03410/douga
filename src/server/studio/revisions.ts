@@ -20,6 +20,7 @@ import {
 import { parseVideoDocument, type VideoDocument } from "@/video";
 import { reconcileSource } from "./sources";
 import { StudioError } from "./errors";
+import { verifyTypographyFonts } from "./typography-fonts";
 import {
   freezeStudioProjectSchema,
   type FreezeStudioProjectInput,
@@ -111,12 +112,13 @@ export async function freezeStudioProject(
       throw new StudioError("VALIDATION_FAILED", validation.diagnostics);
     const assets: Pick<
       StudioFrozenRevision,
-      "resolvedDocument" | "manifest" | "files" | "runtime"
+      "resolvedDocument" | "manifest" | "files" | "fontFiles" | "runtime"
     > = prepared
       ? {
           resolvedDocument: prepared.resolvedDocument!,
           manifest: prepared.manifest,
           files: prepared.files,
+          ...(Object.keys(prepared.fontFiles).length ? { fontFiles: prepared.fontFiles } : {}),
           runtime,
         }
       : JSON.parse(revision!.assetsJson!);
@@ -129,6 +131,8 @@ export async function freezeStudioProject(
       )
         throw new StudioError("SNAPSHOT_HASH_MISMATCH");
     }
+    const fonts = prepared?.plan?.fonts ?? (revision?.planJson ? JSON.parse(revision.planJson).fonts : undefined);
+    await verifyTypographyFonts(fonts, assets.fontFiles);
     const frozen = await prisma.$transaction(async (db) => {
       const row = await owned(userId, id, db);
       const old = await replay<StudioFrozenRevision>(
@@ -203,7 +207,7 @@ export async function freezeStudioProject(
           projectId: id,
           revisionId: saved!.id,
           payloadJson: JSON.stringify(frozen),
-          bytes: Object.values(frozen.files).reduce(
+          bytes: Object.values({ ...frozen.files, ...frozen.fontFiles }).reduce(
             (n, f) => n + f.bytes + (f.posterBytes ?? 0),
             0,
           ),
@@ -282,10 +286,10 @@ export async function deleteStudioRevision(
   if (old.assetsJson) {
     const assets = JSON.parse(old.assetsJson) as Pick<
       StudioFrozenRevision,
-      "files"
+      "files" | "fontFiles"
     >;
     for (const dir of new Set(
-      Object.values(assets.files).map((f) => path.dirname(f.path)),
+      Object.values({ ...assets.files, ...assets.fontFiles }).map((f) => path.dirname(f.path)),
     ))
       if (dir.startsWith(`studio/${row.userId}/${id}/versions/`))
         await cleanupDirectory(dir);

@@ -114,6 +114,7 @@ export async function addRevision(
         resolvedDocument: result.resolvedDocument,
         manifest: result.manifest,
         files: result.files,
+        ...(Object.keys(result.fontFiles).length ? { fontFiles: result.fontFiles } : {}),
         runtime,
       }),
     },

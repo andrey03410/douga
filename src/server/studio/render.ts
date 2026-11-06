@@ -11,6 +11,7 @@ import { fileHash, safeFile } from "./assets";
 import { verifyEngine } from "./engine";
 import { absPath } from "@/lib/storage";
 import { StudioError } from "./errors";
+import { verifyTypographyFonts } from "./typography-fonts";
 import {
   studioJobLimits,
   type StartStudioJobInput,
@@ -55,6 +56,16 @@ export async function renderStudioAttempt(
     }
   }
   const plan = structuredClone(frozen.plan);
+  await verifyTypographyFonts(plan.fonts, frozen.fontFiles);
+  for (const face of plan.fonts ?? []) {
+    const file = frozen.fontFiles![face.hash];
+    const source = await safeFile(file.path);
+    const name = `${face.hash}.ttf`;
+    await copyFile(source, path.join(publicDir, name));
+    if ((await fileHash(path.join(publicDir, name))) !== face.hash)
+      throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    face.src = name;
+  }
   const rewritten = new WeakSet<ResolvedAsset>();
   const rewrite = (asset: ResolvedAsset) => {
     if (rewritten.has(asset)) return;
