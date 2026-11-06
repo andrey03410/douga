@@ -95,5 +95,6 @@ src/app/studio/typography/*, StudioWorkspace.tsx, навигация projects/ne
 ## Задача 6. Знания
 
 - [x] Обновить .ai/map/studio-sdk.md, render.md, mcp.md и SDK-гид задачи.
-- [ ] PR, stage review; затем history/merged, merge PR и проверить main.
-- [ ] Убрать свой диагностический сервер/worktree, сохранив доказательства в storage.
+- [x] PR #12, stage review; history/merged и автономное вливание в main.
+- [x] Свой диагностический dev остановлен, доказательства сохранены в storage.
+  Управляемый primary worktree оставлен чистым: host Codex запрещает его удаление.

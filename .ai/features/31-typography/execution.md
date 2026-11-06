@@ -63,3 +63,11 @@
 54fc0d4: npmtest1252/1252,99files,338.41s; последовательноbuildexit0→tscexit0.
 No codechangesafterfreeze. FreshMCP57/CASread/readonlydiagnostic+realboardtierstill
 успешны; см.mcp-final.json/tier-readable-final.png. Далееonlydocs/PR/merge.
+
+## Интеграция
+
+- Final1252/1252,99files,338.41s;build0→tsc0. СвежийMCP57+CAS+readonlyPNG
+  иреальныйпоследнийкадрtierнаитоговомкодеуспешны. Нетsourceизмененийпосле54fc0d4.
+- PR12 https://github.com/andrey03410/douga/pull/12,reviewstage5ab0c13;checksrollupempty,
+  mergeableCLEAN. Архивированиеуправляемогоworktreeотклоненоhost(primarycheckout),
+  оставляемегоисинхронизируемсmain,основнойчекаутчистый. MergeвыполняетсясheadSHAguard.
