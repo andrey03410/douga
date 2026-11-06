@@ -69,18 +69,18 @@ motionCatalog/getMotionCatalogEntry, applySceneMotion, typed widgets/backdrop,
 и тот же StudioVideo/StudioSceneFrame для всех поверхностей. Старый transitionAt
 сохраняется для none/fade/slide. Никакой логики разрешения событий в React.
 
-- [ ] RED: каждый эффект имеет ожидаемые начало/середину/конец; повторный seek
+- [x] RED: каждый эффект имеет ожидаемые начало/середину/конец; повторный seek
   даёт то же состояние; opacity/scale ограничены, нет NaN/Infinity.
-- [ ] RED: новые transition outgoing/incoming закрывают кадр; первая сцена,
+- [x] RED: новые transition outgoing/incoming закрывают кадр; первая сцена,
   короткие окна, направления, сегментная граница; старые переходы неизменны.
-- [ ] RED: ring/segments/bar используют frame/fps, круг остаётся круглым;
+- [x] RED: ring/segments/bar используют frame/fps, круг остаётся круглым;
   текстовые эффекты сохраняют текст/пробелы, число заканчивается заданным значением.
-- [ ] Реализовать все 40 эффектов, композицию с keyframes, маски/3D/blur/glow,
+- [x] Реализовать все 40 эффектов, композицию с keyframes, маски/3D/blur/glow,
   текст, пять фонов, все виджеты и настоящие переходы соседних сцен.
-- [ ] GREEN: `npx vitest run src/remotion/motion-frame.test.ts
+- [x] GREEN: `npx vitest run src/remotion/motion-frame.test.ts
   src/remotion/studio-frame.test.ts src/remotion/studio-player.test.ts src/video/motion.test.ts`.
-- [ ] Коммит `feat(render): render motion effects transitions and widgets`.
-- [ ] Свежий task review; исправить существенное.
+- [x] Коммит `feat(render): render motion effects transitions and widgets`.
+- [x] Свежий task review; исправить существенное.
 
 ### Task 3: MCP и живая галерея
 

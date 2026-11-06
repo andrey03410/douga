@@ -76,3 +76,34 @@ Task 1: fix round 2/5 (2 addressed, 0 open — R6/R7; commits a17fc01..eba8ec3).
 Task 1: complete (commits c5f7b8b..eba8ec3, review clean; target191/191, tsc0).
 Reports: agents/task-1-report.md, task-1-review.md, task-1-rereview-{1,2}.md.
 Task2 начинается после фиксации этого состояния, исполнитель будет новым.
+
+### Task 2 — в работе
+
+Исполнитель `/root/motion_renderer`, base `b65e8af`, новый контекст gpt-6.1-sol/high.
+Текущий targeted GREEN213/213,7файлов; финализируется actual Player outgoing
+regression. Общий media traversal worker/watch/offline реализован в этом scope.
+Root: baseline Remotion bundle готов, render-parity.mts сравнит декодированные
+RGBA legacy PNG после commit. Отдельные video-backdrop-only документы готовы:
+vertical24 и square60, только свои данные. Legacy compiler parity расширена
+15 смешанными v2 сценариями:285/285 ready results с полным совпадением JSON.
+
+### Task 2 — review/fix round1
+
+Commit f9a44b0: targeted216/216,7files,tsc0. Fresh reviewer /root/render_review
+нашёл 2Important: blur alpha coverage .75 и недопустимое alpha suffix у
+CSS-цветов vignette. Root добавил тот же suffix в winner badge и R3
+geometry-based default fontsize generated VS/badge по настоящему кадру.
+Исполнитель motion_renderer возобновлён для RED→GREEN; контракт IR не меняется.
+
+Live на f9a44b0: mcp-showcase artifact.mp4,1920×1080,1569frames,52.3s,
+11826503bytes, SHA verified, first attempt done. 30 extracted frames viewed
+в contact-sheet.png, full VS/widgets frames; decoded2512896 mono samples,
+RMS−38.65dB. Legacy renderer RGBA parity5/5 (picker answer/board motion).
+Эти evidence промежуточные: финальный код после исправлений перерендерить.
+SSR Player regression доказывает frame context/markup, mounted seek
+дополнительно проверяется root в живом watch/offline.
+
+Task 2: fix round 1/5 (4 addressed,0 open; f9a44b0..bc4a675).
+Task 2: complete (b65e8af..bc4a675, review clean; target229/229,tsc0,
+Chromium color/coverage/font probe passed, legacy decodedRGBA5/5 on latestcode).
+Final MP4 must be regenerated after Task3; intermediate showcase remains f9a44b0.
