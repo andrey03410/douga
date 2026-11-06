@@ -155,3 +155,25 @@ it("prepares all built-in gallery themes, styles and fonts in every format using
     }
   }
 }, 30000);
+
+it("keeps every populated factory preset ready with clean typography in all three formats", async () => {
+  const { getBuiltinPresets, applyTypographyTheme, compileVideo } =
+    await import("@/video");
+  const { getTypographyMeasureText } =
+    await import("@/server/studio/typography-fonts");
+  const measureText = await getTypographyMeasureText();
+  for (const preset of getBuiltinPresets())
+    for (const format of ["wide", "vertical", "square"] as const) {
+      const document = applyTypographyTheme(
+        createVideoDocument({ kind: preset.kind, preset }),
+        "clean",
+      );
+      document.output.format = format;
+      const compiled = compileVideo(document, {}, { measureText });
+      expect(
+        compiled.diagnostics.filter((d) => d.severity === "error"),
+        `${preset.id}/${format}`,
+      ).toEqual([]);
+      expect(compiled.ready).toBe(true);
+    }
+}, 60000);
