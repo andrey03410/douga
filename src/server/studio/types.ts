@@ -140,6 +140,8 @@ export interface StudioValidation {
   diagnostics: Diagnostic[];
 }
 export interface StudioProjectView {
+  /** Exact authoring document immediately before an internal review transform. */
+  draftBackupId?: string;
   id: string;
   title: string;
   kind: "top" | "picker" | "board";

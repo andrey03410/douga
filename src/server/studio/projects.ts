@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
+import { deleteStudioReviewBackups, preserveStudioReviewBackup } from "./review-backups";
 import { buildVideoContent, type VideoContentInput } from "@/video/content";
 import { prisma } from "@/lib/db";
 import {
@@ -506,7 +507,7 @@ export async function transformStudioDraft(
 ) {
   return writeDraft(userId, id, input, requestHash(`transform:${id}`, input), current => ({
     document: parseVideoDocument(transform(editableDocument(current))),
-  }), { reconcile: false });
+  }), { reconcile: false, preserveBefore: true });
 }
 function editableDocument(current: StudioProjectView) {
   const parsed = videoDocumentSchema.safeParse(
@@ -527,7 +528,7 @@ async function writeDraft(
   ) =>
     | { document?: unknown; text?: string }
     | Promise<{ document?: unknown; text?: string }>,
-  options: { reconcile?: boolean; requireReady?: boolean } = {},
+  options: { reconcile?: boolean; requireReady?: boolean; preserveBefore?: boolean } = {},
 ): Promise<StudioProjectView> {
   await owned(userId, id);
   const old = await replay<StudioProjectView>(
@@ -588,6 +589,9 @@ async function writeDraft(
           }
         : {}),
     });
+    const draftBackupId = options.preserveBefore
+      ? await preserveStudioReviewBackup(db, userId, id, request, current)
+      : undefined;
     await setReferences(
       db,
       userId,
@@ -600,6 +604,7 @@ async function writeDraft(
       await db.studioProject.findUniqueOrThrow({ where: { id } }),
       db,
     );
+    if (draftBackupId) saved.draftBackupId = draftBackupId;
     await receipt(db, userId, input.idempotencyKey, request, saved);
     return saved;
   });
@@ -747,6 +752,7 @@ export async function deleteStudioProject(
       throw new StudioError("JOB_IN_USE");
     await db.studioPublication.deleteMany({ where: { projectId: id } });
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
+    await deleteStudioReviewBackups(db, userId, id);
     await db.studioProject.delete({ where: { id } });
     const result = { deleted: true as const, id };
     await receipt(db, userId, input.idempotencyKey, request, result);
