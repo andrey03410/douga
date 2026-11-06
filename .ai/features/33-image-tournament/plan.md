@@ -80,7 +80,7 @@
 
 ## 7. Сайт
 
-- [ ] Файлы:
+- [x] Файлы:
   - `CreateTournamentForm.tsx` — источники и черновик;
   - `SchemeChooser.tsx`;
   - `ParticipantGrid.tsx` — «Состав»;
@@ -89,15 +89,15 @@
   - `ResultsPanel.tsx`, `[id]/page.tsx`;
   - `SegmentEditor.tsx` — превью;
   - стили.
-- [ ] Тесты: чистые помощники клиента (`compare-state`, `scheme-chooser`) юнитами.
+- [x] Тесты: чистые помощники клиента (`compare-state`, `scheme-chooser`) юнитами.
   Живой прогон — в QG.
 - Готово: сценарии 1–6 спеки проходят в браузере на 390px и на десктопе.
 
 ## 8. SDK
 
-- [ ] Файлы: `src/video/{types,schema,nodes}.ts` (поля и источники участника),
+- [x] Файлы: `src/video/{types,schema,nodes}.ts` (поля и источники участника),
   `src/server/studio/sources.ts`, `src/video/examples` (`top-images`), выдача `video_source_list`.
-- [ ] Тесты: `segments.test.ts` и `instructions.test.ts` (пример компилируется),
+- [x] Тесты: `segments.test.ts` и `instructions.test.ts` (пример компилируется),
   `studio-segments.integration.test.ts` (источник из картинок без звука, подписи, корзина).
 - Готово: проект по турниру картинок валиден, кадр показывает картинку и подпись.
 

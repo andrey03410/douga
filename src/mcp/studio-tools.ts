@@ -115,6 +115,85 @@ function manualTopExample() {
   return sdk.parseVideoDocument(document);
 }
 
+/**
+ * Task 33: a top of picture participants — names and subtitles from the
+ * tournament, no sound of their own, the document's music under the whole
+ * video. Data only; the scene is the ordinary rank reveal.
+ */
+function imageTopExample() {
+  const people = [
+    ["Беатриче", "Umineko no Naku Koro ni"],
+    ["Рика Фурудэ", "Higurashi no Naku Koro ni"],
+    ["Нана Осаки", "Nana"],
+  ];
+  const participants: sdk.Participant[] = people.map(([label, subtitle], i) => ({
+    id: `p${i + 1}`,
+    label,
+    subtitle,
+    rank: i + 1,
+    kind: "image",
+    link: `https://shikimori.one/characters/${i + 1}`,
+    media: { visual: `visual-${i + 1}` },
+  }));
+  const doc = sdk.createVideoDocument({ kind: "top", title: "Лучшие героини", participants });
+  doc.bindings = {
+    ...Object.fromEntries(
+      participants.map((p) => [p.media!.visual!, { kind: "pool" as const, assetId: `art-${p.media!.visual}` }]),
+    ),
+    music: { kind: "pool", assetId: "art-music" },
+  };
+  doc.audio = { playlist: { tracks: ["music"], loop: true, crossfadeSec: 2 } };
+  const scenes: sdk.VideoScene[] = [
+    {
+      id: "reveal",
+      block: "custom",
+      repeat: "participants",
+      duration: { sec: 4 },
+      nodes: [
+        {
+          id: "rank",
+          type: "text",
+          text: { bind: "participant.rank", prefix: "Место " },
+          rect: { x: 0.1, y: 0.04, width: 0.8, height: 0.12 },
+        },
+        {
+          id: "picture",
+          type: "card",
+          participantId: "$participant",
+          rect: { x: 0.3, y: 0.18, width: 0.4, height: 0.58 },
+          style: { playSound: false },
+        },
+        {
+          id: "name",
+          type: "text",
+          text: { bind: "participant.label" },
+          rect: { x: 0.1, y: 0.78, width: 0.8, height: 0.1 },
+        },
+        {
+          id: "subtitle",
+          type: "text",
+          text: { bind: "participant.subtitle" },
+          rect: { x: 0.1, y: 0.88, width: 0.8, height: 0.08 },
+        },
+      ],
+    },
+  ];
+  return sdk.parseVideoDocument({
+    ...doc,
+    schemaVersion: 2,
+    scenes: [],
+    segments: [
+      {
+        id: "heroines",
+        kind: "top",
+        title: "Лучшие героини",
+        participantIds: participants.map((p) => p.id),
+        scenes,
+      },
+    ],
+  });
+}
+
 function segmentRecipe(
   id: "rank-reveal" | "segment-intro" | "participant-summary" | "staircase",
 ): sdk.VideoDocument {
@@ -314,6 +393,11 @@ export function videoExamples() {
       {
         id: "top-manual",
         document: manualTopExample(),
+      },
+      {
+        id: "top-images",
+        document: imageTopExample(),
+        note: "Топ по картинкам: участник без звука (kind image, только media.visual), подпись participant.label, подзаголовок participant.subtitle, музыка — audio.playlist документа из пула. По турниру картинок источник даёт эти поля сам.",
       },
       {
         id: "picker-groups",
@@ -805,7 +889,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_source_list",
-    "Discover owned authorial tournament/top sources by title without knowing IDs. Bounded summaries; source_get explicitly reads rankings.",
+    "Discover owned authorial tournament/top sources by title without knowing IDs. Bounded summaries with participant kinds; needsMusic:true means picture participants without sound — add audio.playlist (see video_examples top-images). source_get explicitly reads rankings.",
     studio.studioPageSchema,
     (input) => studio.listStudioSources(uid, input),
     true,

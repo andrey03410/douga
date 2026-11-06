@@ -49,6 +49,34 @@ describe("top-manual example", () => {
   });
 });
 
+describe("top-images example (task 33)", () => {
+  it("is a picture top without participant sound, with subtitles and document music", () => {
+    const example = videoExamples().items.find((item) => item.id === "top-images");
+    expect(example).toBeTruthy();
+    const doc = example!.document;
+    const people = doc.source.participants;
+    expect(people.every((p) => p.kind === "image" && p.media?.visual && !p.media.audio && p.subtitle)).toBe(true);
+    expect(doc.audio?.playlist?.tracks).toEqual(["music"]);
+    const manifest: AssetManifest = {};
+    for (const [key, binding] of Object.entries(doc.bindings)) {
+      const assetId = (binding as { assetId: string }).assetId;
+      manifest[key] =
+        key === "music"
+          ? { id: assetId, kind: "audio", src: "music.mp3", durationSec: 120, hasAudio: true }
+          : { id: assetId, kind: "image", src: `${key}.png`, width: 225, height: 350 };
+    }
+    const compiled = compileVideo(doc, manifest);
+    expect(compiled.ready).toBe(true);
+    const texts = compiled.plan.scenes.flatMap((scene) =>
+      scene.nodes.filter((n) => n.type === "text").map((n) => n.text),
+    );
+    expect(texts).toEqual(expect.arrayContaining(["Беатриче", "Umineko no Naku Koro ni"]));
+    // the music plays; no participant audio exists
+    expect(compiled.plan.audio.length).toBeGreaterThan(0);
+    expect(compiled.plan.audio.every((a) => a.asset.id === "art-music")).toBe(true);
+  });
+});
+
 describe("segment recipes", () => {
   it.each(["rank-reveal", "segment-intro", "participant-summary", "staircase"])(
     "compiles the %s recipe as a ready v2 video",

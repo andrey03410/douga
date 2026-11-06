@@ -35,6 +35,8 @@ export type PlainTextValue =
         | "participant.comment"
         | "participant.album"
         | "participant.score"
+        | "participant.subtitle"
+        | "participant.tier"
         | "segment.title"
         | "segment.subtitle"
         | "segment.number"
@@ -142,6 +144,14 @@ export interface Participant {
   score?: number;
   bestMomentSec?: number;
   rank?: number;
+  /** Task 33: second caption line from the source (a character's anime, "year · studio"). */
+  subtitle?: string;
+  /** Task 33: tier name when the source segment is a tier list. */
+  tier?: string;
+  /** Task 33: the participant's page (Shikimori). */
+  link?: string;
+  /** Task 33: what the participant is; an image has no sound of its own. */
+  kind?: "audio" | "video" | "image";
   media?: { visual?: string; audio?: string };
   settings?: Settings;
 }

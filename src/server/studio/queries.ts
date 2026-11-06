@@ -155,9 +155,26 @@ export async function listStudioSources(
       rounds: [],
     };
     const resolved = await reconcileSource(userId, document);
+    // Task 33: what the participants are, so the agent sees at once that a
+    // picture top has no sound and needs the document's music.
+    const kindOf = new Map(resolved.source.participants.map((p) => [p.id, p.kind ?? "audio"]));
+    const kinds = (
+      await prisma.track.findMany({
+        where: { tournamentId: row.id },
+        select: { kind: true },
+        distinct: ["kind"],
+      })
+    )
+      .map((t) => t.kind)
+      .sort();
     items.push({
       ...row,
-      segments: resolved.source.segments ?? [],
+      kinds,
+      needsMusic: kinds.length > 0 && kinds.every((k) => k === "image"),
+      segments: (resolved.source.segments ?? []).map((segment) => ({
+        ...segment,
+        kinds: [...new Set(segment.participantIds.map((id) => kindOf.get(id)))].sort(),
+      })),
       participantCount: resolved.source.participants.length,
     });
   }
