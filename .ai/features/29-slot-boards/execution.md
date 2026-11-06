@@ -22,3 +22,5 @@
 Независимый review a722a52: 4 Important (R1–R4 в review.md), Critical/Minor нет. Все четыре исправлены одним проходом: явный missing audio → диагностика; loop передаётся звуку; skeleton извлекается из каждой board-сцены; глобальные IDs/media slots при extraction. Регрессионные проверки RED 7/16 → GREEN 16/16; сервисный alias RED 1/2 → GREEN 2/2. Живой MCP после исправлений: все 8 семейств прошли factory → stable patch → commit → save/get personal preset → apply/validate; получены реальные vertical/square PNG.
 
 Задача 4: QG 953/953 (87 файлов), build exit 0, tsc exit 0. Финальный MCP/worker MP4 34,933 с содержит все семейства и все типы действий; реальные loop PCM проверены. Browser/Player/offline без сети: последний кадр 1047, ошибок 0. Карточки знаний и SDK-гид обновлены. PR/merge — следующий шаг по разрешению владельца.
+
+Задача 4: завершена. PR https://github.com/andrey03410/douga/pull/10; автономное принятие агентом после зелёного QG, исправленного ревью и живых доказательств. Вливание в main разрешено владельцем явно.
