@@ -2,6 +2,86 @@ import React from "react";
 import type { CompiledMotion } from "../video/motion-types";
 import { clamp01, motionProgress, wipeMask } from "./motion-frame";
 
+export function typographyMotions(
+  motions: CompiledMotion[] = [],
+  frame: number,
+) {
+  return motions.filter(
+    (motion) =>
+      motion.name.startsWith("text-") &&
+      frame >= motion.window.from &&
+      frame < motion.window.to,
+  );
+}
+
+/** Motion changes paint only; the compiler's line/run boxes stay fixed. */
+export function measuredTextMotion(
+  clips: CompiledMotion[],
+  frame: number,
+  index: number,
+  count: number,
+  lineIndex: number,
+  lineCount: number,
+): { neutral: boolean; style: React.CSSProperties } {
+  let opacity = 1,
+    y = 0,
+    rotate = 0,
+    scale = 1;
+  const insets = [0, 0, 0, 0];
+  let masked = false;
+  const mask = (p: number, direction: string) => {
+    const side =
+      direction === "up"
+        ? 0
+        : direction === "down"
+          ? 2
+          : direction === "right"
+            ? 3
+            : 1;
+    insets[side] = Math.max(insets[side], (1 - clamp01(p)) * 100);
+    masked = true;
+  };
+  for (const motion of clips) {
+    const p = motionProgress(motion, frame);
+    if (["text-words", "text-lines", "text-letters"].includes(motion.name)) {
+      const i = motion.name === "text-lines" ? lineIndex : index;
+      const n = motion.name === "text-lines" ? lineCount : count;
+      const local = clamp01(p * 1.6 - (i / Math.max(1, n - 1)) * 0.6);
+      opacity *= local;
+      if (motion.name === "text-words")
+        y += 18 * (1 - local) * motion.intensity;
+      if (motion.name === "text-lines") mask(local, "up");
+      if (motion.name === "text-letters")
+        rotate += 12 * (1 - local) * motion.intensity;
+    } else if (motion.name === "text-wipe") mask(p, motion.direction);
+    else if (motion.name === "text-slam") {
+      opacity *= p;
+      scale *= 1 + 0.8 * (1 - p) * motion.intensity;
+      y -= 20 * (1 - p);
+    }
+  }
+  const neutral =
+    opacity === 1 &&
+    y === 0 &&
+    rotate === 0 &&
+    scale === 1 &&
+    insets.every((value) => value === 0);
+  return {
+    neutral,
+    style: {
+      opacity: opacity === 1 ? undefined : opacity,
+      transform:
+        y || rotate || scale !== 1
+          ? `translateY(${y}px) rotate(${rotate}deg) scale(${scale})`
+          : undefined,
+      clipPath:
+        masked && !neutral
+          ? `inset(${insets.map((value) => `${value}%`).join(" ")})`
+          : undefined,
+    },
+  };
+}
+
 export function textFragments(text: string, name: string): string[] {
   const parts =
     name === "text-letters"

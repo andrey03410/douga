@@ -7,14 +7,16 @@ export const MotionTimer: React.FC<{
   node: CompiledNode;
   frame: number;
   fps: number;
-}> = ({ node, frame, fps }) => {
+  renderValue?: (value: number) => React.ReactNode;
+}> = ({ node, frame, fps, renderValue }) => {
   const t = node.timer;
   const { value, remaining } = timerState(
     frame - node.from,
     node.timerFrames ?? node.durationInFrames,
     fps,
   );
-  if (!t || t.variant === "digits") return <>{value}</>;
+  if (!t || t.variant === "digits")
+    return <>{renderValue ? renderValue(value) : value}</>;
   const size = Math.min(node.rect.width, node.rect.height),
     stroke = Math.min(size / 3, t.strokeWidth);
   const radius = (size - stroke) / 2,
@@ -32,7 +34,7 @@ export const MotionTimer: React.FC<{
         color,
       }}
     >
-      {value}
+      {renderValue ? renderValue(value) : value}
     </div>
   ) : null;
   return (
@@ -114,7 +116,10 @@ export const MotionTimer: React.FC<{
     </div>
   );
 };
-export const MotionVersus: React.FC<{ node: CompiledNode }> = ({ node }) => {
+export const MotionVersus: React.FC<{
+  node: CompiledNode;
+  children?: React.ReactNode;
+}> = ({ node, children }) => {
   const variant = node.versus?.variant ?? "clean",
     color = node.versus?.color ?? "#ffd166";
   return (
@@ -162,7 +167,7 @@ export const MotionVersus: React.FC<{ node: CompiledNode }> = ({ node }) => {
           }}
         />
       ) : null}
-      <span style={{ position: "relative" }}>VS</span>
+      {children ?? <span style={{ position: "relative" }}>VS</span>}
     </div>
   );
 };
