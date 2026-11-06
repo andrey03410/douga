@@ -66,6 +66,8 @@ export async function studioHttp(
     if (!read && !isStudioMutationOriginAllowed(req))
       return json({ error: "FORBIDDEN_ORIGIN" }, 403);
     await actor(uid);
+    if (collection === "typography" && id === "preview" && req.method === "POST")
+      return json(await studio.previewStudioTypography(uid, await req.json()));
     if (collection === "media" && read)
       return streamStudioFile(
         req,
@@ -99,6 +101,10 @@ export async function studioHttp(
             201,
           );
         }
+      } else if (action === "typography" && req.method === "POST") {
+        return json(await studio.applyStudioTypography(uid, id, await req.json()));
+      } else if (action === "text" && req.method === "POST") {
+        return json(await studio.inspectStudioText(uid, id, await req.json()));
       } else if (!action) {
         if (read) {
           const p = await studio.getStudioProject(uid, id);

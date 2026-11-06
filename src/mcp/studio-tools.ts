@@ -1,3 +1,4 @@
+import { registerTypographyTools } from "./typography-tools";
 import {
   McpServer,
   ResourceTemplate,
@@ -267,6 +268,7 @@ function segmentRecipe(
 export function videoExamples() {
   return {
     items: [
+      ...sdk.typographyExamples.map((example, index) => ({ id: ["typography-ost", "typography-picker-jp", "typography-board-labels", "typography-rich-title"][index], document: example.document, standInManifest: example.manifest })),
       ...sdk.motionExamples(),
       ...(
         [
@@ -386,6 +388,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         schemaVersion: 2,
         supportedSchemaVersions: [1, 2],
         compilerVersion: "1.0.0",
+        typography: { catalogVersion: 1, fonts: 7, styles: 12, themes: 6, inspect: "video_text_inspect", gallery: "/studio/typography" },
         motion: {
           catalogVersion: sdk.motionCatalog.version,
           count: sdk.motionCatalog.entries.length,
@@ -496,6 +499,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     },
     true,
   );
+  registerTypographyTools(server, actor);
   register(
     "video_schema_get",
     "Get canonical SDK/service JSON schemas. Runtime refinements, CAS and ownership checks also apply.",

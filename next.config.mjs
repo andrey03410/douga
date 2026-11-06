@@ -8,6 +8,7 @@ const nextConfig = {
       "ffmpeg-static",
       "music-metadata",
       "esbuild",
+      "fontkit",
     ],
   },
 };

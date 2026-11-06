@@ -41,3 +41,5 @@ export { startStudioImport } from "./imports";
 export * from "./queries";
 export * from "./inspection";
 export * from "./timeline";
+
+export * from "./typography";
