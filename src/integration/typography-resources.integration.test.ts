@@ -56,3 +56,28 @@ it("preserves selected measured font bytes in revisions, snapshots, public watch
   expect(html).toContain('slice:font-');
   await studio.unpublishStudioProject(owner, project.id, { idempotencyKey: randomUUID() });
 });
+
+it.each(["text", "badge", "card"] as const)("measures a rich-only %s through the saved project service", async (type) => {
+  const document = createVideoDocument({ kind: "top", participants: [{ id: "participant", label: "Имя" }] });
+  document.schemaVersion = 1;
+  delete document.segments;
+  delete document.settings.typography;
+  const rich = { runs: [{ text: "Имя", color: "yellow", weight: 400 as const }] };
+  const base = { id: "rich-only", rect: { x: 0.05, y: 0.05, width: 0.9, height: 0.8 } };
+  const node = type === "card"
+    ? { ...base, type, participantId: "participant", label: rich }
+    : type === "badge"
+      ? { ...base, type, kind: "label" as const, text: rich }
+      : { ...base, type, text: rich };
+  document.scenes = [{ id: "rich-scene", block: "custom", duration: { sec: 1 }, nodes: [node] }];
+  const project = await studio.createStudioProject(owner, { document, idempotencyKey: randomUUID() });
+  expect(project.validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("TEXT_LAYOUT_REQUIRED");
+  expect(project.validation).toMatchObject({ ready: true });
+  expect(project.validation.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  const measured = project.plan?.scenes[0].nodes.find((candidate) => candidate.id.endsWith("rich-only"));
+  expect(measured?.textLayout?.lines[0].runs[0]).toMatchObject({ text: "Имя", color: "yellow", weight: 400 });
+  expect(measured?.textLayout?.lines[0].width).toBeGreaterThan(0);
+  const frozen = await studio.freezeStudioProject(owner, project.id);
+  expect(frozen.plan.fonts?.map((face) => face.id)).toContain("arimo-400-normal");
+  expect(Object.keys(frozen.fontFiles ?? {})).toHaveLength(2);
+});

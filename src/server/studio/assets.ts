@@ -561,7 +561,8 @@ export async function evaluate(
   const usesTypography = (value: unknown): boolean => {
     if (!value || typeof value !== "object") return false;
     return Object.entries(value).some(([key, child]) =>
-      (key === "typography" && !!child) || usesTypography(child),
+      (key === "typography" && !!child) ||
+      (key === "runs" && Array.isArray(child)) || usesTypography(child),
     );
   };
   const measureText = usesTypography(resolvedDocument)
