@@ -1160,3 +1160,136 @@ describe("Fix round 2: VS readiness and semantic windows", () => {
     });
   });
 });
+
+function cardAnchorExample(cardId: string) {
+  const entry = sdk.motionCatalog.entries.find(
+    (e) => e.name === "picker-cascade",
+  )!;
+  const example = sdk.createMotionExample(entry);
+  example.document.settings.motion = { choreography: null };
+  example.document.scenes[0].nodes.push({
+    id: "cross-card-label",
+    type: "text",
+    text: "SECOND CARD",
+    timing: { at: { frame: 5 } },
+    motion: {
+      emphasis: {
+        name: "pulse",
+        at: { event: "card.reveal", cardId, offset: { frame: 2 } },
+        delay: { frame: 3 },
+      },
+    },
+  });
+  return example;
+}
+it("resolves cross-card reveal to scene-local time with offset and delay exactly once", () => {
+  const example = cardAnchorExample("card-1-2");
+  const result = compile(example.document, example.standInManifest);
+  expect(result.ready).toBe(true);
+  const s = result.plan.scenes[0];
+  expect(s.nodes.find((n) => n.cardId === "card-1-2")?.activeWindow?.from).toBe(
+    30,
+  );
+  expect(
+    s.nodes.find((n) => n.id.endsWith("cross-card-label"))?.motion?.[0].from,
+  ).toBe(35);
+});
+it("diagnoses unavailable card.reveal targets without falling back to scene reveal", () => {
+  const example = cardAnchorExample("missing-card");
+  const result = compile(example.document, example.standInManifest);
+  expect(result.ready).toBe(false);
+  expect(
+    result.diagnostics.some((d) => d.code === "MOTION_EVENT_UNAVAILABLE"),
+  ).toBe(true);
+  expect(
+    result.plan.scenes[0].nodes.find((n) => n.id.endsWith("cross-card-label"))
+      ?.motion,
+  ).toBeUndefined();
+});
+it.each([
+  { event: "scene.start", cardId: "card" },
+  { event: "timer.start", actionId: "action" },
+  { event: "answer.reveal", slotId: "slot" },
+  { event: "card.reveal", actionId: "action" },
+  { event: "card.reveal", slotId: "slot" },
+])("rejects incompatible event selectors %j", (at) => {
+  const d = custom();
+  d.scenes[0].nodes[0].motion = { emphasis: { name: "pulse", at: at as any } };
+  expect(sdk.videoDocumentSchema.safeParse(d).success).toBe(false);
+  const result = compile(d);
+  expect(result.ready).toBe(false);
+  expect(result.diagnostics.some((d) => d.severity === "error")).toBe(true);
+});
+
+it("keeps unselected card.reveal anchors local to the current card or scene", () => {
+  const example = cardAnchorExample("card-1-2");
+  const label = example.document.scenes[0].nodes.find(
+    (n) => n.id === "cross-card-label",
+  )!;
+  label.motion!.emphasis = { name: "pulse", at: { event: "card.reveal" } };
+  example.document.source.rounds[0].cards[1].settings = {
+    motion: { emphasis: { name: "pulse", at: { event: "card.reveal" } } },
+  };
+  const result = compile(example.document, example.standInManifest);
+  expect(result.ready).toBe(true);
+  const s = result.plan.scenes[0];
+  expect(
+    s.nodes.find((n) => n.id.endsWith("cross-card-label"))?.motion?.[0].from,
+  ).toBe(12);
+  expect(s.nodes.find((n) => n.cardId === "card-1-2")?.motion?.[0].from).toBe(
+    30,
+  );
+});
+it("keeps all board anchor selectors effective together", () => {
+  const d = board();
+  const before = compile(d, arts).plan;
+  d.scenes[0].nodes.push({
+    id: "board-label",
+    type: "text",
+    text: "Placed",
+    motion: {
+      emphasis: {
+        name: "pulse",
+        at: {
+          event: "board.place",
+          cardId: "cb",
+          actionId: "place-b",
+          slotId: "y",
+        },
+      },
+    },
+  });
+  expect(sdk.videoDocumentSchema.safeParse(d).success).toBe(true);
+  const result = compile(d, arts);
+  // The template also appears in board scenes where this event is unavailable.
+  // Its matching action scene must resolve all selectors, without schema errors.
+  expect(result.diagnostics.some((d) => d.code === "SCHEMA_INVALID")).toBe(
+    false,
+  );
+  const s = result.plan.scenes.find((scene) =>
+    scene.boardEvents?.some((e) => e.actionId === "place-b"),
+  )!;
+  const target = s.boardEvents!.find((e) => e.actionId === "place-b")!;
+  expect(
+    s.nodes.find((n) => n.id.endsWith("board-label"))?.motion?.[0].from,
+  ).toBe(target.frame);
+  expect(s.phases).toEqual(
+    before.scenes.find((scene) => scene.id === s.id)!.phases,
+  );
+  for (const selector of ["cardId", "actionId", "slotId"] as const) {
+    const at = (
+      d.scenes[0].nodes[0].motion!.emphasis as { at: Record<string, unknown> }
+    ).at;
+    const original = at[selector];
+    at[selector] = "missing";
+    const unmatched = compile(d, arts);
+    const targetScene = unmatched.plan.scenes.find(
+      (scene) => scene.id === s.id,
+    )!;
+    expect(
+      targetScene.nodes.find((n) => n.id.endsWith("board-label"))?.motion,
+    ).toBeUndefined();
+    at[selector] = original;
+  }
+  expect(result.plan.audio).toEqual(before.audio);
+});

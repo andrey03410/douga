@@ -29,11 +29,20 @@ export const motionAnchorSchema = z.union([
   time,
   z
     .object({
+      event: z.enum(["scene.start", "timer.start", "answer.reveal"]),
+      offset: time.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal("card.reveal"),
+      offset: time.optional(),
+      cardId: z.string().min(1).max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({
       event: z.enum([
-        "scene.start",
-        "card.reveal",
-        "timer.start",
-        "answer.reveal",
         "board.reveal",
         "board.place",
         "board.move",

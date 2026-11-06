@@ -17,7 +17,7 @@ export function backdropLayersAt(backdrop: CompiledBackdrop, frame: number) {
       (layer.fadeInFrames
         ? clamp01((frame - layer.from) / layer.fadeInFrames)
         : 1) * (fadeOut ? clamp01((layer.to - frame) / fadeOut) : 1);
-    return [{ ...layer, opacity }];
+    return [{ ...layer, opacity, index }];
   });
 }
 const noise = (seed: number, index: number) => {
@@ -47,9 +47,9 @@ export const MotionBackdrop: React.FC<{
   return (
     <div style={base} data-backdrop={b.preset}>
       {b.preset === "art-blur"
-        ? backdropLayersAt(b, frame).map((layer, index) => (
+        ? backdropLayersAt(b, frame).map((layer) => (
             <div
-              key={`${layer.from}-${index}`}
+              key={layer.index}
               style={{
                 ...base,
                 opacity: layer.opacity,

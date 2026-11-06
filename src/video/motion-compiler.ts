@@ -63,13 +63,23 @@ function anchorFrame(
   if ("sec" in anchor || "frame" in anchor) return undefined; // Time handled with fps at the caller.
   let frame: number | undefined;
   if (anchor.event === "scene.start") frame = 0;
-  else if (anchor.event === "card.reveal")
+  else if (anchor.event === "card.reveal") {
+    const target = anchor.cardId
+      ? scene.nodes.find(
+          (candidate) =>
+            candidate.type === "card" && candidate.cardId === anchor.cardId,
+        )
+      : node;
+    // Explicit selectors never fall back to another card or the scene phase.
     frame =
-      node.activeWindow?.from ??
-      (node.type === "card"
-        ? node.visible[0]?.from
-        : scene.phases.revealStartFrame);
-  else if (anchor.event === "timer.start") frame = scene.phases.timerStartFrame;
+      target?.activeWindow?.from ??
+      (target?.type === "card"
+        ? target.visible[0]?.from
+        : anchor.cardId
+          ? undefined
+          : scene.phases.revealStartFrame);
+  } else if (anchor.event === "timer.start")
+    frame = scene.phases.timerStartFrame;
   else if (anchor.event === "answer.reveal")
     frame = node.answerFrom ?? scene.phases.answerStartFrame;
   else

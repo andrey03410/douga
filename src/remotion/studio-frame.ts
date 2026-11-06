@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { spring } from "remotion";
-import { evaluateMotion } from "./motion-frame";
+import { evaluateMotion, isAdjacentTransition } from "./motion-frame";
 import type {
   CompiledAnimation,
   CompiledAudio,
@@ -194,17 +194,33 @@ export function mediaLayout(
   };
 }
 
+/** A new adjacent entrance owns the preceding legacy exit, without retiming IR. */
+export function legacyExitReplaced(
+  scene: CompiledScene,
+  next: CompiledScene | undefined,
+): boolean {
+  return (
+    !!next &&
+    ["fade", "slide"].includes(scene.transition.type) &&
+    next.from === scene.from + scene.durationInFrames &&
+    next.durationInFrames > 0 &&
+    next.transition.durationInFrames > 0 &&
+    isAdjacentTransition(next.transition.type)
+  );
+}
+
 export function transitionAt(
   transition: CompiledScene["transition"],
   frame: number,
   duration: number,
   width: number,
+  suppressExit = false,
 ) {
   const length = Math.min(transition.durationInFrames, duration / 2);
   if (!["fade", "slide"].includes(transition.type) || length <= 0)
     return { opacity: 1, x: 0 };
   const enter = clamp(frame / length),
-    exit = clamp((duration - frame) / length);
+    exit = suppressExit ? 1 : clamp((duration - frame) / length);
   return transition.type === "fade"
     ? { opacity: Math.min(enter, exit), x: 0 }
     : { opacity: 1, x: (1 - enter) * width - (1 - exit) * width };

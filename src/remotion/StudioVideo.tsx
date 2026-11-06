@@ -31,6 +31,7 @@ import {
   playerAudioSync,
   playerMediaSync,
   transitionAt,
+  legacyExitReplaced,
 } from "./studio-frame";
 import { imageDecoded } from "./image-ready";
 import { playerPremountFrames } from "./premount";
@@ -197,6 +198,7 @@ export const StudioSceneFrame: React.FC<{
   seed?: number;
   freezeMedia?: boolean;
   disableTransition?: boolean;
+  suppressTransitionExit?: boolean;
 }> = ({
   scene,
   frame,
@@ -208,6 +210,7 @@ export const StudioSceneFrame: React.FC<{
   seed = 1,
   freezeMedia,
   disableTransition,
+  suppressTransitionExit,
 }) => {
   const children = new Map<string | undefined, CompiledNode[]>();
   for (const node of [...scene.nodes].sort((a, b) => a.layer - b.layer)) {
@@ -483,6 +486,7 @@ export const StudioSceneFrame: React.FC<{
     frame,
     scene.durationInFrames,
     width,
+    suppressTransitionExit,
   );
   return (
     <div
@@ -562,6 +566,14 @@ const Scene: React.FC<{
       seed={plan.seed}
       freezeMedia={held}
       disableTransition={held || isAdjacentTransition(scene.transition.type)}
+      suppressTransitionExit={legacyExitReplaced(
+        target,
+        plan.scenes.find(
+          (candidate) =>
+            candidate.durationInFrames > 0 &&
+            candidate.from === target.from + target.durationInFrames,
+        ),
+      )}
     />
   );
   if (!isAdjacentTransition(scene.transition.type) || !layers.active)

@@ -15,6 +15,7 @@ import {
   playerMediaSync,
   mediaLayout,
   transitionAt,
+  legacyExitReplaced,
   answerCardFrames,
   fitTextSize,
 } from "./studio-frame";
@@ -548,4 +549,63 @@ it("sizes new versus and badge widgets from geometry and fits the actual VS text
     const expected = Math.max(18, Math.min(48, 307 * 0.07, 194 * 0.16));
     if (type !== "card") expect(font(n)).toBe(expected);
   }
+});
+
+it.each(["fade", "slide"] as const)(
+  "preserves %s enter and hands only exit to a positive adjacent transition",
+  (type) => {
+    const transition = { type, durationInFrames: 10 };
+    expect(transitionAt(transition, 5, 100, 640, true)).toEqual(
+      type === "fade" ? { opacity: 0.5, x: 0 } : { opacity: 1, x: 320 },
+    );
+    expect(transitionAt(transition, 99, 100, 640, true)).toEqual({
+      opacity: 1,
+      x: 0,
+    });
+    expect(transitionAt(transition, 99, 100, 640)).toEqual(
+      type === "fade" ? { opacity: 0.1, x: 0 } : { opacity: 1, x: -576 },
+    );
+    const markup = renderToStaticMarkup(
+      React.createElement(StudioSceneFrame, {
+        scene: { ...scene([]), transition },
+        frame: 99,
+        fps: 30,
+        width: 640,
+        height: 360,
+        assetMode: "url",
+        suppressTransitionExit: true,
+      }),
+    );
+    expect(markup).toContain("opacity:1;transform:translateX(0px)");
+  },
+);
+it("hands legacy exit over only at contiguous positive new transitions, including one frame", () => {
+  const previous = {
+    ...scene([]),
+    from: 0,
+    transition: { type: "fade" as const, durationInFrames: 10 },
+  };
+  const next = {
+    ...scene([]),
+    from: 100,
+    transition: { type: "push" as const, durationInFrames: 1 },
+  };
+  expect(legacyExitReplaced(previous, next)).toBe(true);
+  expect(legacyExitReplaced(previous, { ...next, from: 101 })).toBe(false);
+  expect(legacyExitReplaced(previous, { ...next, durationInFrames: 0 })).toBe(
+    false,
+  );
+  expect(
+    legacyExitReplaced(previous, {
+      ...next,
+      transition: { type: "push", durationInFrames: 0 },
+    }),
+  ).toBe(false);
+  expect(
+    legacyExitReplaced(previous, {
+      ...next,
+      transition: { type: "slide", durationInFrames: 10 },
+    }),
+  ).toBe(false);
+  expect(legacyExitReplaced(previous, undefined)).toBe(false);
 });

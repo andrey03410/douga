@@ -419,3 +419,36 @@ it.each(["text-words", "text-letters"] as const)(
     );
   },
 );
+
+it("keeps continuing backdrop layer keys stable when overlap membership changes", () => {
+  const media = videoNode().media!;
+  const backdrop = {
+    preset: "art-blur" as const,
+    source: "current-card" as const,
+    colors: [],
+    blur: 0,
+    dim: 0,
+    motion: false,
+    intensity: 1,
+    particles: 0,
+    // Identical source/from must still produce distinct layer identities.
+    layers: [
+      { from: 0, to: 20, fadeInFrames: 0, media },
+      { from: 0, to: 30, fadeInFrames: 0, media },
+    ],
+  };
+  const keys = (frame: number) => {
+    const tree = MotionBackdrop({
+      backdrop,
+      frame,
+      fps: 30,
+      seed: 1,
+      renderMedia: () => null,
+    }) as React.ReactElement;
+    return (tree.props.children[0] as React.ReactElement[]).map(
+      (child) => child.key,
+    );
+  };
+  expect(new Set(keys(15)).size).toBe(2);
+  expect(keys(21)[0]).toBe(keys(15)[1]);
+});
