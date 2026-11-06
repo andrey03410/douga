@@ -66,6 +66,25 @@ export async function studioHttp(
     if (!read && !isStudioMutationOriginAllowed(req))
       return json({ error: "FORBIDDEN_ORIGIN" }, 403);
     await actor(uid);
+    if (collection === "recipes") {
+      if (id === "media" && action && read)
+        return streamStudioFile(req, await studio.getStudioRecipeMedia(uid, action));
+      if (id && action === "try" && req.method === "POST")
+        return json(await studio.tryStudioRecipe(uid, id, await req.json()));
+      if (id && action === "plan" && read)
+        return json(await studio.getStudioRecipePlan(uid, id));
+      if (id && action === "preview" && read)
+        return streamStudioFile(req, await studio.getStudioRecipePreview(uid, id));
+      if (id && !action && read) {
+        const recipe = studio.getVideoRecipeForActor ? await studio.getVideoRecipeForActor(uid, id) : undefined;
+        if (!recipe) throw new studio.StudioError("NOT_FOUND");
+        return json(recipe);
+      }
+      if (!id && read) {
+        const filters = Object.fromEntries(["kind", "format", "style", "query"].flatMap(key => url.searchParams.get(key) ? [[key, url.searchParams.get(key)!]] : []));
+        return json(await studio.listStudioRecipeGallery(uid, { ...filters, all: url.searchParams.get("all") === "1" }));
+      }
+    }
     if (collection === "typography" && id === "preview" && req.method === "POST")
       return json(await studio.previewStudioTypography(uid, await req.json()));
     if (collection === "media" && read)
@@ -101,6 +120,17 @@ export async function studioHttp(
             201,
           );
         }
+      } else if (action === "content" && req.method === "POST") {
+        return json(await studio.setStudioContent(uid, id, await req.json()));
+      } else if (action === "storyboard" && req.method === "POST") {
+        return json(await studio.startStudioStoryboard(uid, id, await req.json()), 202);
+      } else if (action === "review" && req.method === "POST") {
+        return json(await studio.reviewStudioVideo(uid, id, await req.json()));
+      } else if (action === "review-apply" && req.method === "POST") {
+        return json(await studio.applyStudioReview(uid, id, await req.json()));
+      } else if (action === "inspection-plan" && req.method === "POST") {
+        const p = await studio.loadInspectionProject(uid, id, await req.json());
+        return json({ origin: p.origin, plan: p.plan });
       } else if (action === "typography" && req.method === "POST") {
         return json(await studio.applyStudioTypography(uid, id, await req.json()));
       } else if (action === "text" && req.method === "POST") {
@@ -127,6 +157,8 @@ export async function studioHttp(
             ),
           );
       } else {
+        if (read && action === "review-backups" && detail)
+          return json(await studio.getStudioReviewBackup(uid, id, detail));
         if (read && action === "history") {
           if (!detail)
             return json(
@@ -295,6 +327,8 @@ export async function studioHttp(
       return json({ deleted: true, id });
     }
     if (collection === "jobs" && id) {
+      if (read && action === "frames" && detail)
+        return streamStudioFile(req, await studio.getStoryboardFrame(uid, id, detail));
       if (read && action === "result")
         return streamStudioFile(
           req,

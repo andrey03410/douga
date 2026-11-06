@@ -12,6 +12,7 @@ import { parseVideoDocument, videoPresetSchema } from "./schema";
 import { getBoardPresets, extractBoardDesign } from "./board-presets";
 import { resolveBoard } from "./board-state";
 import { mergeSettings } from "./settings";
+import { getRecipePresets } from "./recipes";
 const families = {
   top: ["classic", "minimal", "cinematic"],
   picker: [
@@ -81,7 +82,7 @@ export function getBuiltinPresets(): VideoPreset[] {
           },
         });
       }
-  return [...presets, ...getBoardPresets()];
+  return [...presets, ...getBoardPresets(), ...getRecipePresets()];
 }
 export function getBuiltinPreset(id: string): VideoPreset | undefined {
   const canonical =

@@ -2,6 +2,51 @@
 
 Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
 
+## Рецепты, раскадровка и проверка (задача 32)
+
+- Каталог содержит 54 прежних пресета и 33 `recipe.<style>.<kind>.<format>`:
+  шесть направлений, три формата, только совместимые виды роликов.
+  [`recipes.ts`](../../src/video/recipes.ts) и [`content.ts`](../../src/video/content.ts)
+  дают metadata/contentForm/examples и предметное заполнение без ручных nodes/bindings.
+  `merge` обновляет именованные части, `replace` явно заменяет содержимое;
+  ownership, media kind, CAS и atomic receipt проверяются сервером.
+- [`storyboard.ts`](../../src/video/storyboard.ts) выбирает устойчивые состояния
+  сцен, события и сравнение по scene/state; default12/max24 плитки страницы.
+  Coverage относится к текущей странице; custom heuristic и отсутствие устойчивого
+  окна явно обозначены. Для всех сцен длинного ролика нужны остальные страницы.
+- [`server/studio/storyboard.ts`](../../src/server/studio/storyboard.ts) читает
+  row/view без reconcile/commit. Current draft оценивается сейчас; revision берёт
+  закреплённые plan/assets/fonts из сохранённого ledger, даже после смены обложки.
+  Invalid JSON не подменяется preview. Только TEXT_OVERFLOW допускает diagnostic PNG.
+- Inspection jobs хранят frozen input в inputJson и копии в studio-jobs/<user>/<job>/inputs,
+  без StudioSnapshot FK/новой ревизии. Worker проверяет hashes и обычный fenced lease.
+  Повтор по origin+media/fonts+engine+options возвращает тот же active/done job.
+- [`video-review.ts`](../../src/video/video-review.ts) объясняет measured overflow/glyphs,
+  ограниченные safe-area/readable-window риски и поддержанные authoring targets.
+  Сервер пересчитывает кандидат на реальном measureText перед выдачей; ineffective/no-op
+  и stale fixes отвергаются. Motion/audio/contrast не становятся passed по наличию плана.
+- Review apply меняет только черновик, атомарно сохраняет before backup и ссылки на
+  материалы (128/16MiB на проект, без вытеснения), выдаёт draftBackupId. Чтение backup
+  требует owned project, exact key/hash. Удаление проекта очищает его backups.
+- Применение `recipe.*` использует applyVideoRecipe: default preserve отличает
+  наследуемый дизайн от author overrides по exact base preset version. Оба режима
+  сохраняют сцены/порядок/IDs/nodes/media/geometry и тайминги; explicit replace
+  сбрасывает только оформление. Try-on использует тот же helper и даёт тот же plan.
+  Старые не-recipe пресеты без mode сохраняют прежнюю полную template replacement.
+- `sourceJobId` продолжает страницы по полному frozen plan/media/fonts/engine
+  исходного storyboard, даже если текущий draft/cover поменялся. `nextPageAction`
+  сохраняет scope. Review и deep принимают тот же sourceJobId; адресный deep
+  принимает sceneId/segmentId/frame и действительно охватывает выбранный момент.
+- Сравнение возвращает bounded property changes, resolved/new/remaining issues
+  и coverage; изменение пользовательского содержимого отмечается как ожидаемое.
+- Deep review готовит до трёх representative clip окон начала/середины/конца,
+  ≤15 секунд/720 long edge; decode/volumedetect не являются оценкой красоты.
+- `/studio/recipes` — synthetic examples и до трёх read-only примерок на своих медиа;
+  Apply отдельный. `/studio/<id>/storyboard` — кадры/страницы/проблемы/до-после/restore.
+  Локальный dirty buffer другой вкладки не заменяется.
+- [SDK-гид](../features/32-storyboard-reference/sdk-guide.md),
+  [проверка](../features/32-storyboard-reference/verify.md).
+
 ## Моушен-кит
 
 - [`motion-types.ts`](../../src/video/motion-types.ts), [`motion-schema.ts`](../../src/video/motion-schema.ts),
@@ -45,7 +90,7 @@
   - [`builders.ts`](../../src/video/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
   - [`compiler.ts`](../../src/video/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
   - [`layout.ts`](../../src/video/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
-  - [`presets.ts`](../../src/video/presets.ts) — 54 встроенных пресета `top|picker|board.<family>.<wide|vertical|square>`, `extractVideoPreset`/`applyVideoPreset`
+  - [`presets.ts`](../../src/video/presets.ts) — 87 встроенных пресетов (54 прежних +33 рецепта), `extractVideoPreset`/`applyVideoPreset`
   - [`board-state.ts`](../../src/video/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../src/video/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../src/video/board-presets.ts) — 8 семейств и factory
   - [`patches.ts`](../../src/video/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
   - [`resource-limits.ts`](../../src/video/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)

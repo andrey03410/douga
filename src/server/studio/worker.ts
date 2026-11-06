@@ -19,6 +19,7 @@ import {
   type StudioJobResult,
 } from "./job-types";
 import type { StudioFrozenRevision } from "./types";
+import type { InspectionJobInput } from "./storyboard-types";
 const slot = "heavy";
 export async function claimStudioJob(
   options: { jobId?: string; workerId?: string } = {},
@@ -176,14 +177,20 @@ export async function runStudioWorkerOnce(
       imported = await stageImportPublication(job, imported);
       result = imported.result;
     } else {
-      if (!job.snapshotId) throw new StudioError("SNAPSHOT_MISSING");
-      const snapshot = await prisma.studioSnapshot.findUniqueOrThrow({
+      const input = JSON.parse(job.inputJson);
+      const inspection = input.inspectionVersion === 1 ? input as InspectionJobInput : undefined;
+      if (!job.snapshotId && !inspection) throw new StudioError("SNAPSHOT_MISSING");
+      const snapshot = job.snapshotId ? await prisma.studioSnapshot.findUniqueOrThrow({
         where: { id: job.snapshotId },
-      });
-      const frozen = JSON.parse(snapshot.payloadJson) as StudioFrozenRevision;
+      }) : null;
+      const frozen = inspection?.frozen ?? JSON.parse(snapshot!.payloadJson) as StudioFrozenRevision;
       const { snapshotId: _, hash: expected, ...content } = frozen;
       if (hash(canonical(content)) !== expected)
         throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      if (inspection?.compareFrozen) {
+        const { snapshotId: _, hash: digest, ...before } = inspection.compareFrozen;
+        if (hash(canonical(before)) !== digest) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      }
       if (!(await heartbeatStudioJob(job.id, token)))
         throw new StudioError("LEASE_LOST");
       result = await runStudioChild<StudioJobResult>(
@@ -194,7 +201,9 @@ export async function runStudioWorkerOnce(
           directory,
           engineId: job.engineId,
           frozen,
-          input: JSON.parse(job.inputJson) as StartStudioJobInput,
+          inspection: Boolean(inspection),
+          ...(inspection?.compareFrozen ? { compareFrozen: inspection.compareFrozen } : {}),
+          input: inspection?.render ?? input as StartStudioJobInput,
         },
         {
           timeoutMs:
@@ -215,7 +224,7 @@ export async function runStudioWorkerOnce(
           job.userId,
           user.role,
           db,
-          result.resource.bytes,
+          result.storageBytes ?? result.resource.bytes,
         );
       const now = new Date();
       const slotRow = await db.studioWorkerLease.findFirst({
@@ -234,7 +243,7 @@ export async function runStudioWorkerOnce(
           status: "done",
           progress: 1,
           resultJson: JSON.stringify(result),
-          outputBytes: result.kind === "import" ? 0 : result.resource.bytes,
+          outputBytes: result.kind === "import" ? 0 : (result.storageBytes ?? result.resource.bytes),
           leaseUntil: null,
           error: null,
         },

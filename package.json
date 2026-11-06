@@ -11,6 +11,10 @@
     "db:generate": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "visual:render": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/visual-regression.ts render",
+    "visual:check": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/visual-regression.ts check",
+    "visual:accept": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/visual-regression.ts accept",
+    "test:visual": "npm run visual:render && npm run visual:check",
     "studio:worker": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/studio-worker.ts",
     "mcp": "tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json src/mcp/server.ts",
     "postinstall": "prisma generate"

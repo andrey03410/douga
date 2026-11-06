@@ -1,6 +1,43 @@
 # MCP-сервер
 
-Доски SDK: `video_preset_list/get` отдают 24 пресета `board.*` (всего встроенных 54),
+## Текущий маршрут агента (задача 32)
+
+Сейчас **61 инструмент**. Каталог расширен до 87 встроенных пресетов (54 прежних
+и 33 рецепта). `video_capabilities.guidedAuthoring` объявляет маршрут и бюджеты.
+
+1. `video_preset_list({recipes:true,kind,format,query?})` — до 3 совместимых рецептов
+   с recommended и real image blocks; `previewOrder` связывает изображения с IDs,
+   `previews` показывает notReady/byteLimit. Обычный каталог остаётся пагинируемым.
+2. `video_preset_get` — canonical preset + contentForm/example; пример не подставляет
+   несуществующие asset IDs. `video_examples` содержит guided-top/picker/board.
+3. `video_content_set` — короткая форма kind/mode/participants/rounds/boards,
+   собственные visualAssetId/audioAssetId, CAS и idempotency. Ответ missingInputs.
+4. `video_storyboard` — exact draft/revision, одна PNG-сетка default12/max24 плитки,
+   scene/segment/page/compareRevision/compareJobId; pixelDiff:true добавляет
+   diff PNG и метрики RGBA/PSNR для каждой сопоставимой пары. Ready возвращает native image;
+   queued — общий job_get/inspect, без отдельного job на каждую плитку.
+   `video_job_inspect({jobId,frameId:"0"})` открывает отдельный preview PNG.
+   `nextPageAction` продолжает immutable origin через sourceJobId. Это же поле
+   закрепляет review/deep за изображёнными материалами и engine; live source не
+   перечитывается. В scene detail/compare scope сохраняется.
+5. `video_review` — bounded issues/verified suggestions/nextAction, origin/coverage;
+   mode deep готовит clip окна со звуком. `video_review_apply` принимает reportId,
+   suggestionIds и expectedVersion, перепроверяет эффект и меняет только draft.
+   Адресный deep: sceneId/segmentId/frame из готового nextAction. Compare содержит
+   changed properties и resolved/new/remaining issues с явным static-only coverage.
+6. После apply есть draftBackupId; `video_document_get({projectId,reviewBackupId})`
+   отдаёт before и готовый restore action. Commit/publish не вызываются автоматически.
+
+Сервисные schemas доступны в video_schema_get(services). Реализация адаптеров —
+[`storyboard-tools.ts`](../../src/mcp/storyboard-tools.ts), общий механизм очереди
+и ресурсов прежний. Инструкция initialize остаётся ≤3KiB. Детальный
+[маршрут](../features/32-storyboard-reference/sdk-guide.md).
+
+Проверка: `npx tsx --env-file-if-exists=.env --tsconfig tsconfig.mcp.json scripts/verify-storyboard.ts`
+создаёт отдельные проверочные аккаунты/материалы, использует настоящий stdio,
+адресные workers и сохраняет доказательства/секреты только в storage.
+
+Доски SDK: `video_preset_list/get` отдают 24 прежних пресета `board.*`,
 короткий ID вроде `board.tier` означает wide. `video_examples` содержит восемь
 полных документов `board-<family>`. `video_schema_get` описывает board v1 внутри
 документа v2 и stable-ID patch targets boardSlot/boardRound/boardCard/boardAction.
@@ -14,7 +51,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
 ## Моушен-кит
 
 - `video_capabilities.motion` объявляет catalogVersion1, 67 записей, четыре
-  профиля, три силы и маршруты discovery/галереи. Всего зарегистрировано 52 tools.
+  профиля, три силы и маршруты discovery/галереи (52 tools в поставке задачи 30).
 - `video_motion_list({category?,limit?,cursor?})`: summaries без example,
   limit1..100 (default20), version/total/items/nextCursor. Cursor — непрозрачный
   ключ category:name последней записи; применять с тем же category.
@@ -91,7 +128,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
 
 ## Типографика (задача 31)
 
-Всего 57 инструментов: добавлены video_font_list/get, video_typography_list/get
+В поставке задачи 31 было 57 инструментов: добавлены video_font_list/get, video_typography_list/get
 и video_text_inspect (`src/mcp/typography-tools.ts`). Каталоги дают 7 семейств,
 12 стилей и 6 тем с фрагментами, фильтрами языка/italic/category и пагинацией.
 Полные JSON: typography-ost, typography-picker-jp, typography-board-labels,

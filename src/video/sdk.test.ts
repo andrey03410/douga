@@ -450,7 +450,7 @@ describe("canonical document and deterministic compilation", () => {
     expect(applied.output.format).toBe("vertical");
   });
   it("ships all media-free families in three formats with useful picker skeletons", () => {
-    const presets = getBuiltinPresets();
+    const presets = getBuiltinPresets().filter(p => !p.id.startsWith("recipe."));
     expect(presets.filter((p) => p.kind !== "board")).toHaveLength(30);
     for (const preset of presets) {
       expect(preset.schemaVersion).toBe(1);

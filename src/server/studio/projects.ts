@@ -2,6 +2,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
+import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
+import { deleteStudioReviewBackups, preserveStudioReviewBackup } from "./review-backups";
+import { buildVideoContent, type VideoContentInput } from "@/video/content";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
@@ -455,13 +458,24 @@ export async function applyStudioPreset(
     requestHash(`apply-preset:${id}`, input),
     async (current) => {
       try {
-        return {
-          document: applyVideoPreset(
-            editableDocument(current),
-            await getStudioPreset(userId, input.presetId),
-          ),
-        };
+        const document = editableDocument(current);
+        const preset = await getStudioPreset(userId, input.presetId);
+        if (!preset.id.startsWith("recipe.")) {
+          if (input.mode !== undefined) throw new StudioError("PRESET_MODE_UNSUPPORTED");
+          return { document: applyVideoPreset(document, preset) };
+        }
+        let basePreset;
+        if (document.preset) {
+          try {
+            const candidate = await getStudioPreset(userId, document.preset.id);
+            if (candidate.version === document.preset.version) basePreset = candidate;
+          } catch (error) {
+            if (!(error instanceof StudioError) || error.code !== "NOT_FOUND") throw error;
+          }
+        }
+        return { document: applyVideoRecipe(document, preset, { mode: input.mode, basePreset }) };
       } catch (error) {
+        if (error instanceof RecipeApplyError) throw new StudioError(error.code);
         if (error instanceof PresetIncompatibleError)
           throw new StudioError("PRESET_INCOMPATIBLE", [
             {
@@ -486,6 +500,27 @@ export async function applyStudioTypographyDraft(
     document: applyTypographyTheme(editableDocument(current), input.theme, { scope: input.scope, mode: input.mode }),
   }));
 }
+/** Semantic content shares the normal evaluation/reference/CAS/receipt path. */
+export async function applyStudioContentDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string; content: VideoContentInput },
+) {
+  return writeDraft(userId, id, input, requestHash(`content:${id}`, input), current => ({
+    document: buildVideoContent(editableDocument(current), input.content),
+  }), { reconcile: false, requireReady: true });
+}
+/** Internal server adapter. Identity must contain all trusted transform inputs. */
+export async function transformStudioDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string; identity: unknown },
+  transform: (document: VideoDocument) => VideoDocument,
+) {
+  return writeDraft(userId, id, input, requestHash(`transform:${id}`, input), current => ({
+    document: parseVideoDocument(transform(editableDocument(current))),
+  }), { reconcile: false, preserveBefore: true });
+}
 function editableDocument(current: StudioProjectView) {
   const parsed = videoDocumentSchema.safeParse(
     current.draft ? current.draft.document : current.document,
@@ -505,6 +540,7 @@ async function writeDraft(
   ) =>
     | { document?: unknown; text?: string }
     | Promise<{ document?: unknown; text?: string }>,
+  options: { reconcile?: boolean; requireReady?: boolean; preserveBefore?: boolean } = {},
 ): Promise<StudioProjectView> {
   await owned(userId, id);
   const old = await replay<StudioProjectView>(
@@ -514,7 +550,9 @@ async function writeDraft(
     request,
   );
   if (old) return old;
-  const current = await getStudioProject(userId, id);
+  const current = options.reconcile === false
+    ? await view(await owned(userId, id))
+    : await getStudioProject(userId, id);
   if (current.version !== input.expectedVersion) {
     // An identical in-flight operation may have committed while get reconciled.
     const replayed = await replay<StudioProjectView>(
@@ -530,11 +568,13 @@ async function writeDraft(
   let text = replacement.text ?? jsonText(replacement.document);
   let value = parseDraft(text);
   const parsed = videoDocumentSchema.safeParse(value);
-  if (parsed.success) {
+  if (parsed.success && options.reconcile !== false) {
     value = await reconcileSource(userId, parsed.data);
     text = jsonText(value);
   }
   const result = await evaluate(userId, value);
+  if (options.requireReady && !result.validation.ready)
+    throw new StudioError("VALIDATION_FAILED", result.validation.diagnostics);
   return prisma.$transaction(async (db) => {
     await owned(userId, id, db);
     const old = await replay<StudioProjectView>(
@@ -561,6 +601,9 @@ async function writeDraft(
           }
         : {}),
     });
+    const draftBackupId = options.preserveBefore
+      ? await preserveStudioReviewBackup(db, userId, id, request, current)
+      : undefined;
     await setReferences(
       db,
       userId,
@@ -573,6 +616,7 @@ async function writeDraft(
       await db.studioProject.findUniqueOrThrow({ where: { id } }),
       db,
     );
+    if (draftBackupId) saved.draftBackupId = draftBackupId;
     await receipt(db, userId, input.idempotencyKey, request, saved);
     return saved;
   });
@@ -720,6 +764,7 @@ export async function deleteStudioProject(
       throw new StudioError("JOB_IN_USE");
     await db.studioPublication.deleteMany({ where: { projectId: id } });
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
+    await deleteStudioReviewBackups(db, userId, id);
     await db.studioProject.delete({ where: { id } });
     const result = { deleted: true as const, id };
     await receipt(db, userId, input.idempotencyKey, request, result);

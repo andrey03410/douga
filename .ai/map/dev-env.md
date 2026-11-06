@@ -1,5 +1,15 @@
 # Окружение разработки
 
+В задаче 32 добавлены `visual:render`, `visual:check`, `visual:accept` и `test:visual`.
+Последняя команда заново рендерит всю закреплённую матрицу и сравнивает RGBA,
+поэтому требует Remotion browser и занимает существенно больше unit tests.
+Baseline принят явной командой с reason/confirm и хранится в папке задачи;
+actual/HTML reports/frozen inputs — только storage/verification/32-storyboard.
+Среда baseline закреплена, другой browser/platform требует отдельной явной приёмки.
+`scripts/verify-storyboard.ts` проверяет настоящий MCP, шесть коротких сценариев,
+приватные PNG/клипы и decoded audio с адресными workers. Не запускайте параллельно
+общий worker и интеграционные тесты, использующие тяжёлый слот.
+
 Карточка о том, как поднять Douga локально, где лежат база и файлы и чем проверять изменения. Сайт (`next dev`), очередь SDK (`studio:worker`) и MCP-сервер (`mcp`) — это отдельные процессы. Все три работают с одной SQLite-базой `prisma/dev.db` и одним каталогом `storage/`.
 
 ## Где код

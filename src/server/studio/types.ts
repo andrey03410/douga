@@ -76,6 +76,7 @@ export const patchStudioDraftSchema = mutationSchema.extend({
 });
 export const applyStudioPresetSchema = mutationSchema.extend({
   presetId: key,
+  mode: z.enum(["preserve", "replace"]).optional(),
 });
 export type PatchStudioDraftInput = z.infer<typeof patchStudioDraftSchema>;
 export type ApplyStudioPresetInput = z.infer<typeof applyStudioPresetSchema>;
@@ -140,6 +141,8 @@ export interface StudioValidation {
   diagnostics: Diagnostic[];
 }
 export interface StudioProjectView {
+  /** Exact authoring document immediately before an internal review transform. */
+  draftBackupId?: string;
   id: string;
   title: string;
   kind: "top" | "picker" | "board";

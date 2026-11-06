@@ -17,6 +17,8 @@ import * as sdk from "@/video";
 import * as studio from "@/server/studio";
 import { actor as freshActor } from "@/server/studio/shared";
 import { listArts } from "@/server/arts";
+import { readFile } from "node:fs/promises";
+import { getStudioRecipePreview } from "@/server/studio/recipe-preview";
 
 const id = z.string().min(1).max(200);
 const project = z.object({ projectId: id }).strict();
@@ -268,6 +270,11 @@ function segmentRecipe(
 export function videoExamples() {
   return {
     items: [
+      ...(["top", "picker", "board"] as const).map(kind => {
+        const recipe = sdk.getVideoRecipe(`recipe.${kind === "board" ? "board-clear" : "clean"}.${kind}.wide`)!;
+        return { id: `guided-${kind}`, document: recipe.example, contentForm: recipe.contentForm,
+          note: "Создайте проект по recipe.preset.id и заполните contentForm своими assetId через video_content_set. Демонстрационные медиа не подставляются." };
+      }),
       ...sdk.typographyExamples.map((example, index) => ({ id: ["typography-ost", "typography-picker-jp", "typography-board-labels", "typography-rich-title"][index], document: example.document, standInManifest: example.manifest })),
       ...sdk.motionExamples(),
       ...(
@@ -346,6 +353,10 @@ const schemas = () => ({
     importStart: zodToJsonSchema(studio.startStudioImportSchema),
     assetInspect: zodToJsonSchema(studio.inspectStudioAssetSchema),
     timeline: zodToJsonSchema(studio.studioTimelineSchema),
+    contentSet: zodToJsonSchema(studio.setStudioContentSchema),
+    storyboard: zodToJsonSchema(studio.storyboardSchema),
+    review: zodToJsonSchema(studio.studioReviewSchema),
+    reviewApply: zodToJsonSchema(studio.applyStudioReviewSchema),
     runtimeConstraints: [
       "create: exactly one of document/presetId",
       "draft: exactly one of document/text",
@@ -388,6 +399,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         schemaVersion: 2,
         supportedSchemaVersions: [1, 2],
         compilerVersion: "1.0.0",
+        guidedAuthoring: { recipes: 33, styles: 6, gallery: "/studio/recipes", content: "video_content_set", storyboard: "video_storyboard", review: "video_review", apply: "video_review_apply", pageSize: { default: 12, max: 24 }, async: true, originPinned: true },
         typography: { catalogVersion: 1, fonts: 7, styles: 12, themes: 6, inspect: "video_text_inspect", gallery: "/studio/typography" },
         motion: {
           catalogVersion: sdk.motionCatalog.version,
@@ -524,22 +536,48 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     },
     true,
   );
-  register(
-    "video_preset_list",
-    "Bounded built-in/personal preset catalog summaries. video_preset_get reads a complete canonical template.",
-    studio.studioPageSchema,
-    (input) => studio.listStudioPresetSummaries(uid, input),
-  );
-  register(
-    "video_preset_get",
-    "Explicit media-free canonical preset; catalog personal metadata is omitted for strict SDK compatibility.",
-    z.object({ presetId: id }),
-    async ({ presetId }) => ({
-      preset: await studio.getStudioPreset(uid, presetId),
-      clientDisplayLimitation: displayLimitation,
-    }),
-    true,
-  );
+  const presetListSchema = studio.studioPageSchema.extend({ recipes: z.boolean().default(false),
+    kind: z.enum(["top", "picker", "board"]).optional(), format: z.enum(["wide", "vertical", "square"]).optional(),
+    style: z.enum(sdk.videoRecipeStyles).optional(), query: z.string().max(500).optional(), preview: z.boolean().default(true) }).strict();
+  async function addRecipeImages(output: CallToolResult, ids: string[]) {
+    const delivered: string[] = [], states: { recipeId: string; status: string }[] = [];
+    for (const recipeId of ids) {
+      try {
+        const artifact = await getStudioRecipePreview(uid, recipeId);
+        if (artifact.bytes > 4 * 1024 * 1024) { states.push({ recipeId, status: "byteLimit" }); continue; }
+        output.content.push({ type: "image", mimeType: "image/png", data: (await readFile(artifact.path)).toString("base64"), annotations: { audience: ["assistant"] } });
+        delivered.push(recipeId); states.push({ recipeId, status: "ready" });
+      } catch (e) { if (!(e instanceof studio.StudioError && e.code === "PREVIEW_NOT_READY")) throw e;
+        states.push({ recipeId, status: "notReady" }); }
+    }
+    if (output.structuredContent) {
+      output.structuredContent.previewOrder = delivered;
+      output.structuredContent.previews = states;
+      const main = output.content.find(c => c.type === "text");
+      if (main?.type === "text") main.text = JSON.stringify(output.structuredContent);
+    }
+    return output;
+  }
+  server.registerTool("video_preset_list", { description: "Catalog or recipes:true guided selection (up to 3), with one recommendation, content forms and real reference images. Filter kind/format/style/query. Canonical templates: preset_get.", inputSchema: presetListSchema.shape }, async args => {
+    try {
+      const input = presetListSchema.parse(args);
+      if (!input.recipes) return text(await studio.listStudioPresetSummaries(uid, { limit: input.limit, cursor: input.cursor }));
+      if (input.cursor) throw new studio.StudioError("INVALID_CURSOR");
+      const selected = await studio.selectStudioRecipes(uid, { kind: input.kind, format: input.format, style: input.style, query: input.query, limit: Math.min(3, input.limit) });
+      const output = text({ ...selected, previewOrder: selected.items.map(r => r.id), gallery: "/studio/recipes" }, true);
+      return input.preview ? await addRecipeImages(output, selected.items.map(r => r.id)) : output;
+    } catch (e) { return failure(e); }
+  });
+  const presetGetSchema = z.object({ presetId: id, preview: z.boolean().default(true) }).strict();
+  server.registerTool("video_preset_get", { description: "Canonical preset; recipe IDs also return a short semantic content form, valid example and native reference image. No project mutation.", inputSchema: presetGetSchema.shape }, async args => {
+    try {
+      const { presetId, preview } = presetGetSchema.parse(args);
+      const recipe = sdk.getVideoRecipe(presetId);
+      const output = text({ preset: await studio.getStudioPreset(uid, presetId),
+        ...(recipe ? { recipe, nextAction: { tool: "video_project_create", arguments: { presetId } } } : {}), clientDisplayLimitation: displayLimitation }, true);
+      return recipe && preview ? await addRecipeImages(output, [presetId]) : output;
+    } catch (e) { return failure(e); }
+  });
   register(
     "video_preset_save",
     "Save media-free personal design: document conservatively extracts generic text; explicit canonical preset preserves generic copy. Exactly one content field. Neutral result; preset_get explicitly reads design.",
@@ -644,12 +682,20 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
           ])
           .default("head"),
         revision: z.number().int().positive().optional(),
+        reviewBackupId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
       })
       .refine(
-        (input) => input.section !== "draft" || input.revision === undefined,
+        (input) => (input.section !== "draft" || input.revision === undefined)
+          && (!input.reviewBackupId || (input.revision === undefined && ["head", "draft"].includes(input.section))),
         "Historical revisions contain saved documents, not drafts",
       ),
-    async ({ projectId, section, revision }) => {
+    async ({ projectId, section, revision, reviewBackupId }) => {
+      if (reviewBackupId) {
+        const backup = await studio.getStudioReviewBackup(uid, projectId, reviewBackupId);
+        const current = await prisma.studioProject.findFirst({ where: { id: projectId, userId: uid }, select: { version: true } });
+        if (!current) throw new studio.StudioError("NOT_FOUND");
+        return { ...backup, restore: { tool: "video_draft_replace", arguments: { projectId, expectedVersion: current.version, document: backup.document } }, clientDisplayLimitation: displayLimitation };
+      }
       const current = await studio.getStudioProject(uid, projectId);
       let document: unknown =
         section === "draft"
@@ -709,7 +755,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_preset_apply",
-    "Apply design/output as a draft preserving source counts, questions, answers, media and bindings. CAS required; commit separately.",
+    "Apply a preset to the draft. recipe.* defaults to mode:preserve (authored scenes, timing, media and local overrides kept); mode:replace resets appearance only. Legacy templates without mode keep full replacement semantics. CAS; no commit.",
     project.merge(studio.applyStudioPresetSchema),
     async ({ projectId, ...input }) =>
       studio.studioProjectMetadata(
@@ -879,31 +925,34 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     "video_job_inspect",
     {
       description:
-        "Explicit completed result: real image/audio or owned video:// links for clips/finals. Client support varies. 12 MiB inline/read budget.",
-      inputSchema: job,
+        "Explicit completed result: real image/audio or owned video:// links for clips/finals. Optional frameId reads one storyboard tile at preview resolution. 12 MiB inline/read budget.",
+      inputSchema: job.extend({ frameId: z.string().regex(/^\d{1,3}$/).optional() }),
     },
-    async ({ jobId }) => {
+    async ({ jobId, frameId }) => {
       try {
         const result = await studio.getStudioJob(uid, jobId);
-        const artifact = await studio.getStudioJobArtifact(uid, jobId);
+        const artifact = frameId === undefined ? await studio.getStudioJobArtifact(uid, jobId) : await studio.getStoryboardFrame(uid, jobId, frameId);
         const output = text(
           {
             jobId,
             status: result.status,
-            uri: `video://job/${jobId}`,
+            ...(frameId === undefined ? { uri: `video://job/${jobId}` } : { frameId }),
             mimeType: artifact.mimeType,
             bytes: artifact.bytes,
             hash: artifact.hash,
+            ...(result.inspection ? { inspection: result.inspection, ...(result.kind === "storyboard" ? { nextAction: result.nextPageAction ?? { tool: "video_review", arguments: { projectId: result.projectId, sourceJobId: result.id } } } : {}) } : {}),
             clientDisplayLimitation: displayLimitation,
           },
           true,
         );
         if (/^(image|audio)\//.test(artifact.mimeType)) {
-          const resource = await studio.readStudioJobResource(uid, jobId);
+          if (artifact.bytes > 12 * 1024 * 1024) throw new studio.StudioError("INSPECTION_BYTE_LIMIT");
+          const resource = frameId === undefined ? await studio.readStudioJobResource(uid, jobId)
+            : { blob: (await readFile(artifact.path)).toString("base64") };
           output.content.push({
             type: artifact.mimeType.startsWith("image/") ? "image" : "audio",
             data: resource.blob,
-            mimeType: resource.mimeType,
+            mimeType: artifact.mimeType,
             annotations: { audience: ["assistant"] },
           });
         }
