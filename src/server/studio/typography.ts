@@ -10,6 +10,7 @@ import {
   createVideoDocument,
   videoDocumentSchema,
   type CompiledVideo,
+  type Diagnostic,
 } from "@/video";
 import {
   fontIds,
@@ -25,6 +26,13 @@ import { prepareStudioEngine, runStudioChild } from "./engine";
 import type { StudioFrozenRevision } from "./types";
 
 const key = z.string().min(1).max(200);
+const excerpt = (value: string, count = 240) =>
+  Array.from(value).slice(0, count).join("");
+const compactDiagnostic = (value: Diagnostic): Diagnostic => ({
+  ...value,
+  message: excerpt(value.message, 500),
+  path: excerpt(value.path),
+});
 export const inspectStudioTextSchema = z
   .object({
     expectedVersion: z.number().int().positive().optional(),
@@ -34,6 +42,7 @@ export const inspectStudioTextSchema = z
     lineLimit: z.number().int().min(1).max(12).default(8),
     lineOffset: z.number().int().min(0).max(10000).default(0),
     runOffset: z.number().int().min(0).max(100).default(0),
+    missingOffset: z.number().int().min(0).max(10000).default(0),
     cursor: z
       .string()
       .regex(/^\d{1,9}$/)
@@ -212,7 +221,10 @@ export async function inspectStudioText(
     input.preview &&
     (errors.some((d) => d.code !== "TEXT_OVERFLOW") || !result.plan)
   )
-    throw new StudioError("VALIDATION_FAILED", result.validation.diagnostics);
+    throw new StudioError(
+      "VALIDATION_FAILED",
+      result.validation.diagnostics.slice(0, 100).map(compactDiagnostic),
+    );
   const entries = (result.plan?.scenes ?? []).flatMap((scene) =>
     scene.nodes
       .filter(
@@ -237,8 +249,6 @@ export async function inspectStudioText(
   if (offset > entries.length) throw new StudioError("NOT_FOUND");
   let lineBudget = 100,
     runBudget = 200;
-  const excerpt = (value: string, count = 240) =>
-    Array.from(value).slice(0, count).join("");
   const items = entries.slice(offset, offset + input.limit).map((entry) => {
     const layout = entry.layout!;
     const selectedLines = layout.lines.slice(
@@ -272,9 +282,23 @@ export async function inspectStudioText(
       ...entry,
       text: excerpt(entry.text),
       textLength: entry.text.length,
-      diagnostics: entry.diagnostics.slice(0, 10),
+      diagnostics: entry.diagnostics.slice(0, 10).map(compactDiagnostic),
       layout: {
         ...layout,
+        missing: layout.missing.slice(
+          input.missingOffset,
+          input.missingOffset + 20,
+        ),
+        totalMissing: layout.missing.length,
+        nextMissingOffset:
+          input.missingOffset + 20 < layout.missing.length
+            ? input.missingOffset + 20
+            : null,
+        reservedText:
+          layout.reservedText === undefined
+            ? undefined
+            : excerpt(layout.reservedText),
+        reservedTextLength: layout.reservedText?.length,
         lines,
         totalLines: layout.lines.length,
         nextLineOffset:
@@ -301,7 +325,8 @@ export async function inspectStudioText(
     ready: result.validation.ready,
     diagnostics: result.validation.diagnostics
       .filter((d) => !d.nodeId || items.some((n) => n.nodeId === d.nodeId))
-      .slice(0, 100),
+      .slice(0, 100)
+      .map(compactDiagnostic),
     diagnosticsTotal: result.validation.diagnostics.length,
     total: entries.length,
     items,
@@ -362,7 +387,10 @@ async function diagnosticPng(
       !result.resolvedDocument ||
       errors.some((d) => d.code !== "TEXT_OVERFLOW")
     )
-      throw new StudioError("VALIDATION_FAILED", result.validation.diagnostics);
+      throw new StudioError(
+        "VALIDATION_FAILED",
+        result.validation.diagnostics.slice(0, 100).map(compactDiagnostic),
+      );
     const current = await owned(userId, projectId);
     if (current.version !== version) throw new StudioError("VERSION_CONFLICT");
     await actor(userId);

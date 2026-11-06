@@ -32,6 +32,7 @@ const node = (id: string) => ({
   text: id,
   textLayout: {
     fontSize: 32,
+    missing: [] as string[],
     lines: [
       {
         text: id,
@@ -67,6 +68,43 @@ beforeEach(() => {
   });
 });
 describe("typography service", () => {
+  it("bounds missing glyphs, reserved source forms and validation messages too", async () => {
+    const missing = Array.from({ length: 10000 }, (_, i) =>
+      String.fromCodePoint(0xf0000 + i),
+    );
+    const nodes = Array.from({ length: 20 }, (_, i) => ({
+      ...node(`missing-${i}`),
+      textLayout: {
+        ...node("x").textLayout,
+        missing,
+        reservedText: "0".repeat(10000),
+      },
+    }));
+    mocks.evaluate.mockResolvedValueOnce({
+      validation: {
+        ready: false,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "SCHEMA_INVALID",
+            message: "x".repeat(1000000),
+            path: "document",
+          },
+        ],
+      },
+      plan: { scenes: [{ id: "s", nodes }] },
+    });
+    const report = await inspectStudioText("u", "p", {});
+    expect(report.items[0].layout.missing.length).toBeLessThanOrEqual(20);
+    expect(report.items[0].layout.totalMissing).toBe(10000);
+    expect(report.items[0].layout.nextMissingOffset).toBe(20);
+    expect(report.items[0].layout.reservedText!.length).toBeLessThanOrEqual(
+      240,
+    );
+    expect(report.items[0].layout.reservedTextLength).toBe(10000);
+    expect(report.diagnostics[0].message.length).toBeLessThanOrEqual(500);
+    expect(Buffer.byteLength(JSON.stringify(report))).toBeLessThan(256 * 1024);
+  });
   it("bounds line and run details even when one overflowing node has thousands of lines", async () => {
     const huge = node("huge");
     huge.textLayout.lines = Array.from({ length: 5000 }, (_, i) => ({
@@ -135,7 +173,14 @@ describe("typography service", () => {
     mocks.evaluate.mockResolvedValueOnce({
       validation: {
         ready: false,
-        diagnostics: [{ severity: "error", code: "ASSET_NOT_FOUND" }],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "ASSET_NOT_FOUND",
+            message: "Asset missing",
+            path: "bindings",
+          },
+        ],
       },
       plan: { scenes: [] },
     });
