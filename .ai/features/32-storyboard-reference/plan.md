@@ -109,7 +109,7 @@ StudioWorkspace.tsx/new, studio.css, MCP/HTTP tests.
 - [x] Сохранить воспроизводимые scripts/SDK guide и verify.md с evidence.
 - [x] npm test → npm run build → npx tsc --noEmit:122 files / 1420 tests,build/tscPASS.
 - [x] Свежий ревьюер получает полный diff; FR01–03 исправлены,повторный scopedPASS.
-- [ ] PR, stage review; автономная приёмка, stage merged/history и merge PR.
+- [x] PR #13, stage review; автономная приёмка, stage merged/history и merge PR.
 
 ### Задача 7: знания
 
