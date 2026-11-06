@@ -16,9 +16,9 @@ import {
   typographyStyleIds,
   typographyThemeIds,
 } from "@/video/typography-types";
-import { actor } from "./shared";
+import { actor, owned } from "./shared";
 import { evaluate, runtime } from "./assets";
-import { getStudioProject, applyStudioTypographyDraft } from "./projects";
+import { view, applyStudioTypographyDraft } from "./projects";
 import { StudioError } from "./errors";
 import { getTypographyMeasureText } from "./typography-fonts";
 import { prepareStudioEngine, runStudioChild } from "./engine";
@@ -31,6 +31,9 @@ export const inspectStudioTextSchema = z
     segmentId: key.optional(),
     nodeId: key.optional(),
     limit: z.number().int().min(1).max(100).default(20),
+    lineLimit: z.number().int().min(1).max(12).default(8),
+    lineOffset: z.number().int().min(0).max(10000).default(0),
+    runOffset: z.number().int().min(0).max(100).default(0),
     cursor: z
       .string()
       .regex(/^\d{1,9}$/)
@@ -192,7 +195,7 @@ export async function inspectStudioText(
 ) {
   const input = inspectStudioTextSchema.parse(raw);
   await actor(userId);
-  const project = await getStudioProject(userId, projectId);
+  const project = await view(await owned(userId, projectId));
   if (
     input.expectedVersion !== undefined &&
     project.version !== input.expectedVersion
@@ -232,7 +235,55 @@ export async function inspectStudioText(
   );
   const offset = Number(input.cursor ?? 0);
   if (offset > entries.length) throw new StudioError("NOT_FOUND");
-  const items = entries.slice(offset, offset + input.limit);
+  let lineBudget = 100,
+    runBudget = 200;
+  const excerpt = (value: string, count = 240) =>
+    Array.from(value).slice(0, count).join("");
+  const items = entries.slice(offset, offset + input.limit).map((entry) => {
+    const layout = entry.layout!;
+    const selectedLines = layout.lines.slice(
+      input.lineOffset,
+      input.lineOffset + Math.min(input.lineLimit, lineBudget),
+    );
+    lineBudget -= selectedLines.length;
+    const lines = selectedLines.map((line) => {
+      const runs = line.runs.slice(
+        input.runOffset,
+        input.runOffset + Math.min(20, runBudget),
+      );
+      runBudget -= runs.length;
+      return {
+        ...line,
+        text: excerpt(line.text),
+        textLength: line.text.length,
+        totalRuns: line.runs.length,
+        nextRunOffset:
+          input.runOffset + runs.length < line.runs.length
+            ? input.runOffset + runs.length
+            : null,
+        runs: runs.map((run) => ({
+          ...run,
+          text: excerpt(run.text, 120),
+          textLength: run.text.length,
+        })),
+      };
+    });
+    return {
+      ...entry,
+      text: excerpt(entry.text),
+      textLength: entry.text.length,
+      diagnostics: entry.diagnostics.slice(0, 10),
+      layout: {
+        ...layout,
+        lines,
+        totalLines: layout.lines.length,
+        nextLineOffset:
+          input.lineOffset + lines.length < layout.lines.length
+            ? input.lineOffset + lines.length
+            : null,
+      },
+    };
+  });
   const preview = input.preview
     ? await diagnosticPng(
         userId,
@@ -312,7 +363,7 @@ async function diagnosticPng(
       errors.some((d) => d.code !== "TEXT_OVERFLOW")
     )
       throw new StudioError("VALIDATION_FAILED", result.validation.diagnostics);
-    const current = await getStudioProject(userId, projectId);
+    const current = await owned(userId, projectId);
     if (current.version !== version) throw new StudioError("VERSION_CONFLICT");
     await actor(userId);
     if (frame >= result.plan.durationInFrames)

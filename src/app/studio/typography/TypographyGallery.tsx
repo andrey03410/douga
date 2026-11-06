@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CompiledVideo, Diagnostic } from "@/video";
 import type { TypographyFont } from "@/video/font-manifest";

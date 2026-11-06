@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { typographyThemes } from "@/video/typography-catalog";
 import type { TypographyThemeId } from "@/video/typography-types";
 import { studioRequest } from "./StudioWorkspace";
@@ -109,7 +109,7 @@ export default function TypographyPanel({
           {inspection.items.map((n: any) => (
             <p key={n.nodeId}>
               <strong>{n.text}</strong> · {n.layout.fontSize.toFixed(1)} px ·{" "}
-              {n.layout.lines.length} стр.
+              {n.layout.totalLines ?? n.layout.lines.length} стр.
               {n.layout.overflow ? " · переполнение" : ""}
             </p>
           ))}

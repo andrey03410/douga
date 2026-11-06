@@ -1,3 +1,4 @@
+import React from "react";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { typographyFonts } from "@/video/font-manifest";

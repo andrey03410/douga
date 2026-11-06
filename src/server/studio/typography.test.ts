@@ -3,9 +3,12 @@ const mocks = vi.hoisted(() => ({
   project: vi.fn(),
   evaluate: vi.fn(),
   actor: vi.fn(),
+  owned: vi.fn(),
+  reconcile: vi.fn(),
 }));
 vi.mock("./projects", () => ({
-  getStudioProject: mocks.project,
+  getStudioProject: mocks.reconcile,
+  view: mocks.project,
   applyStudioTypographyDraft: vi.fn(),
 }));
 vi.mock("./assets", async (original) => ({
@@ -15,6 +18,7 @@ vi.mock("./assets", async (original) => ({
 vi.mock("./shared", async (original) => ({
   ...(await original<object>()),
   actor: mocks.actor,
+  owned: mocks.owned,
 }));
 import {
   inspectStudioText,
@@ -28,7 +32,13 @@ const node = (id: string) => ({
   text: id,
   textLayout: {
     fontSize: 32,
-    lines: [{ text: id, width: 90 }],
+    lines: [
+      {
+        text: id,
+        width: 90,
+        runs: [] as { text: string; width: number; fonts: string[] }[],
+      },
+    ],
     overflow: false,
     fonts: ["manrope-700-normal"],
   },
@@ -37,6 +47,8 @@ const node = (id: string) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.actor.mockResolvedValue({ id: "u", role: "admin" });
+  mocks.owned.mockResolvedValue({ id: "p", version: 7 });
+  mocks.reconcile.mockImplementation((...args) => mocks.project(...args));
   mocks.project.mockResolvedValue({
     id: "p",
     version: 7,
@@ -55,6 +67,38 @@ beforeEach(() => {
   });
 });
 describe("typography service", () => {
+  it("bounds line and run details even when one overflowing node has thousands of lines", async () => {
+    const huge = node("huge");
+    huge.textLayout.lines = Array.from({ length: 5000 }, (_, i) => ({
+      text: `line ${i}`,
+      width: 90,
+      runs: Array.from({ length: 100 }, () => ({
+        text: "a".repeat(200),
+        width: 20,
+        fonts: [],
+      })),
+    }));
+    mocks.evaluate.mockResolvedValueOnce({
+      validation: { ready: false, diagnostics: [] },
+      plan: { scenes: [{ id: "s", nodes: [huge] }] },
+    });
+    const result = await inspectStudioText("u", "p", {
+      limit: 1,
+      lineLimit: 12,
+    });
+    expect(result.items[0].layout!.lines).toHaveLength(12);
+    expect(result.items[0].layout!.totalLines).toBe(5000);
+    expect(result.items[0].layout!.nextLineOffset).toBe(12);
+    expect(result.items[0].layout!.lines[0].runs.length).toBeLessThanOrEqual(
+      20,
+    );
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(256 * 1024);
+  });
+  it("inspects stored source state without calling the source-reconciling read", async () => {
+    await inspectStudioText("u", "p", {});
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+    expect(mocks.owned).toHaveBeenCalledWith("u", "p");
+  });
   it("paginates measured text and pins response to project version", async () => {
     const first = await inspectStudioText("u", "p", { limit: 1 });
     expect(first.version).toBe(7);
@@ -65,7 +109,7 @@ describe("typography service", () => {
     });
     expect(second.items.map((n) => n.nodeId)).toEqual(["b"]);
     expect(second.nextCursor).toBeNull();
-    expect(mocks.project).toHaveBeenCalledWith("u", "p");
+    expect(mocks.owned).toHaveBeenCalledWith("u", "p");
   });
   it("filters by segment and node without exposing other content", async () => {
     const result = await inspectStudioText("u", "p", {
