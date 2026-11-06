@@ -17,7 +17,8 @@ import {
   visualFixtureMedia,
   type VisualFixture,
 } from "@/video/visual-fixtures";
-import { applyVideoPreset, PresetIncompatibleError } from "@/video/presets";
+import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
+import { getStudioPreset } from "./queries";
 import { compileVideo } from "@/video/compiler";
 import { actor, hash, owned } from "./shared";
 import { safeFile } from "./assets";
@@ -32,7 +33,11 @@ const baselineDirectory = path.resolve(
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const key = z.string().min(1).max(200);
 const tryInput = z
-  .object({ projectId: key, expectedVersion: z.number().int().positive() })
+  .object({
+    projectId: key,
+    expectedVersion: z.number().int().positive(),
+    mode: z.enum(["preserve", "replace"]).optional(),
+  })
   .strict();
 export type TryStudioRecipeInput = z.input<typeof tryInput>;
 let fixtureCatalog: Map<string, VisualFixture> | undefined;
@@ -146,19 +151,28 @@ export async function tryStudioRecipe(
   });
   if (prepared.document.kind !== selected.kind)
     throw new StudioError("PRESET_KIND_MISMATCH");
+  let basePreset;
+  if (prepared.document.preset) {
+    try {
+      const candidate = await getStudioPreset(
+        userId,
+        prepared.document.preset.id,
+      );
+      if (candidate.version === prepared.document.preset.version)
+        basePreset = candidate;
+    } catch (error) {
+      if (!(error instanceof StudioError) || error.code !== "NOT_FOUND")
+        throw error;
+    }
+  }
   let document;
   try {
-    document = applyVideoPreset(prepared.document, selected.preset);
+    document = applyVideoRecipe(prepared.document, selected.preset, {
+      mode: input.mode,
+      basePreset,
+    });
   } catch (error) {
-    if (error instanceof PresetIncompatibleError)
-      throw new StudioError("PRESET_INCOMPATIBLE", [
-        {
-          severity: "error",
-          code: "PRESET_INCOMPATIBLE",
-          path: error.path,
-          message: error.message,
-        },
-      ]);
+    if (error instanceof RecipeApplyError) throw new StudioError(error.code);
     throw error;
   }
   const result = compileVideo(document, prepared.manifest, {

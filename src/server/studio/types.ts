@@ -76,6 +76,7 @@ export const patchStudioDraftSchema = mutationSchema.extend({
 });
 export const applyStudioPresetSchema = mutationSchema.extend({
   presetId: key,
+  mode: z.enum(["preserve", "replace"]).optional(),
 });
 export type PatchStudioDraftInput = z.infer<typeof patchStudioDraftSchema>;
 export type ApplyStudioPresetInput = z.infer<typeof applyStudioPresetSchema>;

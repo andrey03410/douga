@@ -8,11 +8,12 @@ import ffmpeg from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { createVideoDocument } from "@/video/builders";
-import { getVideoRecipes } from "@/video/recipes";
+import { getVideoRecipe, getVideoRecipes } from "@/video/recipes";
 import {
   createStudioProject,
   deleteStudioProject,
   saveStudioDraft,
+  applyStudioPreset,
 } from "./projects";
 import { hash } from "./shared";
 import * as sources from "./sources";
@@ -53,6 +54,7 @@ let owner: string,
   projectId: string,
   customId: string,
   png: Buffer;
+const extraProjects: string[] = [];
 const recipeId = "recipe.clean.top.wide";
 beforeAll(async () => {
   owner = (
@@ -113,7 +115,7 @@ beforeAll(async () => {
   customId = (await createStudioProject(owner, { document: custom })).id;
 });
 afterAll(async () => {
-  for (const project of [projectId, customId])
+  for (const project of [projectId, customId, ...extraProjects])
     if (project) await deleteStudioProject(owner, project);
   for (const userId of [owner, other])
     if (userId) {
@@ -199,20 +201,25 @@ it("tries a compatible recipe on owned media without changing project, draft or 
     }),
   ).rejects.toMatchObject({ code: "PRESET_KIND_MISMATCH" });
 });
-it("reports incompatible custom structure instead of resetting assigned media", async () => {
+it("preserves assigned custom structure in recipe try-on instead of resetting media", async () => {
   const before = await prisma.studioProject.findUniqueOrThrow({
     where: { id: customId },
   });
-  await expect(
-    tryStudioRecipe(owner, recipeId, {
+  for (const mode of ["preserve", "replace"] as const) {
+    const preview = await tryStudioRecipe(owner, recipeId, {
       projectId: customId,
       expectedVersion: before.version,
-    }),
-  ).rejects.toMatchObject({ code: "PRESET_INCOMPATIBLE" });
+      mode,
+    });
+    expect(preview.ready).toBe(true);
+    expect(JSON.stringify(preview.plan)).toContain("/api/arts/");
+    expect(preview.plan.scenes[0].id).toBe("custom");
+  }
   expect(
     await prisma.studioProject.findUniqueOrThrow({ where: { id: customId } }),
   ).toEqual(before);
 });
+
 it("never substitutes last-good media for an invalid current draft", async () => {
   const before = await prisma.studioProject.findUniqueOrThrow({
     where: { id: projectId },
@@ -271,4 +278,96 @@ it("returns a verified accepted baseline descriptor and declines missing or untr
   await expect(getStudioRecipePreview(owner, recipeId)).rejects.toMatchObject({
     code: "PREVIEW_NOT_READY",
   });
+});
+
+it("uses the same preserving recipe application for try-on and atomic writes", async () => {
+  const original = await prisma.studioProject.findUniqueOrThrow({
+    where: { id: customId },
+  });
+  const ownBinding = JSON.parse(original.documentJson).bindings["my-art"];
+  const base = getVideoRecipe("recipe.clean.top.wide")!.preset;
+  const document = createVideoDocument({
+    kind: "top",
+    preset: base,
+    participants: [
+      { id: "p", label: "Свой герой", rank: 1, media: { visual: "my-art" } },
+    ],
+  });
+  document.bindings["my-art"] = ownBinding;
+  document.settings.top!.durationSec = 13;
+  document.scenes[0].settings = { card: { borderRadius: 77 } };
+  document.scenes.unshift({
+    id: "intro",
+    block: "custom",
+    duration: { sec: 4 },
+    nodes: [
+      {
+        id: "intro-title",
+        type: "text",
+        text: "Авторское вступление",
+        rect: { x: 0.1, y: 0.2, width: 0.8, height: 0.2 },
+        typography: { role: "label", font: "rubik" },
+      },
+    ],
+  });
+  const created = await createStudioProject(owner, { document });
+  extraProjects.push(created.id);
+  const target = "recipe.cinematic.top.wide";
+  const preview = await tryStudioRecipe(owner, target, {
+    projectId: created.id,
+    expectedVersion: created.version,
+  });
+  expect(preview.plan.durationInFrames).toBe(510);
+  const applied = await applyStudioPreset(owner, created.id, {
+    presetId: target,
+    expectedVersion: created.version,
+    idempotencyKey: randomUUID(),
+  });
+  expect(applied.plan).toEqual(preview.plan);
+  const changed = applied.draft!.document as typeof document;
+  expect(changed.scenes.map((scene) => scene.id)).toEqual(["intro", "main"]);
+  expect(changed.scenes[1].settings!.card!.borderRadius).toBe(77);
+  expect(changed.settings.typography!.theme).toBe("cinematic");
+  const replacePreview = await tryStudioRecipe(owner, target, {
+    projectId: created.id,
+    expectedVersion: applied.version,
+    mode: "replace",
+  });
+  const replaced = await applyStudioPreset(owner, created.id, {
+    presetId: target,
+    expectedVersion: applied.version,
+    mode: "replace",
+  });
+  expect(replaced.plan).toEqual(replacePreview.plan);
+  expect(replaced.plan!.durationInFrames).toBe(510);
+  const replacedDoc = replaced.draft!.document as typeof document;
+  expect(replacedDoc.scenes.map((scene) => scene.id)).toEqual([
+    "intro",
+    "main",
+  ]);
+  expect(replacedDoc.scenes[1].settings?.card?.borderRadius).toBeUndefined();
+  expect(replacedDoc.source).toEqual(document.source);
+  expect(replacedDoc.bindings).toEqual(document.bindings);
+  await expect(
+    applyStudioPreset(owner, created.id, {
+      presetId: "top.cinematic.wide",
+      expectedVersion: replaced.version,
+      mode: "preserve",
+    }),
+  ).rejects.toMatchObject({ code: "PRESET_MODE_UNSUPPORTED" });
+  expect(
+    (
+      await prisma.studioProject.findUniqueOrThrow({
+        where: { id: created.id },
+      })
+    ).version,
+  ).toBe(replaced.version);
+  const legacy = await applyStudioPreset(owner, created.id, {
+    presetId: "top.cinematic.wide",
+    expectedVersion: replaced.version,
+  });
+  expect(
+    (legacy.draft!.document as typeof document).scenes.map((scene) => scene.id),
+  ).toEqual(["main"]);
+  expect(legacy.plan!.durationInFrames).toBe(240);
 });

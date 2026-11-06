@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
+import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
 import { deleteStudioReviewBackups, preserveStudioReviewBackup } from "./review-backups";
 import { buildVideoContent, type VideoContentInput } from "@/video/content";
 import { prisma } from "@/lib/db";
@@ -457,12 +458,23 @@ export async function applyStudioPreset(
     requestHash(`apply-preset:${id}`, input),
     async (current) => {
       try {
-        return {
-          document: applyVideoPreset(
-            editableDocument(current),
-            await getStudioPreset(userId, input.presetId),
-          ),
-        };
+        const document = editableDocument(current);
+        const preset = await getStudioPreset(userId, input.presetId);
+        if (!preset.id.startsWith("recipe.")) {
+          if (input.mode !== undefined) throw new StudioError("PRESET_MODE_UNSUPPORTED");
+          return { document: applyVideoPreset(document, preset) };
+        }
+        let basePreset;
+        if (document.preset) {
+          try {
+            const candidate = await getStudioPreset(userId, document.preset.id);
+            if (candidate.version === document.preset.version) basePreset = candidate;
+          } catch (error) {
+        if (error instanceof RecipeApplyError) throw new StudioError(error.code);
+            if (!(error instanceof StudioError) || error.code !== "NOT_FOUND") throw error;
+          }
+        }
+        return { document: applyVideoRecipe(document, preset, { mode: input.mode, basePreset }) };
       } catch (error) {
         if (error instanceof PresetIncompatibleError)
           throw new StudioError("PRESET_INCOMPATIBLE", [
