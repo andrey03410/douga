@@ -1,7 +1,8 @@
 import "server-only";
 import { z } from "zod";
-import { getVideoRecipes, videoRecipeStyles } from "@/video/recipes";
+import { getVideoRecipes, getVideoRecipe, videoRecipeStyles } from "@/video/recipes";
 import { actor } from "./shared";
+import { StudioError } from "./errors";
 export const selectStudioRecipesSchema = z
   .object({
     kind: z.enum(["top", "picker", "board"]).optional(),
@@ -57,4 +58,21 @@ export async function selectStudioRecipes(
       : "Для этого типа ролика направление не поддержано. Выберите совместимый вариант.",
     alternatives: items.length ? [] : compatible.slice(0, 3).map((r) => r.id),
   };
+}
+
+export async function getVideoRecipeForActor(userId: string, id: string) {
+  await actor(userId);
+  const recipe = getVideoRecipe(id);
+  if (!recipe) throw new StudioError("NOT_FOUND");
+  return recipe;
+}
+export async function listStudioRecipeGallery(userId: string, raw: z.input<typeof selectStudioRecipesSchema> & { all?: boolean } = {}) {
+  const { all, ...filters } = z.object({ ...selectStudioRecipesSchema.shape, all: z.boolean().default(false) }).strict().parse(raw);
+  const selected = await selectStudioRecipes(userId, filters);
+  if (!all) return selected;
+  const items = getVideoRecipes().filter(r => (!filters.kind || r.kind === filters.kind)
+    && (!filters.format || r.format === filters.format) && (!filters.style || r.style === filters.style)
+    && (!filters.query || `${r.name} ${r.description}`.toLowerCase().includes(filters.query.toLowerCase())))
+    .map(({ preset: _, example: __, ...metadata }) => metadata);
+  return { ...selected, items, total: items.length };
 }

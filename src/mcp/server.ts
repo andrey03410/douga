@@ -29,6 +29,7 @@ import { importYoutubeAudio } from "@/mcp/youtube";
 import type { ShikimoriType } from "@/lib/domain/shikimori";
 import { registerTournamentTools } from "@/mcp/tournament-tools";
 import { registerStudioTools } from "@/mcp/studio-tools";
+import { registerStoryboardTools } from "@/mcp/storyboard-tools";
 import { actor as authorizeActor } from "@/server/studio/shared";
 import { MCP_INSTRUCTIONS } from "@/mcp/instructions";
 
@@ -63,6 +64,7 @@ async function main() {
     { instructions: MCP_INSTRUCTIONS },
   );
   registerStudioTools(server, actor);
+  registerStoryboardTools(server, actor);
   registerTournamentTools(server, actor);
 
   // ---- Discovery (Shikimori, read-only) ----

@@ -81,7 +81,14 @@ export type StudioJobStatus =
   | "failed"
   | "canceled";
 export interface StudioJobResult {
-  kind: "still" | "clip" | "audio" | "render";
+  kind: "still" | "clip" | "audio" | "render" | "storyboard";
+  storyboard?: {
+    summary: import("./storyboard-types").InspectionSummary;
+    frames: import("./storyboard-types").StoryboardFrameArtifact[];
+    partial: boolean;
+  };
+  storageBytes?: number;
+  measurements?: import("./preview-measurements").PreviewMeasurements;
   resource: {
     jobId: string;
     name: string;
@@ -101,7 +108,8 @@ export interface StudioJobView {
   id: string;
   projectId: string | null;
   snapshotId: string | null;
-  kind: StartStudioJobInput["kind"] | "import";
+  kind: StartStudioJobInput["kind"] | "import" | "storyboard";
+  inspection?: import("./storyboard-types").InspectionSummary;
   status: StudioJobStatus;
   progress: number;
   attempts: number;

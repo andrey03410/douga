@@ -26,7 +26,7 @@ describe("board presets", () => {
     expect(compileVideo(createVideoDocument({ kind: "board", preset })).ready).toBe(true);
   });
   it("creates all eight families in all formats as ready segmented videos", () => {
-    const presets = getBuiltinPresets().filter((p) => p.kind === "board");
+    const presets = getBuiltinPresets().filter((p) => p.kind === "board" && !p.id.startsWith("recipe."));
     expect(presets).toHaveLength(24);
     for (const p of presets) {
       const d = createVideoDocument({ kind: "board", presetId: p.id });

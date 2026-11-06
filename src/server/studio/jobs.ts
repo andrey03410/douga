@@ -79,6 +79,9 @@ export async function jobView(
     projectId: row.projectId,
     snapshotId: row.snapshotId,
     kind: row.kind as StudioJobView["kind"],
+    ...(JSON.parse(row.inputJson)?.inspectionVersion === 1
+      ? { inspection: JSON.parse(row.inputJson).summary as StudioJobView["inspection"] }
+      : {}),
     status: row.status as StudioJobView["status"],
     progress: row.progress,
     attempts: row.attempts,

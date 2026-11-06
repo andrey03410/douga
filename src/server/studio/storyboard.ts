@@ -1,0 +1,211 @@
+import "server-only";
+import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import { mkdir, copyFile } from "node:fs/promises";
+import path from "node:path";
+import { prisma } from "@/lib/db";
+import { absPath } from "@/lib/storage";
+import { videoDocumentSchema } from "@/video";
+import { selectStoryboard, matchStoryboard } from "@/video/storyboard";
+import { actor, owned, canonical, hash, requestHash, replay, receipt } from "./shared";
+import { view } from "./projects";
+import { evaluate, runtime, cleanupDirectory, fileHash, safeFile } from "./assets";
+import { prepareStudioEngine } from "./engine";
+import { freezeTypographyFonts } from "./typography-fonts";
+import { StudioError } from "./errors";
+import { assertStudioJobQuota, jobDirectory, jobView, ownedJob } from "./jobs";
+import { activeJobStatuses, studioJobLimits, type StudioJobView } from "./job-types";
+import type { StudioFrozenRevision } from "./types";
+import type { InspectionJobInput, InspectionOrigin, InspectionSummary, StoryboardRenderInput } from "./storyboard-types";
+
+const key = z.string().min(1).max(4096);
+export const storyboardSchema = z.object({
+  expectedVersion: z.number().int().positive().optional(),
+  revision: z.number().int().positive().optional(),
+  mode: z.enum(["overview", "scene", "compare"]).default("overview"),
+  sceneId: key.optional(), segmentId: key.optional(),
+  page: z.number().int().min(0).max(20000).default(0),
+  pageSize: z.number().int().min(1).max(24).default(12),
+  compareRevision: z.number().int().positive().optional(),
+  compareJobId: key.optional(),
+  idempotencyKey: z.string().min(1).max(200).optional(),
+}).strict().superRefine((v, ctx) => {
+  if (v.mode === "scene" && !v.sceneId) ctx.addIssue({ code: "custom", message: "sceneId required", path: ["sceneId"] });
+  if (v.mode === "compare" ? Number(!!v.compareRevision) + Number(!!v.compareJobId) !== 1 : !!v.compareRevision || !!v.compareJobId)
+    ctx.addIssue({ code: "custom", message: "Compare mode requires exactly one comparison origin" });
+});
+export type StoryboardInput = z.input<typeof storyboardSchema>;
+const originInput = z.object({ expectedVersion: z.number().int().positive().optional(), revision: z.number().int().positive().optional() }).strict();
+
+/** Reads the exact draft/revision. In particular, never calls getStudioProject/reconcileSource. */
+export async function loadInspectionProject(userId: string, projectId: string,
+  raw: z.input<typeof originInput> = {}, directory?: string) {
+  const input = originInput.parse(raw);
+  const current = await view(await owned(userId, projectId));
+  if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) throw new StudioError("VERSION_CONFLICT");
+  let value = current.draft ? current.draft.document : current.document;
+  let revisionId = "draft";
+  if (input.revision !== undefined) {
+    const revision = await prisma.studioRevision.findUnique({ where: { projectId_revision: { projectId, revision: input.revision } } });
+    if (!revision) throw new StudioError("NOT_FOUND");
+    value = JSON.parse(revision.documentJson); revisionId = revision.id;
+  }
+  const parsed = videoDocumentSchema.safeParse(value);
+  if (!parsed.success) throw new StudioError("VALIDATION_FAILED", [{ severity: "error", code: "SCHEMA_INVALID", path: "document", message: "Текущий документ не проходит схему. Исправьте JSON; старое превью не используется." }]);
+  const evaluated = await evaluate(userId, parsed.data, directory);
+  if (!evaluated.plan || !evaluated.resolvedDocument || evaluated.validation.diagnostics.some(d => d.severity === "error" && d.code !== "TEXT_OVERFLOW"))
+    throw new StudioError("VALIDATION_FAILED", evaluated.validation.diagnostics.slice(0, 100));
+  const after = await owned(userId, projectId);
+  if (input.revision === undefined && after.version !== current.version) throw new StudioError("VERSION_CONFLICT");
+  const origin: InspectionOrigin = {
+    projectId, version: input.revision === undefined ? current.version : null,
+    revision: input.revision ?? null, documentHash: hash(canonical(parsed.data)),
+    contentHash: hash(canonical({ document: parsed.data,
+      assets: Object.entries(evaluated.manifest).map(([key, a]) => [key, a.hash]),
+      fonts: evaluated.plan.fonts?.map(f => f.hash) ?? [] })),
+    format: { width: evaluated.plan.width, height: evaluated.plan.height, fps: evaluated.plan.fps },
+  };
+  const content = { projectId, revisionId, revision: input.revision ?? 0,
+    sourceVersion: parsed.data.source.version ?? null, document: parsed.data,
+    resolvedDocument: evaluated.resolvedDocument, manifest: evaluated.manifest,
+    files: evaluated.files, fontFiles: evaluated.fontFiles, plan: evaluated.plan,
+    validation: evaluated.validation, runtime };
+  const frozen: StudioFrozenRevision = { ...content, snapshotId: randomUUID(), hash: hash(canonical(content)) };
+  return { ...evaluated, plan: evaluated.plan, document: parsed.data, origin, frozen, projectVersion: current.version };
+}
+
+function summaryOf(input: InspectionJobInput): InspectionSummary { return input.summary; }
+export function inspectionInput(value: string): InspectionJobInput | undefined {
+  const parsed = JSON.parse(value);
+  return parsed?.inspectionVersion === 1 ? parsed as InspectionJobInput : undefined;
+}
+export function inspectionSummary(value: string): InspectionSummary | undefined {
+  const input = inspectionInput(value);
+  return input ? summaryOf(input) : undefined;
+}
+
+async function copyFrozen(frozen: StudioFrozenRevision, directory: string) {
+  const result = structuredClone(frozen);
+  await mkdir(absPath(directory), { recursive: true });
+  if (result.plan.fonts?.length && !Object.keys(result.fontFiles ?? {}).length)
+    result.fontFiles = await freezeTypographyFonts(result.plan.fonts, `${directory}/typography`);
+  for (const file of [...Object.values(result.files), ...Object.values(result.fontFiles ?? {})]) {
+    for (const part of ["", "poster"] as const) {
+      const sourcePath = part ? file.posterPath : file.path;
+      const digest = part ? file.posterHash : file.hash;
+      if (!sourcePath || !digest) continue;
+      const source = await safeFile(sourcePath);
+      if (await fileHash(source) !== digest) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      const destination = `${directory}/${digest}${path.extname(source)}`;
+      await copyFile(source, absPath(destination));
+      if (part) file.posterPath = destination; else file.path = destination;
+    }
+  }
+  const { snapshotId: _, hash: __, ...content } = result;
+  result.hash = hash(canonical(content));
+  return result;
+}
+
+/** One durable operation for an entire page; cached retries return current job status. */
+export async function startStudioStoryboard(userId: string, projectId: string, raw: StoryboardInput = {}): Promise<StudioJobView> {
+  const input = storyboardSchema.parse(raw);
+  await owned(userId, projectId);
+  const request = requestHash(`storyboard:${projectId}`, input);
+  const previous = await replay<{ jobId: string }>(prisma, userId, input.idempotencyKey, request);
+  if (previous) return jobView(await ownedJob(userId, previous.jobId));
+  const prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
+  const engineId = await prepareStudioEngine();
+  const options = { mode: input.sceneId ? "scene" as const : "overview" as const, sceneId: input.sceneId, segmentId: input.segmentId, page: input.page, pageSize: input.pageSize };
+  let comparison: { frozen: StudioFrozenRevision; origin: InspectionOrigin } | undefined;
+  if (input.compareJobId) {
+    const other = await ownedJob(userId, input.compareJobId);
+    const previousInput = inspectionInput(other.inputJson);
+    if (other.projectId !== projectId || !previousInput) throw new StudioError("COMPARISON_NOT_FOUND");
+    comparison = { frozen: previousInput.frozen, origin: previousInput.origin };
+  } else if (input.compareRevision) {
+    const before = await loadInspectionProject(userId, projectId, { revision: input.compareRevision });
+    comparison = { frozen: before.frozen, origin: before.origin };
+  }
+  let selection = selectStoryboard(prepared.plan, options);
+  let tiles: StoryboardRenderInput["tiles"] = selection.tiles.map(t => ({ ...t, source: 0 }));
+  if (comparison) {
+    const matches = matchStoryboard(comparison.frozen.plan, prepared.plan, { ...options, pageSize: Math.max(1, Math.floor(input.pageSize / 2)) });
+    tiles = matches.pairs.flatMap(pair => [
+      { ...(pair.before ?? pair.after!), id: `${pair.id}:before`, side: "before" as const, source: 1, missing: !pair.before },
+      { ...(pair.after ?? pair.before!), id: `${pair.id}:after`, side: "after" as const, source: 0, missing: !pair.after },
+    ]);
+    selection = { ...selection, tiles, totalScenes: matches.totalScenes, totalTiles: matches.totalPairs * 2, totalPages: matches.totalPages,
+      scenesCovered: matches.scenesCovered, remainingScenes: matches.remainingScenes };
+  }
+  if (!tiles.length) throw new StudioError("STORYBOARD_EMPTY");
+  const summary: InspectionSummary = { origin: prepared.origin, selection, ...(comparison ? { compareOrigin: comparison.origin } : {}) };
+  const render: StoryboardRenderInput = { kind: "storyboard", tiles, summary };
+  return enqueueInspection(userId, projectId, prepared, engineId, render, summary,
+    { key: input.idempotencyKey, request, comparison });
+}
+
+export async function enqueueInspection(userId: string, projectId: string,
+  prepared: Awaited<ReturnType<typeof loadInspectionProject>>, engineId: string,
+  render: InspectionJobInput["render"], summary: InspectionSummary,
+  options: { key?: string; request?: string; comparison?: { frozen: StudioFrozenRevision; origin: InspectionOrigin } } = {}) {
+  const cacheKey = requestHash("inspection-cache", { projectId, origin: prepared.origin,
+    engineId, render, comparison: options.comparison?.origin });
+  const key = `inspect:${cacheKey}`;
+  const cached = await prisma.studioMutation.findUnique({ where: { userId_key: { userId, key } } });
+  if (cached) {
+    const old = await prisma.studioJob.findFirst({ where: { id: JSON.parse(cached.resultJson).jobId, userId, projectId, status: { in: ["queued", "running", "done"] } } });
+    if (old) {
+      if (options.key && options.request) await prisma.$transaction(async db => {
+        if (!await replay(db, userId, options.key, options.request!)) await receipt(db, userId, options.key, options.request!, { jobId: old.id });
+      });
+      return jobView(old);
+    }
+  }
+  const user = await actor(userId);
+  await assertStudioJobQuota(userId, user.role);
+  if (await prisma.studioJob.count({ where: { userId, status: { in: activeJobStatuses } } }) >= studioJobLimits.maxActivePerAccount) throw new StudioError("JOB_QUOTA_EXCEEDED");
+  const id = randomUUID(), directory = jobDirectory(userId, id);
+  let saved = false;
+  try {
+    const frozen = await copyFrozen(prepared.frozen, `${directory}/inputs`);
+    const compareFrozen = options.comparison ? await copyFrozen(options.comparison.frozen, `${directory}/before-inputs`) : undefined;
+    const wrapper: InspectionJobInput = { inspectionVersion: 1, frozen, ...(compareFrozen ? { compareFrozen } : {}), origin: prepared.origin, summary, render, cacheKey };
+    if ([...Object.values(frozen.files), ...Object.values(frozen.fontFiles ?? {}), ...Object.values(compareFrozen?.files ?? {}), ...Object.values(compareFrozen?.fontFiles ?? {})].reduce((n, f) => n + f.bytes + (f.posterBytes ?? 0), 0) > studioJobLimits.maxInputBytes) throw new StudioError("INPUT_BUDGET_EXCEEDED");
+    return await prisma.$transaction(async db => {
+      const current = await owned(userId, projectId, db);
+      if (prepared.origin.revision === null && current.version !== prepared.projectVersion) throw new StudioError("VERSION_CONFLICT");
+      if (options.key && options.request) {
+        const replayed = await replay<{ jobId: string }>(db, userId, options.key, options.request);
+        if (replayed) return jobView(await ownedJob(userId, replayed.jobId, db), db);
+      }
+      const cache = await db.studioMutation.findUnique({ where: { userId_key: { userId, key } } });
+      if (cache) {
+        const row = await db.studioJob.findFirst({ where: { id: JSON.parse(cache.resultJson).jobId, userId, projectId, status: { in: ["queued", "running", "done"] } } });
+        if (row) {
+          if (options.key && options.request) await receipt(db, userId, options.key, options.request, { jobId: row.id });
+          return jobView(row, db);
+        }
+      }
+      const freshUser = await actor(userId, db);
+      await assertStudioJobQuota(userId, freshUser.role, db);
+      if (await db.studioJob.count({ where: { userId, status: { in: activeJobStatuses } } }) >= studioJobLimits.maxActivePerAccount) throw new StudioError("JOB_QUOTA_EXCEEDED");
+      const row = await db.studioJob.create({ data: { id, userId, projectId, kind: render.kind, engineId, inputJson: JSON.stringify(wrapper) } });
+      await db.studioMutation.upsert({ where: { userId_key: { userId, key } }, create: { userId, key, requestHash: cacheKey, resultJson: JSON.stringify({ jobId: id }) }, update: { requestHash: cacheKey, resultJson: JSON.stringify({ jobId: id }) } });
+      if (options.key && options.request) await receipt(db, userId, options.key, options.request, { jobId: id });
+      saved = true;
+      return jobView(row, db);
+    });
+  } finally { if (!saved) await cleanupDirectory(directory); }
+}
+
+export async function getStoryboardFrame(userId: string, jobId: string, frameId: string) {
+  const job = await ownedJob(userId, jobId);
+  if (!/^\d{1,3}$/.test(frameId)) throw new StudioError("NOT_FOUND");
+  if (job.status !== "done" || !job.resultJson || !job.leaseToken) throw new StudioError("RESULT_NOT_READY");
+  const result = JSON.parse(job.resultJson) as import("./job-types").StudioJobResult;
+  const frame = result.storyboard?.frames.find(f => f.id === frameId);
+  if (!frame || frame.name !== path.basename(frame.name)) throw new StudioError("NOT_FOUND");
+  const file = await safeFile(`${jobDirectory(userId, jobId)}/attempts/${job.leaseToken}/${frame.name}`);
+  if (await fileHash(file) !== frame.hash) throw new StudioError("RESULT_HASH_MISMATCH");
+  return { path: file, mimeType: "image/png", name: frame.name, bytes: frame.bytes, hash: frame.hash };
+}

@@ -28,6 +28,10 @@ export const MCP_TOOL_NAMES = [
   "video_typography_list",
   "video_typography_get",
   "video_text_inspect",
+  "video_content_set",
+  "video_storyboard",
+  "video_review",
+  "video_review_apply",
   "video_schema_get",
   "video_examples",
   "video_preset_list",
@@ -64,12 +68,11 @@ export const MCP_TOOL_NAMES = [
  * should see the three video paths without reading all tool descriptions.
  */
 export const MCP_INSTRUCTIONS = [
-  'Видео в Douga собирается только инструментами video_*. Нужен запущенный `npm run studio:worker`. Финальный рендер video_job_start с kind:"render" доступен только админу; клип — kind:"clip".',
-  "Топ по турниру: video_source_list (турниры владельца с названиями) → video_project_create с presetId топа из video_preset_list (например top.classic.wide) и sourceId турнира → оформление (video_preset_apply или video_draft_patch) → video_project_validate → video_draft_commit → video_job_start.",
-  'Свой топ без турнира: положите звук и картинки в пул (import_youtube_audio, import_local_media, import_shikimori_poster или video_import_start). artId из пула — это assetId привязки {kind:"pool", assetId}. Документ: source.kind:"manual", у участников rank и media. Фрагмент — settings.top.snippet; режим active сам находит громкое место. Дальше те же validate, commit и job.',
-  "Подготовка турнира: list_local_media читает теги; tournament_create принимает segments с локальными path либо assetId пула. tournament_get и tournament_segments_update дают редактуру состава/подписей/постеров. Агент не отвечает на сравнения и не назначает места. requiresConfirmation и answersToReset требуют явного подтверждения перед confirmReset:true.",
-  "Пикер: picker.*. Доски: board.* (тир-лист, KMK, слепой рейтинг, драфт, викторина, матрица, бюджет). Схема и готовые документы — video_schema_get и video_examples.",
-  "Моушен: video_motion_list → video_motion_get (name + category; flash неоднозначен). Полные примеры со stand-in manifest — video_examples, живая галерея — /studio/motion.",
-  "Типографика: video_typography_list/get — темы и стили, video_font_list/get — шрифты. Применяйте settings.typography через patch; video_text_inspect проверит строки/размер и покажет диагностический PNG черновика. Галерея /studio/typography.",
-  "Правки документа идут через CAS: передавайте expectedVersion. Повтор того же шага — с тем же idempotencyKey.",
+  'Douga: видео только через video_*. Нужен studio:worker. Финальный video_job_start kind:"render" — admin; clip доступен автору.',
+  'Простой путь: video_preset_list recipes:true + kind/format/query → video_preset_get (форма/пример/изображение) → video_project_create presetId → video_content_set (участники с visualAssetId/audioAssetId, раунды либо действия доски; mode merge|replace) → video_storyboard → video_review → video_review_apply выбранных suggestions → повторная проверка. Все nextAction содержат готовый tool и arguments. Галерея /studio/recipes.',
+  'video_storyboard показывает смысловые кадры текущего черновика без commit. Длинный ролик — страницы с coverage; compareRevision/compareJobId — до/после. queued → video_job_get → video_job_inspect (PNG). Без worker очередь ждёт. video_review mode:deep готовит клипы со звуком; notChecked не означает успех. Проверяйте origin/version.',
+  'Топ турнира: video_source_list → video_project_create presetId топа + sourceId → оформление → validate/commit/job. Места определяет человек. Свой топ: source.kind:"manual", заданные rank, медиа из пула; settings.top.snippet.mode active. picker.* — пикер, board.* — доски; полные документы video_examples.',
+  'Медиа: import_local_media/import_youtube_audio/import_shikimori_poster/video_import_start → пул. artId = assetId привязки {kind:"pool",assetId}. tournament_create/segments_update готовят состав; requiresConfirmation/answersToReset требуют согласия перед confirmReset:true.',
+  'Моушен: video_motion_list/get; flash требует category. Типографика: video_font_list/get, video_typography_list/get; строки/глифы/PNG — video_text_inspect. Схемы video_schema_get; галереи /studio/motion и /studio/typography.',
+  'Запись: expectedVersion (CAS, не revision) и idempotencyKey для повторов. После проверки video_project_validate → video_draft_commit → video_job_start. Просмотр/исправление не публикует ролик.',
 ].join("\n");
