@@ -91,3 +91,35 @@ v1/v2, disabled segments, local/absolute frames, короткие/нулевые
 
 Общий npm test/build/tsc и живая поверхность — ответственность основной интеграции;
 в этом независимом задании они намеренно не запускались по инструкции оркестратора.
+
+## Исправления независимого ревью IR-02 / доменная часть IR-03
+
+2026-11-06. Комментарии проверены на воспроизводимых canonical documents.
+
+- **IR-02:** вложенные JSON IDs заменены непрозрачными `issue_<digest>`
+  (38 символов) и `suggestion_<digest>` (43 символа). Digest — две 64-битные
+  FNV-1a последовательности с разными seed над канонической UTF-8 identity.
+  Функции синхронные и browser-safe, без Node crypto/I/O. ID не является секретом
+  или механизмом авторизации. Реестр сверяет исходные canonical fingerprints:
+  обнаруженная коллизия завершается ошибкой вместо объединения чужих issues/patches.
+  Лимит серверной apply-схемы не расширялся. Реальные scene/node/target IDs
+  остаются в структурных полях и nextAction, а не подменяются digest.
+- **IR-03 (домен):** addSuggestion валидирует canonical patch, затем сравнивает
+  нормализованный документ до/после с сортировкой object keys и JSON-семантикой
+  undefined. Пустая правка не попадает ни в suggestions, ни в issue.suggestionIds.
+  Compact использует authored fontSize ceiling (с пределом 36), а не размер,
+  уже уменьшенный layout. Поэтому после первого неудачного compact остаётся
+  text_inspect, без ещё одного предложения shrink и повторного пустого patch.
+- Серверная проверка фактического устранения layout-проблемы и before-восстановление
+  выполняются основной интеграцией; этот агент server/review не менял.
+
+**RED:** новые тесты отдельно воспроизвели три ошибки: issue ID длиной 177
+при допустимом authored ID46; повтор compact после первого неудачного применения;
+фиктивный возврат к теме из-за единственного undefined-ключа.
+
+**GREEN после последних правок:**
+`npx vitest run src/video/video-review.test.ts src/video/storyboard.test.ts`
+— **40 тестов PASS** (21 review + 19 storyboard). Targeted strict tsc двух
+изменённых файлов — PASS. Новые проверки включают допустимые ID46/200,
+похожие Unicode/escape/slash identities, уникальность и стабильность issue/suggestion
+при перестановке сцен, реальные nextAction и patch targets, canonical no-op.

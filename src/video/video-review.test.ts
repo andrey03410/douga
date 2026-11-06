@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileVideo } from "./compiler";
 import { createVideoDocument } from "./builders";
 import { patchVideoDocument } from "./patches";
+import { parseVideoDocument } from "./schema";
 import type { MeasureText } from "./typography-types";
 import type { VideoDocument, VideoNode } from "./types";
 import { reviewVideo } from "./video-review";
@@ -319,6 +320,123 @@ describe("explainable static video review", () => {
       ]),
     );
     expect(r.suggestions.every((s) => s.requiresRecheck)).toBe(true);
+  });
+  it.each([46, 200])(
+    "keeps valid %i-character authoring identities in opaque bounded review ids",
+    (length) => {
+      const d = doc();
+      d.scenes[0].id = `scene-${"s".repeat(length - 6)}`;
+      d.scenes[0].nodes[0].id = `label-${"n".repeat(length - 6)}`;
+      expect(() => parseVideoDocument(d)).not.toThrow();
+      const result = review(d),
+        issue = result.issues.find((i) => i.code === "TEXT_OVERFLOW")!;
+      const fix = result.suggestions.find((s) => s.kind === "compact-label")!;
+      for (const id of [
+        ...result.issues.map((i) => i.id),
+        ...result.suggestions.map((s) => s.id),
+      ]) {
+        expect(id.length).toBeLessThanOrEqual(100);
+        expect(id).toMatch(/^[a-z]+_[a-f0-9]+$/);
+        expect(id).not.toContain(d.scenes[0].id);
+      }
+      expect(issue.nextAction).toMatchObject({
+        type: "text_inspect",
+        sceneId: d.scenes[0].id,
+        nodeId: `${d.scenes[0].id}/node/${d.scenes[0].nodes[0].id}`,
+        frame: expect.any(Number),
+      });
+      expect(issue.suggestionIds).toContain(fix.id);
+      expect(fix.operations[0].target).toEqual({
+        type: "node",
+        id: d.scenes[0].nodes[0].id,
+      });
+      expect(review(d).suggestions.map((s) => s.id)).toEqual(
+        result.suggestions.map((s) => s.id),
+      );
+    },
+  );
+  it("does not merge adversarially similar identities and keeps their ids when scenes are reordered", () => {
+    const d = doc(),
+      original = d.scenes[0];
+    const suffixes = [
+      "a",
+      "b",
+      "а",
+      "a\u0301",
+      "á",
+      "a/b",
+      "a%2Fb",
+      'a"b',
+      "a\\b",
+    ];
+    d.scenes = suffixes.map((suffix, i) => ({
+      ...structuredClone(original),
+      id: `scene-${"s".repeat(40)}-${suffix}`,
+      nodes: [
+        {
+          ...structuredClone(original.nodes[0]),
+          id: `label-${"n".repeat(40)}-${i}-${suffix}`,
+        },
+      ],
+    }));
+    const first = review(d);
+    expect(first.issues.filter((i) => i.code === "TEXT_OVERFLOW")).toHaveLength(
+      9,
+    );
+    expect(new Set(first.issues.map((i) => i.id)).size).toBe(
+      first.issues.length,
+    );
+    expect(new Set(first.suggestions.map((s) => s.id)).size).toBe(
+      first.suggestions.length,
+    );
+    const byIdentity = (r: ReturnType<typeof review>) =>
+      Object.fromEntries(
+        r.issues.map((i) => [`${i.sceneId}:${i.nodeId}:${i.code}`, i.id]),
+      );
+    const suggestionIdentities = (r: ReturnType<typeof review>) =>
+      Object.fromEntries(
+        r.suggestions.map((s) => [
+          JSON.stringify([s.kind, s.operations[0].target]),
+          s.id,
+        ]),
+      );
+    d.scenes.reverse();
+    const reordered = review(d);
+    expect(byIdentity(reordered)).toEqual(byIdentity(first));
+    expect(suggestionIdentities(reordered)).toEqual(
+      suggestionIdentities(first),
+    );
+  });
+  it("does not propose the same compact patch after its first unsuccessful application", () => {
+    const d = doc();
+    (d.scenes[0].nodes[0] as { text: string }).text =
+      "Очень длинное имя персонажа ".repeat(100);
+    const first = review(d).suggestions.find(
+      (s) => s.kind === "compact-label",
+    )!;
+    expect(first).toBeDefined();
+    const patched = patchVideoDocument(d, first.operations),
+      second = review(patched);
+    expect(second.issues.some((i) => i.code === "TEXT_OVERFLOW")).toBe(true);
+    expect(second.suggestions.some((s) => s.kind === "compact-label")).toBe(
+      false,
+    );
+    expect(
+      second.issues.find((i) => i.code === "TEXT_OVERFLOW")?.nextAction?.type,
+    ).toBe("text_inspect");
+  });
+  it("does not offer a canonically empty patch when the only difference is an undefined key", () => {
+    const d = doc();
+    (d.scenes[0].nodes[0] as { text: string }).text = "Имя";
+    d.scenes[0].nodes[0].typography = { role: "label", fontSize: undefined };
+    const result = review(d);
+    expect(
+      result.suggestions.some((s) => s.kind === "return-label-theme"),
+    ).toBe(false);
+    expect(
+      result.issues.find((i) => i.code === "LABEL_THEME_OVERRIDE")
+        ?.suggestionIds ?? [],
+    ).toEqual([]);
   });
   it("rejects malformed review profiles instead of silently skipping coverage", () => {
     expect(() => review(doc(), { minReadableSec: -1 })).toThrow();

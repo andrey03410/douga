@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import type { TextTypography } from "./typography-types";
 import { patchVideoDocument } from "./patches";
+import { parseVideoDocument } from "./schema";
 import { mergeSettings } from "./settings";
 import { selectStoryboard } from "./storyboard";
 import { getTypographyTheme } from "./typography-catalog";
@@ -92,6 +93,45 @@ export interface VideoReviewReport {
     complete: false;
   };
   suggestions: VideoReviewSuggestion[];
+}
+/** JSON's undefined semantics plus sorted object keys: property order is not an edit. */
+function canonicalJson(value: unknown): string {
+  return (
+    JSON.stringify(value, (_key, entry: unknown) =>
+      entry && typeof entry === "object" && !Array.isArray(entry)
+        ? Object.fromEntries(
+            Object.entries(entry).sort(([a], [b]) =>
+              a < b ? -1 : a > b ? 1 : 0,
+            ),
+          )
+        : entry,
+    ) ?? "null"
+  );
+}
+/** Two independently seeded 64-bit FNV-1a streams. IDs are opaque, not credentials. */
+function identityDigest(value: string): string {
+  let first = 0xcbf29ce484222325n,
+    second = 0x84222325cbf29ce4n;
+  for (const byte of new TextEncoder().encode(value)) {
+    first = BigInt.asUintN(64, (first ^ BigInt(byte)) * 0x100000001b3n);
+    second = BigInt.asUintN(64, (second ^ BigInt(byte)) * 0x100000001b3n);
+  }
+  return (
+    first.toString(16).padStart(16, "0") + second.toString(16).padStart(16, "0")
+  );
+}
+function reviewIdentityRegistry() {
+  const fingerprints = new Map<string, string>();
+  return (namespace: "issue" | "suggestion", identity: unknown): string => {
+    const fingerprint = canonicalJson(identity);
+    const id = `${namespace}_${identityDigest(fingerprint)}`;
+    const previous = fingerprints.get(id);
+    // Fail closed instead of merging unrelated issues or returning a wrong patch target.
+    if (previous !== undefined && previous !== fingerprint)
+      throw Error("Review identity digest collision");
+    fingerprints.set(id, fingerprint);
+    return id;
+  };
 }
 const inWindow = (w: Window, f: number) => w.from <= f && f < w.to;
 const intersects = (a: Rect, b: Rect) =>
@@ -375,6 +415,8 @@ export function reviewVideo(
   validateProfile(profile);
   const issues: VideoReviewIssue[] = [],
     suggestions: VideoReviewSuggestion[] = [];
+  const identity = reviewIdentityRegistry();
+  const originalCanonical = canonicalJson(parseVideoDocument(document));
   const targets = authoringTargets(plan, document);
   const positions = plan.scenes.flatMap((s) => s.nodes.map((n) => ({ s, n })));
   const frameFor = (s: CompiledScene, n?: CompiledNode) => {
@@ -401,7 +443,7 @@ export function reviewVideo(
     rawNodeId?: string,
   ) => {
     const nodeId = n?.id ?? rawNodeId;
-    const id = JSON.stringify([
+    const id = identity("issue", [
       code,
       s?.segmentId ?? null,
       s?.id ?? null,
@@ -482,11 +524,17 @@ export function reviewVideo(
     ];
     // Validating the actual canonical patch also rejects null/disabled parent scopes.
     try {
-      patchVideoDocument(document, operations);
+      const patched = patchVideoDocument(document, operations);
+      if (canonicalJson(patched) === originalCanonical) return;
     } catch {
       return;
     }
-    const id = JSON.stringify([kind, issue.id, target.target, target.path]);
+    const id = identity("suggestion", [
+      kind,
+      issue.id,
+      target.target,
+      target.path,
+    ]);
     issue.suggestionIds = [...(issue.suggestionIds ?? []), id];
     suggestions.push({
       id,
@@ -558,7 +606,9 @@ export function reviewVideo(
             font: "oswald",
             weight: 700,
             italic: false,
-            fontSize: Math.min(style.fontSize, 36),
+            // Layout may have shrunk the resolved size. Preserve the authored ceiling
+            // so a failed compact attempt does not become a second shrink proposal.
+            fontSize: Math.min(target?.own?.fontSize ?? style.fontSize, 36),
             minFontSize: style.minFontSize,
             lineHeight: 1.12,
             maxLines: 2,
