@@ -2,7 +2,7 @@
 id: 33
 title: Турнир по картинкам и персонажам
 track: product        # product | tech
-stage: product        # brief → product → tech → plan → build → review → merged
+stage: tech           # brief → product → tech → plan → build → review → merged
 branch: feat/33-image-tournament
 pr:
 started: 2026-11-07
@@ -23,7 +23,7 @@ merged:
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Продукт — [product.md](product.md)
+- [x] Продукт — [product.md](product.md) (автономно, 2026-11-07)
 - [ ] Техника — [tech.md](tech.md)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
