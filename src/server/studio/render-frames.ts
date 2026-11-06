@@ -12,7 +12,7 @@ import { studioJobLimits } from "./job-types";
 import type { StudioFrozenRevision } from "./types";
 
 /** Prepares exactly the same sources and typography for all render surfaces. */
-export async function prepareStudioRender(request: { directory: string; engineId: string; frozen: StudioFrozenRevision }) {
+export async function prepareStudioRender(request: { directory: string; engineId: string; frozen: StudioFrozenRevision; browserExecutable?: string }) {
   const { frozen } = request;
   const directory = absPath(request.directory), serveUrl = path.join(directory, "serve");
   await mkdir(directory, { recursive: true });
@@ -57,12 +57,12 @@ export async function prepareStudioRender(request: { directory: string; engineId
   };
   for (const usage of compiledMediaUsages(plan)) rewrite(usage.asset);
   const inputProps = { plan, assetMode: "static" };
-  const browserExecutable = process.env.REMOTION_BROWSER_EXECUTABLE;
+  const browserExecutable = request.browserExecutable ?? process.env.REMOTION_BROWSER_EXECUTABLE;
   const composition = await selectComposition({ serveUrl, id: "Studio", inputProps, browserExecutable });
   return { directory, serveUrl, publicDir, plan, inputProps, browserExecutable, composition };
 }
 
-export async function renderStudioFrames(request: { directory: string; engineId: string; frozen: StudioFrozenRevision; frames: number[]; scale?: number; rasterizer?: "swangle" }) {
+export async function renderStudioFrames(request: { directory: string; engineId: string; frozen: StudioFrozenRevision; frames: number[]; scale?: number; rasterizer?: "swangle"; browserExecutable?: string }) {
   if (!request.frames.length || request.frames.length > 64 || request.frames.some(f => !Number.isInteger(f) || f < 0 || f >= request.frozen.plan.durationInFrames)) throw new StudioError("FRAME_RANGE_INVALID");
   const prepared = await prepareStudioRender(request);
   const browser = await openBrowser("chrome", { browserExecutable: prepared.browserExecutable, logLevel: "error",

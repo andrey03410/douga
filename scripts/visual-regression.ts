@@ -77,11 +77,9 @@ export async function encodeVisualPng(file: string, image: RgbaImage) {
   const png = await processBytes(ffmpeg!, ["-v", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${image.width}x${image.height}`, "-i", "pipe:0", "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1"], image.data);
   await writeFile(file, png);
 }
-async function environment(): Promise<VisualEnvironment> {
-  const browser = await ensureBrowser({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE });
-  if (!("path" in browser)) throw new Error(`BROWSER_UNAVAILABLE:${browser.type}`);
-  const version = (await processBytes(browser.path, ["--version"])).toString().trim();
-  return { platform: process.platform, arch: process.arch, node: process.versions.node, osVersion: release(), ffmpeg: sha256(await readFile(ffmpeg!)), colorSpace: "srgb", browser: `${version};binary-sha256=${sha256(await readFile(browser.path))}`, remotion: VERSION, fontHashes: [], pixelFormat: "rgba", scale: 1, rasterizer: "swangle" };
+async function environment(browserExecutable: string): Promise<VisualEnvironment> {
+  const version = (await processBytes(browserExecutable, ["--version"])).toString().trim();
+  return { platform: process.platform, arch: process.arch, node: process.versions.node, osVersion: release(), ffmpeg: sha256(await readFile(ffmpeg!)), colorSpace: "srgb", browser: `${version};binary-sha256=${sha256(await readFile(browserExecutable))}`, remotion: VERSION, fontHashes: [], pixelFormat: "rgba", scale: 1, rasterizer: "swangle" };
 }
 function pixelRegions(plan: StudioFrozenRevision["plan"], frame: number): VisualRegion[] {
   const regions: VisualRegion[] = [];
@@ -117,7 +115,12 @@ export async function renderVisualFixtures(options: ReturnType<typeof parseVisua
   const fixtures = buildVisualFixtures(), full = catalog(fixtures);
   const selected = fixtures.filter((f) => !options.filter || f.id.includes(options.filter)).slice(0, options.limit);
   if (!selected.length) throw new Error("NO_MATCHING_FIXTURES");
-  const env = await environment(), engineId = await prepareStudioEngine();
+  // Golden frames use Remotion's tested bundled browser rather than a mutable
+  // system installation. The override is local to this call, never process.env.
+  const browser = await ensureBrowser({ chromeMode: "headless-shell" });
+  if (!("path" in browser)) throw new Error(`BROWSER_UNAVAILABLE:${browser.type}`);
+  const browserExecutable = browser.path;
+  const env = await environment(browserExecutable), engineId = await prepareStudioEngine();
   const run: RunManifest = { version: 1, ...full, selectedFixtureIds: selected.map((f) => f.id), complete: false, frames: [] };
   await mkdir(verificationDirectory, { recursive: true });
   await writeFile(path.join(verificationDirectory, "actual-manifest.json"), json(run));
@@ -125,7 +128,7 @@ export async function renderVisualFixtures(options: ReturnType<typeof parseVisua
     const directory = path.join(verificationDirectory, "actual", fixture.id), frozen = await freezeVisualFixture(fixture, directory);
     const frames = [...new Set(fixture.frames.map((f) => f.frame))].sort((a, b) => a - b);
     const rendered: { frame: number; path: string }[] = [];
-    for (let offset = 0; offset < frames.length; offset += 64) rendered.push(...await renderStudioFrames({ directory: storageRelative(path.join(directory, "render")), engineId, frozen, frames: frames.slice(offset, offset + 64), scale: 1, rasterizer: "swangle" }));
+    for (let offset = 0; offset < frames.length; offset += 64) rendered.push(...await renderStudioFrames({ directory: storageRelative(path.join(directory, "render")), engineId, frozen, frames: frames.slice(offset, offset + 64), scale: 1, rasterizer: "swangle", browserExecutable }));
     if (rendered.length !== frames.length || frames.some((frame) => !rendered.some((r) => r.frame === frame))) throw new Error(`INCOMPLETE_RENDER:${fixture.id}`);
     const frameEnvironment = { ...env, fontHashes: [...new Set((frozen.plan.fonts ?? []).map((f) => f.hash))].sort() };
     for (const frame of rendered) {

@@ -34,3 +34,31 @@ TDD: RED 2/11 (software option не дошла до browser; одинаковы�
 Эталоны/fixtures/current actual/report не менялись, full tests/build не запускались.
 Политика требует нового полного SW render → просмотра → explicit accept → свежего
 полного repeat/check. Именно этот прогон подтвердит повторяемость всей матрицы.
+
+## Последующая проверка: bundled headless-shell вместо system Chrome
+
+Полный SW/system-Chrome 157 repeat дал 21 расхождение на 1675 кадрах. Это отменяет
+предположение, что одного SW backend достаточно: scoped 21×3 выше не доказывал
+повторяемость всей матрицы. First-frame prewarm тоже провалился; private hooks
+и допуски не включались в production.
+
+Новый supported кандидат: bundled Chrome for Testing 149.0.7790.0, revision,
+проверяемый установленным Remotion. `ensureBrowser({chromeMode:'headless-shell'})`
+без browserExecutable нашёл его в кеше. Все 37 кадров четырёх проблемных fixtures
+в трёх полных batches (111 renders, 74 повторных сравнения) совпали точно при SW,
+одном capture и без private hooks/prewarm/double. Старый baseline 157 отдельно
+остаётся несовпадающим. Evidence и ограничение scope: `storage/headless-probe/`.
+
+API `prepareStudioRender`/`renderStudioFrames` дополнен internal trusted
+`browserExecutable?:string`. Override одинаков для selectComposition/openBrowser;
+без него worker сохраняет прежний REMOTION_BROWSER_EXECUTABLE fallback.
+Visual CLI сам resolve bundled browser, одним path вычисляет version/binary SHA
+и рендерит, не меняя process.env при импорте или вызове. Существующий environment
+fingerprint строго отличает bundled 149 от system 157; rasterizer exact check сохранён.
+
+TDD: explicit override flow RED 1/4 → GREEN 4/4 browser adapter tests; подтверждены
+select/open path, отсутствие изменения env и worker fallback. Совместно
+**20/20 PASS**, 4 targeted файла, 4.02 с; `tsc --noEmit` exit 0. Логи
+`storage/headless-probe/browser-policy-{red,green,typecheck}.log`.
+Полный bundled render/view/explicit accept/fresh repeat и последняя QG тройка
+остаются у координатора. Готовность всей матрицы по 37 samples не объявляется.
