@@ -267,8 +267,24 @@ function segmentRecipe(
 export function videoExamples() {
   return {
     items: [
-      ...(["tier", "kmk", "smash-pass", "blind-rank", "draft", "sort-quiz", "alignment", "budget-draft"] as const).map((family) => ({
-        id: `board-${family}`, document: sdk.createVideoDocument({ kind: "board", presetId: `board.${family}.vertical` }),
+      ...sdk.motionExamples(),
+      ...(
+        [
+          "tier",
+          "kmk",
+          "smash-pass",
+          "blind-rank",
+          "draft",
+          "sort-quiz",
+          "alignment",
+          "budget-draft",
+        ] as const
+      ).map((family) => ({
+        id: `board-${family}`,
+        document: sdk.createVideoDocument({
+          kind: "board",
+          presetId: `board.${family}.vertical`,
+        }),
       })),
       ...(
         [
@@ -302,7 +318,13 @@ export function videoExamples() {
     clientDisplayLimitation: displayLimitation,
   };
 }
-const examples = () => videoExamples();
+const examples = (id?: string) => {
+  const result = videoExamples();
+  if (!id) return result;
+  const item = result.items.find((item) => item.id === id);
+  if (!item) throw new studio.StudioError("NOT_FOUND");
+  return { ...result, items: [item] };
+};
 const schemas = () => ({
   document: sdk.getVideoDocumentJsonSchema(),
   preset: zodToJsonSchema(sdk.videoPresetSchema, {
@@ -364,6 +386,16 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         schemaVersion: 2,
         supportedSchemaVersions: [1, 2],
         compilerVersion: "1.0.0",
+        motion: {
+          catalogVersion: sdk.motionCatalog.version,
+          count: sdk.motionCatalog.entries.length,
+          list: "video_motion_list",
+          get: "video_motion_get",
+          examples: "video_examples",
+          gallery: "/studio/motion",
+          profiles: ["smooth", "snappy", "bouncy", "cinematic"],
+          intensities: ["subtle", "normal", "bold"],
+        },
         protocol: {
           transport: "stdio",
           latest: LATEST_PROTOCOL_VERSION,
@@ -385,6 +417,85 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       };
     },
   );
+  const category = z.enum([
+    "effect",
+    "choreography",
+    "transition",
+    "backdrop",
+    "widget",
+  ]);
+  register(
+    "video_motion_list",
+    "Bounded motion catalog summaries, optionally filtered by category. Cursor is the last category:name key. Use get for explicit fragments.",
+    z
+      .object({
+        category: category.optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+        cursor: z.string().max(200).optional(),
+      })
+      .strict(),
+    async ({ category, limit, cursor }) => {
+      await freshActor(uid);
+      const entries = sdk.motionCatalog.entries.filter(
+        (entry) => !category || entry.category === category,
+      );
+      const key = (entry: { category: string; name: string }) =>
+        `${entry.category}:${entry.name}`;
+      const index = cursor
+        ? entries.findIndex((entry) => key(entry) === cursor)
+        : -1;
+      if (cursor && index === -1) throw new studio.StudioError("NOT_FOUND");
+      const items = entries
+        .slice(index + 1, index + 1 + limit)
+        .map(({ example: _fragment, ...summary }) => summary);
+      return {
+        version: sdk.motionCatalog.version,
+        total: entries.length,
+        items,
+        nextCursor:
+          index + 1 + limit < entries.length ? key(items.at(-1)!) : null,
+      };
+    },
+  );
+  register(
+    "video_motion_get",
+    "Explicit motion metadata and labeled authoring fragment. Category is required for ambiguous names such as flash. Complete documents are in video_examples.",
+    z.object({ name: id, category: category.optional() }).strict(),
+    async ({ name, category }) => {
+      await freshActor(uid);
+      const canonical = name === "flip" ? "flip-y" : name;
+      const matches = sdk.motionCatalog.entries.filter(
+        (entry) =>
+          entry.name === canonical &&
+          (!category || entry.category === category),
+      );
+      if (matches.length > 1)
+        throw new studio.StudioError("MOTION_CATEGORY_REQUIRED", [
+          {
+            severity: "error",
+            code: "MOTION_CATEGORY_REQUIRED",
+            path: "category",
+            message: `Укажите category: ${matches.map((entry) => entry.category).join(" или ")}`,
+          },
+        ]);
+      const entry = matches[0];
+      if (!entry) throw new studio.StudioError("NOT_FOUND");
+      return {
+        version: sdk.motionCatalog.version,
+        entry,
+        exampleKind: "authoring-fragment",
+        completeExampleId:
+          entry.category === "choreography"
+            ? `motion-choreography-${entry.name}`
+            : entry.category === "effect"
+              ? "motion-effect-text-slam"
+              : "motion-widget-backdrop-transition-sampler",
+        completeExampleNote:
+          "Whole-document recipe for this category; entry.example is the selected technique fragment.",
+      };
+    },
+    true,
+  );
   register(
     "video_schema_get",
     "Get canonical SDK/service JSON schemas. Runtime refinements, CAS and ownership checks also apply.",
@@ -401,11 +512,11 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_examples",
-    "Explicit complete validated JSON examples; may display source content in the client.",
-    z.object({}),
-    async () => {
+    "Explicit complete validated JSON examples, optionally one id. Motion stand-in manifests are compiler inputs; replace pool bindings with owned assets before saving.",
+    z.object({ id: id.optional() }),
+    async ({ id }) => {
       await freshActor(uid);
-      return examples();
+      return examples(id);
     },
     true,
   );

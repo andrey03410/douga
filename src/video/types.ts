@@ -1,3 +1,15 @@
+import type {
+  MotionSettings,
+  CompiledMotion,
+  BackdropSettings,
+  CompiledBackdrop,
+  TimerSettings,
+  VersusSettings,
+  BadgeSettings,
+  ProgressSettings,
+  TransitionName,
+  MotionDirection,
+} from "./motion-types";
 /** Public, browser-safe SDK v1. All times become integer frames at compilation. */
 export type VideoFormat = "wide" | "vertical" | "square";
 export type Time = { sec: number } | { frame: number };
@@ -57,6 +69,10 @@ export interface CardStyle {
   orientation?: "landscape" | "portrait";
 }
 export interface Settings {
+  motion?: MotionSettings;
+  backdrop?: BackdropSettings | null;
+  timer?: TimerSettings;
+  versus?: VersusSettings;
   background?: string;
   card?: CardStyle;
   labels?: {
@@ -180,6 +196,7 @@ export interface Animation {
   keyframes: { at: Time; value: number }[];
 }
 export interface NodeBase {
+  motion?: MotionSettings;
   id: string;
   rect?: Rect;
   units?: "relative" | "px";
@@ -213,7 +230,10 @@ export type VideoNode = NodeBase &
       }
     | { type: "image" | "video"; asset: string; required?: boolean }
     | { type: "card"; participantId: string; label?: TextValue }
-    | { type: "timer"; duration?: Time }
+    | ({ type: "timer"; duration?: Time } & TimerSettings)
+    | ({ type: "versus" } & VersusSettings)
+    | ({ type: "badge"; text?: TextValue } & BadgeSettings)
+    | ({ type: "progress" } & ProgressSettings)
     | {
         type: "audio";
         asset: string;
@@ -314,7 +334,16 @@ export interface BoardResolution {
   diagnostics: Diagnostic[];
 }
 export interface BoardEvent {
-  event: "board.reveal" | "board.place" | "board.move" | "board.replace" | "board.swap" | "board.remove" | "board.lock" | "board.unlock" | "board.summary";
+  event:
+    | "board.reveal"
+    | "board.place"
+    | "board.move"
+    | "board.replace"
+    | "board.swap"
+    | "board.remove"
+    | "board.lock"
+    | "board.unlock"
+    | "board.summary";
   frame: number;
   cardId?: string;
   participantId?: string;
@@ -331,7 +360,12 @@ export interface VideoScene {
   duration?: Time;
   settings?: Settings;
   nodes: VideoNode[];
-  transition?: { type: "none" | "fade" | "slide"; duration: Time };
+  transition?: {
+    type: TransitionName;
+    duration: Time;
+    direction?: MotionDirection;
+    color?: string;
+  };
   background?: string;
 }
 export interface AudioAnchor {
@@ -414,7 +448,9 @@ export interface VideoPreset {
   formatSettings?: VideoDocument["formatSettings"];
   scenes: VideoScene[];
   skeleton: {
-    roundCount: number; cardsPerRound: number; groupCount: number;
+    roundCount: number;
+    cardsPerRound: number;
+    groupCount: number;
     boards?: { sceneId: string; roundCount: number; cardsPerRound: number }[];
   };
   audio?: {
@@ -446,6 +482,15 @@ export interface CompiledAnimation {
   keyframes: { frame: number; value: number }[];
 }
 export interface CompiledNode {
+  motion?: CompiledMotion[];
+  timer?: Required<TimerSettings>;
+  versus?: Required<VersusSettings>;
+  badge?: BadgeSettings;
+  /** Progress time is scene-local. Video scope uses from=-scene.from and final video duration. */
+  progress?: Required<ProgressSettings> & {
+    from: number;
+    durationInFrames: number;
+  };
   id: string;
   type:
     | "container"
@@ -455,7 +500,10 @@ export interface CompiledNode {
     | "video"
     | "card"
     | "timer"
-    | "group";
+    | "group"
+    | "versus"
+    | "badge"
+    | "progress";
   parentId?: string;
   rect: Rect;
   layer: number;
@@ -487,6 +535,7 @@ export interface CompiledNode {
   timerFrames?: number;
 }
 export interface CompiledScene {
+  backdrop?: CompiledBackdrop;
   segmentId?: string;
   segmentTitle?: string;
   id: string;
@@ -504,7 +553,12 @@ export interface CompiledScene {
     timerStartFrame?: number;
     answerStartFrame?: number;
   };
-  transition: { type: "none" | "fade" | "slide"; durationInFrames: number };
+  transition: {
+    type: TransitionName;
+    durationInFrames: number;
+    direction?: MotionDirection;
+    color?: string;
+  };
 }
 export interface CompiledAudio {
   id: string;

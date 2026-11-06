@@ -31,10 +31,20 @@ import {
   playerAudioSync,
   playerMediaSync,
   transitionAt,
+  legacyExitReplaced,
 } from "./studio-frame";
 import { imageDecoded } from "./image-ready";
 import { playerPremountFrames } from "./premount";
 import { gradientToCss, shadowToCss } from "./studio-paint";
+import { MotionBackdrop } from "./MotionBackdrop";
+import { MotionText } from "./MotionText";
+import {
+  MotionBadge,
+  MotionProgress,
+  MotionTimer,
+  MotionVersus,
+} from "./MotionWidgets";
+import { isAdjacentTransition, transitionLayers } from "./motion-frame";
 
 export interface StudioVideoProps {
   plan: CompiledVideo;
@@ -52,7 +62,8 @@ const Media: React.FC<{
   frame: number;
   mode: AssetMode;
   heldFrame?: number;
-}> = ({ node, frame, mode, heldFrame }) => {
+  freeze?: boolean;
+}> = ({ node, frame, mode, heldFrame, freeze }) => {
   const { isPlayer } = useRemotionEnvironment();
   const { fps } = useVideoConfig();
   const media = node.media;
@@ -61,7 +72,11 @@ const Media: React.FC<{
   const source = resolveAsset(media.asset.src, mode);
   const playback =
     isPlayer && media.asset.kind === "video"
-      ? nativePlaybackAt(node, frame, heldFrame)
+      ? nativePlaybackAt(
+          node,
+          frame,
+          freeze ? (heldFrame ?? mediaFrameAt(node, frame)) : heldFrame,
+        )
       : undefined;
   const advancing =
     playback?.type === "play" ? (
@@ -85,7 +100,7 @@ const Media: React.FC<{
           pauseWhenLoading={!imageDecoded(source)}
           style={layout.source}
         />
-      ) : outsideActive && media.asset.posterSrc ? (
+      ) : !freeze && outsideActive && media.asset.posterSrc ? (
         <Img
           src={resolveAsset(media.asset.posterSrc, mode)}
           pauseWhenLoading={
@@ -180,7 +195,23 @@ export const StudioSceneFrame: React.FC<{
   height: number;
   assetMode: AssetMode;
   heldFrames?: Record<string, number>;
-}> = ({ scene, frame, fps, width, height, assetMode, heldFrames }) => {
+  seed?: number;
+  freezeMedia?: boolean;
+  disableTransition?: boolean;
+  suppressTransitionExit?: boolean;
+}> = ({
+  scene,
+  frame,
+  fps,
+  width,
+  height,
+  assetMode,
+  heldFrames,
+  seed = 1,
+  freezeMedia,
+  disableTransition,
+  suppressTransitionExit,
+}) => {
   const children = new Map<string | undefined, CompiledNode[]>();
   for (const node of [...scene.nodes].sort((a, b) => a.layer - b.layer)) {
     const siblings = children.get(node.parentId) ?? [];
@@ -200,7 +231,11 @@ export const StudioSceneFrame: React.FC<{
     const framed = card || group;
     const fontSize =
       style.fontSize ??
-      Math.max(18, Math.min(48, rect.width * 0.07, rect.height * 0.16));
+      (node.type === "versus"
+        ? Math.max(18, Math.min(rect.width * 0.38, rect.height * 0.6))
+        : node.type === "badge"
+          ? Math.max(18, Math.min(rect.width * 0.2, rect.height * 0.55))
+          : Math.max(18, Math.min(48, rect.width * 0.07, rect.height * 0.16)));
     const textStyle: React.CSSProperties = {
       color: style.color ?? "white",
       fontSize,
@@ -213,18 +248,28 @@ export const StudioSceneFrame: React.FC<{
     const label = `${node.showRank && node.rank !== undefined ? `#${node.rank} ` : ""}${node.label ?? ""}`;
     const textPadding = Math.min(20, rect.width * 0.03);
     const text =
-      node.type === "timer" ? String(state.countdown) : (node.text ?? "");
+      node.type === "timer"
+        ? String(state.countdown)
+        : node.type === "versus"
+          ? "VS"
+          : (node.text ?? "");
     const labelSize = fitTextSize(
       label,
       Math.max(1, rect.width - 46),
       Math.max(1, rect.height * 0.5 - 18),
       fontSize,
     );
-    const textSize = fitTextSize(
-      text,
-      Math.max(1, rect.width - textPadding * 2),
-      Math.max(1, rect.height - textPadding * 2),
-      fontSize,
+    const textSize = Math.min(
+      fitTextSize(
+        text,
+        Math.max(1, rect.width - textPadding * 2),
+        Math.max(1, rect.height - textPadding * 2),
+        fontSize,
+      ),
+      // VS is a single mark: prevent the generic fitter from wrapping V/S.
+      node.type === "versus"
+        ? Math.max(1, rect.width - textPadding * 2) / (text.length * 0.72)
+        : Infinity,
     );
     return (
       <div
@@ -239,121 +284,209 @@ export const StudioSceneFrame: React.FC<{
           height: rect.height,
           opacity:
             state.opacity * (framed && answerPhase && !state.answer ? 0.25 : 1),
-          transform: `translate(${state.x}px, ${state.y}px) rotate(${state.rotate}deg) scale(${state.scale * (state.answer ? 1.05 : 1)})`,
+          transform: `translate(${state.x}px, ${state.y}px) rotate(${state.rotate}deg) scale(${state.scale * (state.answer ? 1.05 : 1)})${state.rotateX || state.rotateY ? ` perspective(1200px) rotateX(${state.rotateX}deg) rotateY(${state.rotateY}deg)` : ""}${state.scaleX !== 1 || state.scaleY !== 1 ? ` scale(${state.scaleX}, ${state.scaleY})` : ""}`,
           transformOrigin: "center",
           zIndex: node.layer,
           filter:
-            (node.type === "image" ||
-              node.type === "video" ||
-              node.type === "card") &&
-            style.blur
-              ? `blur(${style.blur}px)`
-              : undefined,
+            [
+              (node.type === "image" || node.type === "video" || card
+                ? (style.blur ?? 0)
+                : 0) + state.blur
+                ? `blur(${(node.type === "image" || node.type === "video" || card ? (style.blur ?? 0) : 0) + state.blur}px)`
+                : undefined,
+              state.brightness !== 1
+                ? `brightness(${state.brightness})`
+                : undefined,
+              state.glow
+                ? `drop-shadow(0 0 ${state.glow}px ${style.color ?? "#ffd166"})`
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined,
+          outline: state.outline
+            ? `${state.outline}px solid ${style.color ?? "#ffd166"}`
+            : undefined,
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            boxSizing: "border-box",
-            overflow: node.type === "container" ? "visible" : "hidden",
-            borderRadius: style.borderRadius ?? (framed ? 18 : 0),
-            background:
-              style.background ??
-              (card ? "#19243a" : group ? "rgba(255,255,255,0.06)" : undefined),
-            backgroundImage: gradientToCss(style.gradient),
-            border: `${state.answer ? Math.max(5, style.borderWidth ?? 0) : (style.borderWidth ?? (framed ? 2 : 0))}px solid ${state.answer ? GOLD : (style.borderColor ?? "#596b8c")}`,
-            boxShadow:
-              [
-                state.answer ? `0 0 30px ${GOLD}80` : undefined,
-                shadowToCss(style.shadow),
-              ]
-                .filter(Boolean)
-                .join(", ") || undefined,
-          }}
-        >
-          {node.type === "shape" ? <Shape node={node} /> : null}
-          {node.media ? (
-            <Media
-              node={node}
-              frame={frame}
-              mode={assetMode}
-              heldFrame={heldFrames?.[node.id]}
-            />
-          ) : null}
-          {card && !node.media ? (
-            <AbsoluteFill
+        {state.masks.reduceRight<React.ReactNode>(
+          (content, mask) => (
+            <div style={{ position: "absolute", inset: 0, clipPath: mask }}>
+              {content}
+            </div>
+          ),
+          <>
+            <div
               style={{
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#9cadcb",
-                fontSize: Math.min(rect.width, rect.height) * 0.3,
-              }}
-            >
-              {node.showRank && node.rank !== undefined ? `#${node.rank}` : "◇"}
-            </AbsoluteFill>
-          ) : null}
-          {node.type === "text" || node.type === "timer" ? (
-            <AbsoluteFill
-              style={{
-                ...textStyle,
-                fontSize: textSize,
-                alignItems: "center",
-                justifyContent: "center",
-                padding: textPadding,
+                position: "absolute",
+                inset: 0,
                 boxSizing: "border-box",
+                overflow: node.type === "container" ? "visible" : "hidden",
+                borderRadius: style.borderRadius ?? (framed ? 18 : 0),
+                background:
+                  style.background ??
+                  (card
+                    ? "#19243a"
+                    : group
+                      ? "rgba(255,255,255,0.06)"
+                      : undefined),
+                backgroundImage: gradientToCss(style.gradient),
+                border: `${state.answer ? Math.max(5, style.borderWidth ?? 0) : (style.borderWidth ?? (framed ? 2 : 0))}px solid ${state.answer ? GOLD : (style.borderColor ?? "#596b8c")}`,
+                boxShadow:
+                  [
+                    state.answer ? `0 0 30px ${GOLD}80` : undefined,
+                    shadowToCss(style.shadow),
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || undefined,
               }}
             >
-              {node.type === "timer" ? state.countdown : node.text}
-            </AbsoluteFill>
-          ) : null}
-          {group ? (
-            <div
-              style={{
-                ...textStyle,
-                position: "absolute",
-                top: 12,
-                left: 12,
-                right: 12,
-                fontSize: fitTextSize(
-                  node.text ?? "",
-                  rect.width - 24,
-                  rect.height * 0.14 - 12,
-                  Math.min(fontSize, rect.height * 0.1),
-                ),
-              }}
-            >
-              {node.text}
+              {node.type === "shape" ? <Shape node={node} /> : null}
+              {node.media ? (
+                <Media
+                  node={node}
+                  frame={frame}
+                  mode={assetMode}
+                  heldFrame={heldFrames?.[node.id]}
+                  freeze={freezeMedia}
+                />
+              ) : null}
+              {card && !node.media ? (
+                <AbsoluteFill
+                  style={{
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#9cadcb",
+                    fontSize: Math.min(rect.width, rect.height) * 0.3,
+                  }}
+                >
+                  {node.showRank && node.rank !== undefined
+                    ? `#${node.rank}`
+                    : "◇"}
+                </AbsoluteFill>
+              ) : null}
+              {["text", "timer", "versus", "badge", "progress"].includes(
+                node.type,
+              ) ? (
+                <AbsoluteFill
+                  style={{
+                    ...textStyle,
+                    fontSize: textSize,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: textPadding,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {node.type === "timer" ? (
+                    <MotionTimer node={node} frame={frame} fps={fps} />
+                  ) : node.type === "versus" ? (
+                    <MotionVersus node={node} />
+                  ) : node.type === "progress" ? (
+                    <MotionProgress node={node} frame={frame} />
+                  ) : node.type === "badge" ? (
+                    <MotionBadge node={node}>
+                      <MotionText
+                        text={text}
+                        motions={node.motion}
+                        frame={frame}
+                        fps={fps}
+                      />
+                    </MotionBadge>
+                  ) : (
+                    <MotionText
+                      text={text}
+                      motions={node.motion}
+                      frame={frame}
+                      fps={fps}
+                    />
+                  )}
+                </AbsoluteFill>
+              ) : null}
+              {group ? (
+                <div
+                  style={{
+                    ...textStyle,
+                    position: "absolute",
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    fontSize: fitTextSize(
+                      node.text ?? "",
+                      rect.width - 24,
+                      rect.height * 0.14 - 12,
+                      Math.min(fontSize, rect.height * 0.1),
+                    ),
+                  }}
+                >
+                  {node.text}
+                </div>
+              ) : null}
+              {card && state.labelVisible && label ? (
+                <div
+                  style={{
+                    ...textStyle,
+                    fontSize: labelSize,
+                    position: "absolute",
+                    bottom: 10,
+                    left: 10,
+                    right: 10,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    background: "rgba(7,12,22,0.88)",
+                    border: `1px solid ${state.answer ? GOLD : "#7c9cff"}`,
+                  }}
+                >
+                  {label}
+                </div>
+              ) : null}
+              {state.shimmer >= 0 ? (
+                <AbsoluteFill
+                  style={{
+                    background: `linear-gradient(110deg,transparent ${state.shimmer * 140 - 40}%,#ffffff66 ${state.shimmer * 140 - 20}%,transparent ${state.shimmer * 140}%)`,
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : null}
+              {state.spotlight ? (
+                <AbsoluteFill
+                  style={{
+                    background: `radial-gradient(circle at 50% 40%,#ffffff88,transparent 70%)`,
+                    opacity: state.spotlight,
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : null}
+              {state.strike ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: "50%",
+                    height: 5,
+                    background: style.color ?? "#ffd166",
+                    transform: `rotate(-12deg) scaleX(${state.strike})`,
+                    boxShadow: "0 0 12px #fff",
+                  }}
+                />
+              ) : null}
             </div>
-          ) : null}
-          {card && state.labelVisible && label ? (
-            <div
-              style={{
-                ...textStyle,
-                fontSize: labelSize,
-                position: "absolute",
-                bottom: 10,
-                left: 10,
-                right: 10,
-                padding: "8px 12px",
-                borderRadius: 10,
-                background: "rgba(7,12,22,0.88)",
-                border: `1px solid ${state.answer ? GOLD : "#7c9cff"}`,
-              }}
-            >
-              {label}
-            </div>
-          ) : null}
-        </div>
-        {(children.get(node.id) ?? []).map((child) => renderNode(child, rect))}
+            {(children.get(node.id) ?? []).map((child) =>
+              renderNode(child, rect),
+            )}
+          </>,
+        )}
       </div>
     );
   };
   const transition = transitionAt(
-    scene.transition,
+    disableTransition
+      ? { type: "none", durationInFrames: 0 }
+      : scene.transition,
     frame,
     scene.durationInFrames,
     width,
+    suppressTransitionExit,
   );
   return (
     <div
@@ -368,6 +501,36 @@ export const StudioSceneFrame: React.FC<{
         transform: `translateX(${transition.x}px)`,
       }}
     >
+      {scene.backdrop ? (
+        <MotionBackdrop
+          backdrop={scene.backdrop}
+          frame={frame}
+          fps={fps}
+          seed={seed}
+          renderMedia={(media, from, to) => (
+            <Media
+              node={{
+                id: `backdrop-${from}`,
+                type: "video",
+                rect: { x: 0, y: 0, width, height },
+                layer: 0,
+                from,
+                durationInFrames: to - from,
+                visible: [{ from, to }],
+                style: {},
+                opacity: 1,
+                rotate: 0,
+                scale: 1,
+                animation: [],
+                media,
+              }}
+              frame={frame}
+              mode={assetMode}
+              freeze={freezeMedia}
+            />
+          )}
+        />
+      ) : null}
       {(children.get(undefined) ?? []).map((node) => renderNode(node))}
     </div>
   );
@@ -377,17 +540,60 @@ const Scene: React.FC<{
   scene: CompiledScene;
   plan: CompiledVideo;
   mode: AssetMode;
-}> = ({ scene, plan, mode }) => (
-  <StudioSceneFrame
-    scene={scene}
-    frame={useCurrentFrame()}
-    fps={plan.fps}
-    width={plan.width}
-    height={plan.height}
-    assetMode={mode}
-    heldFrames={answerCardFrames(scene, plan.scenes)}
-  />
-);
+}> = ({ scene, plan, mode }) => {
+  const frame = useCurrentFrame();
+  const previous = plan.scenes.find(
+    (candidate) =>
+      candidate.durationInFrames > 0 &&
+      candidate.from + candidate.durationInFrames === scene.from,
+  );
+  const layers = transitionLayers(
+    scene.transition,
+    frame,
+    scene.durationInFrames,
+    plan.width,
+    plan.height,
+  );
+  const render = (target: CompiledScene, localFrame: number, held = false) => (
+    <StudioSceneFrame
+      scene={target}
+      frame={localFrame}
+      fps={plan.fps}
+      width={plan.width}
+      height={plan.height}
+      assetMode={mode}
+      heldFrames={answerCardFrames(target, plan.scenes)}
+      seed={plan.seed}
+      freezeMedia={held}
+      disableTransition={held || isAdjacentTransition(scene.transition.type)}
+      suppressTransitionExit={legacyExitReplaced(
+        target,
+        plan.scenes.find(
+          (candidate) =>
+            candidate.durationInFrames > 0 &&
+            candidate.from === target.from + target.durationInFrames,
+        ),
+      )}
+    />
+  );
+  if (!isAdjacentTransition(scene.transition.type) || !layers.active)
+    return render(scene, frame);
+  return (
+    <AbsoluteFill style={{ overflow: "hidden", background: scene.background }}>
+      {previous ? (
+        <AbsoluteFill style={layers.outgoing}>
+          <Freeze frame={0}>
+            {render(previous, previous.durationInFrames - 1, true)}
+          </Freeze>
+        </AbsoluteFill>
+      ) : null}
+      <AbsoluteFill style={layers.incoming}>
+        {render(scene, frame)}
+      </AbsoluteFill>
+      {layers.overlay ? <AbsoluteFill style={layers.overlay} /> : null}
+    </AbsoluteFill>
+  );
+};
 
 const AudioCue: React.FC<{ cue: CompiledAudio; mode: AssetMode }> = ({
   cue,

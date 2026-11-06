@@ -1,3 +1,4 @@
+import { applySceneMotion } from "./motion-compiler";
 import {
   preflightVideoResources,
   videoResourceLimits,
@@ -201,6 +202,13 @@ function compileDocument(
       }
     }
     plan.durationInFrames = Math.max(1, cursor);
+    for (const scene of plan.scenes)
+      for (const node of scene.nodes) {
+        if (node.progress?.scope === "video") {
+          node.progress.from = -scene.from;
+          node.progress.durationInFrames = plan.durationInFrames;
+        }
+      }
     const ctx: CompileContext = {
       document,
       manifest: assets.data,
@@ -376,6 +384,18 @@ function compileDocument(
           participant?.settings,
         ).card?.playSound,
       );
+      applySceneMotion(
+        ctx,
+        scene,
+        template,
+        effectiveSettings(
+          ctx,
+          settings,
+          round?.settings,
+          participant?.settings,
+        ),
+        round,
+      );
       scene.nodes.sort((a, b) => a.layer - b.layer);
       for (const n of scene.nodes) {
         if (
@@ -460,6 +480,13 @@ function compileDocument(
     );
   plan.durationInFrames = Math.max(1, cursor);
   compileGlobalAudio(ctx, plan.durationInFrames, muteWindows, plan.scenes);
+  for (const scene of plan.scenes)
+    for (const node of scene.nodes) {
+      if (node.progress?.scope === "video") {
+        node.progress.from = -scene.from;
+        node.progress.durationInFrames = plan.durationInFrames;
+      }
+    }
   return {
     plan: JSON.parse(JSON.stringify(plan)) as CompiledVideo,
     diagnostics: ctx.diagnostics,

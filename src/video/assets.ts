@@ -5,7 +5,10 @@ export function collectVideoAssetKeys(document: VideoDocument): string[] {
   const add = (key: string | null | undefined) => {
     if (key && !key.startsWith("$")) keys.add(key);
   };
-  const settings = (value: Settings | undefined) => add(value?.picker?.tick);
+  const settings = (value: Settings | undefined) => {
+    add(value?.picker?.tick);
+    add(value?.backdrop?.asset);
+  };
   const nodes = (items: VideoNode[]) =>
     items.forEach((node) => {
       if (node.type === "container") nodes(node.children);
@@ -41,7 +44,11 @@ export function collectVideoAssetKeys(document: VideoDocument): string[] {
     ...document.scenes,
     ...(document.segments ?? []).flatMap((s) => s.scenes),
   ].forEach((s) => {
-    s.board?.slots.forEach((slot) => { add(slot.image); add(slot.backgroundAsset); add(slot.sound); });
+    s.board?.slots.forEach((slot) => {
+      add(slot.image);
+      add(slot.backgroundAsset);
+      add(slot.sound);
+    });
     s.board?.rounds.forEach((r) => r.actions.forEach((a) => add(a.sound)));
     add(s.background);
     settings(s.settings);

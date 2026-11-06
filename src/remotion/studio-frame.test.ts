@@ -15,6 +15,7 @@ import {
   playerMediaSync,
   mediaLayout,
   transitionAt,
+  legacyExitReplaced,
   answerCardFrames,
   fitTextSize,
 } from "./studio-frame";
@@ -511,4 +512,100 @@ describe("native media timeline synchronization", () => {
     expect(playerPremountFrames(30)).toBe(60);
     expect(playerPremountFrames(25)).toBe(50);
   });
+});
+
+it("sizes new versus and badge widgets from geometry and fits the actual VS text", () => {
+  const font = (n: CompiledNode) =>
+    Number(html(scene([n]), 20).match(/font-size:([\d.]+)px/)?.[1]);
+  const vs = node({
+    type: "versus",
+    rect: { x: 0, y: 0, width: 307, height: 194 },
+    versus: { variant: "impact", color: "#ffd166" },
+    text: undefined,
+    style: {},
+  });
+  const badge = node({
+    type: "badge",
+    rect: { x: 0, y: 0, width: 240, height: 100 },
+    badge: { kind: "winner" },
+    text: "Winner",
+    style: {},
+  });
+  expect(font(vs)).toBeGreaterThanOrEqual(90);
+  expect(font(vs)).toBeLessThanOrEqual(120);
+  expect(font(badge)).toBeGreaterThanOrEqual(40);
+  expect(font({ ...vs, style: { fontSize: 34 } })).toBe(34);
+  expect(font({ ...badge, style: { fontSize: 34 } })).toBe(34);
+  // Long narrow VS must fit its actual two letters, rather than the empty node.text.
+  expect(
+    font({
+      ...vs,
+      rect: { x: 0, y: 0, width: 80, height: 194 },
+      style: { fontSize: 100 },
+    }),
+  ).toBeLessThan(80);
+  for (const type of ["text", "timer", "card"] as const) {
+    const n = { ...vs, type, text: "A" };
+    const expected = Math.max(18, Math.min(48, 307 * 0.07, 194 * 0.16));
+    if (type !== "card") expect(font(n)).toBe(expected);
+  }
+});
+
+it.each(["fade", "slide"] as const)(
+  "preserves %s enter and hands only exit to a positive adjacent transition",
+  (type) => {
+    const transition = { type, durationInFrames: 10 };
+    expect(transitionAt(transition, 5, 100, 640, true)).toEqual(
+      type === "fade" ? { opacity: 0.5, x: 0 } : { opacity: 1, x: 320 },
+    );
+    expect(transitionAt(transition, 99, 100, 640, true)).toEqual({
+      opacity: 1,
+      x: 0,
+    });
+    expect(transitionAt(transition, 99, 100, 640)).toEqual(
+      type === "fade" ? { opacity: 0.1, x: 0 } : { opacity: 1, x: -576 },
+    );
+    const markup = renderToStaticMarkup(
+      React.createElement(StudioSceneFrame, {
+        scene: { ...scene([]), transition },
+        frame: 99,
+        fps: 30,
+        width: 640,
+        height: 360,
+        assetMode: "url",
+        suppressTransitionExit: true,
+      }),
+    );
+    expect(markup).toContain("opacity:1;transform:translateX(0px)");
+  },
+);
+it("hands legacy exit over only at contiguous positive new transitions, including one frame", () => {
+  const previous = {
+    ...scene([]),
+    from: 0,
+    transition: { type: "fade" as const, durationInFrames: 10 },
+  };
+  const next = {
+    ...scene([]),
+    from: 100,
+    transition: { type: "push" as const, durationInFrames: 1 },
+  };
+  expect(legacyExitReplaced(previous, next)).toBe(true);
+  expect(legacyExitReplaced(previous, { ...next, from: 101 })).toBe(false);
+  expect(legacyExitReplaced(previous, { ...next, durationInFrames: 0 })).toBe(
+    false,
+  );
+  expect(
+    legacyExitReplaced(previous, {
+      ...next,
+      transition: { type: "push", durationInFrames: 0 },
+    }),
+  ).toBe(false);
+  expect(
+    legacyExitReplaced(previous, {
+      ...next,
+      transition: { type: "slide", durationInFrames: 10 },
+    }),
+  ).toBe(false);
+  expect(legacyExitReplaced(previous, undefined)).toBe(false);
 });

@@ -93,3 +93,57 @@ it("renders blur for image, video and card visuals", () => {
   expect(output).toContain("filter:blur(6px)");
   expect(output).toContain("filter:blur(8px)");
 }, 15_000);
+
+it("holds outgoing last frames for all new transitions across scene and segment boundaries", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      `
+    import React from "react";
+    import {renderToString} from "react-dom/server";
+    import {Player} from "@remotion/player";
+    import {StudioVideo} from "./src/remotion/StudioVideo.tsx";
+    import {plan,videoNode} from "./src/watch/fixtures.ts";
+    const node=videoNode({from:0,durationInFrames:60,visible:[{from:0,to:60}],animation:[{property:'x',easing:'linear',keyframes:[{frame:0,value:0},{frame:59,value:59}]}]});
+    node.media.asset.src='https://media.invalid/previous.mp4';
+    node.media.asset.posterSrc='https://media.invalid/poster.jpg';
+    const previous={id:'previous',segmentId:'a',kind:'custom',from:0,durationInFrames:60,background:'#000',nodes:[node],phases:{},transition:{type:'fade',durationInFrames:10}};
+    const result=[];
+    for(const type of ['wipe','zoom','push','flash','iris','split','blur','crossfade']) {
+      const next={...previous,id:'next',segmentId:'b',from:60,durationInFrames:50,nodes:[],transition:{type,durationInFrames:11}};
+      const video=plan({durationInFrames:110,scenes:[previous,next]});
+      const frames=[60,65,70,71,65].map(initialFrame=>{
+        const html=renderToString(React.createElement(Player,{acknowledgeRemotionLicense:true,component:StudioVideo,inputProps:{plan:video},compositionWidth:video.width,compositionHeight:video.height,fps:video.fps,durationInFrames:video.durationInFrames,initialFrame}));
+        return {sources:[...html.matchAll(/<video[^>]*src="([^"]+)"/g)].map(m=>m[1]),lastPosition:html.includes('translate(59px, 0px)'),poster:html.includes('src="https://media.invalid/poster.jpg"')};
+      });
+      const first=plan({durationInFrames:50,scenes:[{...next,from:0}]});
+      const firstHtml=renderToString(React.createElement(Player,{acknowledgeRemotionLicense:true,component:StudioVideo,inputProps:{plan:first},compositionWidth:first.width,compositionHeight:first.height,fps:first.fps,durationInFrames:first.durationInFrames}));
+      result.push({type,frames,firstInvalid:/NaN|Infinity/.test(firstHtml)});
+    }
+    console.log(JSON.stringify(result));
+  `,
+    ],
+    { env: { ...process.env, NODE_ENV: "production" }, encoding: "utf8" },
+  );
+  const result = JSON.parse(output) as {
+    type: string;
+    frames: { sources: string[]; lastPosition: boolean; poster: boolean }[];
+    firstInvalid: boolean;
+  }[];
+  for (const { frames, firstInvalid } of result) {
+    expect(firstInvalid).toBe(false);
+    for (const index of [0, 1, 2, 4]) {
+      expect(frames[index].sources).toEqual(frames[0].sources);
+      expect(frames[index].lastPosition).toBe(true);
+      expect(frames[index].poster).toBe(false);
+      expect(
+        Number(frames[index].sources[0].split("#t=")[1].split(",")[0]),
+      ).toBeCloseTo(149 / 30, 2);
+    }
+    expect(frames[3].sources).toEqual([]);
+  }
+}, 15000);
