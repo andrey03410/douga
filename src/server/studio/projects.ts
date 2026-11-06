@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
+import { buildVideoContent, type VideoContentInput } from "@/video/content";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
@@ -486,6 +487,27 @@ export async function applyStudioTypographyDraft(
     document: applyTypographyTheme(editableDocument(current), input.theme, { scope: input.scope, mode: input.mode }),
   }));
 }
+/** Semantic content shares the normal evaluation/reference/CAS/receipt path. */
+export async function applyStudioContentDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string; content: VideoContentInput },
+) {
+  return writeDraft(userId, id, input, requestHash(`content:${id}`, input), current => ({
+    document: buildVideoContent(editableDocument(current), input.content),
+  }), { reconcile: false, requireReady: true });
+}
+/** Internal server adapter. Identity must contain all trusted transform inputs. */
+export async function transformStudioDraft(
+  userId: string,
+  id: string,
+  input: { expectedVersion: number; idempotencyKey?: string; identity: unknown },
+  transform: (document: VideoDocument) => VideoDocument,
+) {
+  return writeDraft(userId, id, input, requestHash(`transform:${id}`, input), current => ({
+    document: parseVideoDocument(transform(editableDocument(current))),
+  }), { reconcile: false });
+}
 function editableDocument(current: StudioProjectView) {
   const parsed = videoDocumentSchema.safeParse(
     current.draft ? current.draft.document : current.document,
@@ -505,6 +527,7 @@ async function writeDraft(
   ) =>
     | { document?: unknown; text?: string }
     | Promise<{ document?: unknown; text?: string }>,
+  options: { reconcile?: boolean; requireReady?: boolean } = {},
 ): Promise<StudioProjectView> {
   await owned(userId, id);
   const old = await replay<StudioProjectView>(
@@ -514,7 +537,9 @@ async function writeDraft(
     request,
   );
   if (old) return old;
-  const current = await getStudioProject(userId, id);
+  const current = options.reconcile === false
+    ? await view(await owned(userId, id))
+    : await getStudioProject(userId, id);
   if (current.version !== input.expectedVersion) {
     // An identical in-flight operation may have committed while get reconciled.
     const replayed = await replay<StudioProjectView>(
@@ -530,11 +555,13 @@ async function writeDraft(
   let text = replacement.text ?? jsonText(replacement.document);
   let value = parseDraft(text);
   const parsed = videoDocumentSchema.safeParse(value);
-  if (parsed.success) {
+  if (parsed.success && options.reconcile !== false) {
     value = await reconcileSource(userId, parsed.data);
     text = jsonText(value);
   }
   const result = await evaluate(userId, value);
+  if (options.requireReady && !result.validation.ready)
+    throw new StudioError("VALIDATION_FAILED", result.validation.diagnostics);
   return prisma.$transaction(async (db) => {
     await owned(userId, id, db);
     const old = await replay<StudioProjectView>(
