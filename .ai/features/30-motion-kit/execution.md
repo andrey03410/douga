@@ -151,3 +151,68 @@ QG1 complete на1e2abe0:1129/1129,91files,374.13s;build0;tsc0 emptylog.
 стык legacy fade/slide → new adjacent transition (SSR-only white probe
 не воспроизвёл, actual renderStill probe запущен отдельно). Не менять src до
 заключения review; при подтверждении все findings одним fix wave.
+
+Final broad review на9bbc328: Ready With fixes,3Important,0Critical/Minor,
+Declined to judge пусто (review.md). FR01 active backdrop key remount B;
+FR02 legacy exit→new seam jump (actual RGB33→255); FR03 acceptedcardId silentlyignored.
+Все переданы одной final fix wave, brief agents/final-fix-brief.md. Root решил:
+FR02 подавлять только legacy exit при смежном новом duration>0, сохранять все
+old-only paths; FR03 поддержать card.reveal.cardId и диагностировать остальные
+неприменимые selectors, board selectors без изменений. Тройку после fixes повторить.
+
+### Следующий порядок после final fix wave
+
+- Agent `/root/final_fixes` (fresh gpt-6.1-sol/high) выполняет весь brief, base9bbc328.
+- Дождаться source commit/report; проверить RED/GREEN и targeted/tsc evidence.
+- Один scoped re-review через `/root/final_review` по fixdiff; без нового whole review.
+- Обновить docs по решениям FR02/FR03, повторить полный QG на новом source.
+- Пересобрать собственный showcase, новый MCP render в отдельный output (например
+  mcp-verified), fresh real frames/audio; выполнить regression probes FR01/02/03.
+  Source iframe/gallery/watch/offline уже проверены до wave, нужные новые края
+  доказать live после fixes. Не менять src во время полного QG.
+- После чистого review/QG push, PR30:Моушен-кит VideoSDK; stage review; затем
+  history/stage merged, merge commit/delete branch, main/pull. Автономность действует.
+- Repo andrey03410/douga; actions workflows=[]; merge commits разрешены;
+  origin/main совпадал с main при последнем fetch. Никакого worktree.
+
+### Final fix wave complete, QG2 running
+
+Source5a92ab0,8files288insertions/15deletions; report agents/final-fix-report.md.
+RED11→GREEN263/9files,tsc0. Live FR01 nativeDOM sameB/connected=true в обе
+стороны; FR02 actualrenderStill6cases36captures + mountedPlayer6cases/reverse
+seek,videoheld34/30; FR03 selected30/offset35/unknown+unsupported errors.
+Legacy повтор:285JSON/5RGBA exact. Source/live работу исполнитель завершил.
+Root запустил QG2 test→build→tsc на неподвижном5a92ab0, session97407,
+логи qg2-*.log.3000 свободен. Параллельно только read-only scoped re-review
+через final_review; пакет agents/final-fix-review.diff. Source до конца QG не менять.
+Docs productP04/techT04/sdk-guide/render/studio-sdk отражают все3решения.
+
+Final scoped re-review: PASS,FR01/02/03 ADDRESSED,Spec✅/QualityApproved,
+новых findings0; agents/final-rereview.md. Source5a92ab0 unchanged.
+QG2 ещё идёт; после него fresh MCP render/watch/offline и merge.
+
+QG2 complete на source5a92ab0:1142/1142,91files,359.83s; build0;tsc0
+(пустойлог). Session97407 exit0, source неизменен. Evidence qg2-*.log.
+Root повторяет весь realMCP67entries/12recipes и новый fullrender mcp-verified
+с freshframes/audio; предыдущие outputs не перезаписываются. Далее dev+UI.
+
+Повтор realMCP на5a92ab0 passed67entries/12recipes, mcp-verified.log +
+mcp-probe.json. Source5a92ab0 остаётся неизменным. Во время scopedrender
+Remotion child занял3000; own dev fallback3001 остановлен (ownPIDs only),
+чужие процессы не тронуты. Dev для финального UI запускать после окончания
+render и явной проверки свободного3000.
+
+Fresh actual MCP MP4 на5a92ab0: mcp-verified/artifact.mp4,1920×1080,30fps,
+1569frames/52.3s,11971842bytes,SHA b315782e272f7b91012be78ff9cb908d0c4ebc02844d4ea7ba97447eeaef963d,
+первыйattempt/downloadVerified=true. Root viewed30frames(contactsheet) и отдельно
+frame004text/frame013VS. DecodedPCM2512896,RMS−38.65dB,SHAab4b55...идентичен
+прошломуaudio. Render+extract session23168 exit0. Renderer освободил3000;
+own dev стартовал на свободном3000,session17305,serverPID4757,logdev-final-ui.log.
+Fresh browserverified+gallery session82059; после finish остановить own dev.
+
+Final UI current5a92ab0 passed: browser-verified.mjs→verified-browser-result.json,
+watch/offline end1568/1568,reverse150,errors0,offline8201921bytes/networkoff.
+Gallery fresh5categories/profile/intensity/variants/realclipboard/mobile390/0errors.
+Root viewed latest watch/mobile screenshots. Session82059 exit0. Own dev allPIDs
+terminated,session17305 expected143;3000/3001free. No generalworker/probes remain.
+Task4 complete: finalQG2/review/live passed. Task5 docs coherent; next commit/push/PR.

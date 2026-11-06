@@ -16,7 +16,11 @@
   соседние сцены wipe/zoom/push/flash/iris/split/blur/crossfade. Outgoing удерживает
   последний кадр и Freeze context (включая source frame видео), без собственного
   fade/slide и без повторного аудио. Временной разрыв не перескакивается.
-  Старые none/fade/slide сохраняют прежнюю математику.
+  Новый переход duration>0 у непосредственно следующей сцены заменяет только
+  legacy exit предыдущей: её enter сохраняется, стык не возвращает уже исчезнувший
+  контент. Duration0, разрыв, последняя сцена и legacy→legacy сохраняют старую математику.
+  Ключ backdrop layer берётся из исходного массива до active filtering: продолжающий
+  video слой не перемонтируется, когда соседний слой заканчивает crossfade.
 - У crossfade/zoom/blur outgoing непрозрачен под incoming до конца перехода:
   одновременные opacity .5/.5 дают провал покрытия и здесь запрещены.
   Цвет с alpha строится через `studio-paint.ts:colorWithAlpha`, а не добавлением

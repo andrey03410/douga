@@ -21,15 +21,16 @@ merged:
 - [x] Продукт — [product.md](product.md), принят расширенный объём; builder-check без вопросов
 - [x] Техника — [tech.md](tech.md), решения агента в автономном режиме
 - [x] План — [plan.md](plan.md)
-- [ ] Реализация и QG — `verify.md`
-- [ ] Проверка владельцем — автономный режим
+- [x] Реализация и QG — [verify.md](verify.md)
+- [x] Проверка владельцем — пропущена в автономном режиме; независимое ревью Approved
 - [ ] Влито
 
 ## Следующий шаг
 
-Реализация, живые проверки и итоговая тройка QG зелёные (1129тестов, build, tsc).
-Следующий шаг — свежее ревью всей ветки, PR и автономное вливание в main. Ход и evidence — в
-[execution.md](execution.md) и [verify.md](verify.md).
+Реализация, финальный QG (1142теста/build/tsc), настоящее MCP, MP4,
+Studio/watch/offline и галерея проверены на5a92ab0. Итоговое ревью Approved,
+все FR01–FR03 закрыты. Создать PR и автономно влить в main.
+Ход и evidence — в [execution.md](execution.md) и [verify.md](verify.md).
 
 ## Хвосты
 

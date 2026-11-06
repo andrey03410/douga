@@ -15,7 +15,9 @@
   `{name,duration?,delay?,intensity?,direction?,at?}`; `flip` нормализуется в `flip-y`.
 - `at:Time` отсчитывается от node.from; `{event,offset?}` — от scene-local события.
   События scene.start/card.reveal/timer.start/answer.reveal и board.*; board event
-  уточняется cardId/actionId/slotId. Недоступное событие — диагностическая ошибка.
+  уточняется cardId/actionId/slotId. У card.reveal допустим cardId текущей сцены;
+  остальные phase events selectors не принимают. Недоступное событие/карточка —
+  диагностическая ошибка, fallback на начало первого reveal запрещён.
 - Отсутствие наследует настройку, `null` выключает канал/хореографию/фон.
   Неявный global enter применяется к листьям. Собственный transform контейнера
   не копируется детям; container.motion.stagger задаёт локальный каскад их анимаций.

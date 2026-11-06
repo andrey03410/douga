@@ -115,7 +115,7 @@ authenticated `/studio/motion` с настоящим Remotion Player и копи
   screenshots и page errors. Исправления — через RED→GREEN.
 - [x] После последних правок `npm test` → `npm run build` → `npx tsc --noEmit`;
   проверить порт/процессы, писать полные логи в storage.
-- [ ] Свежий review всей ветки и устранение существенного; обновить verify.md.
+- [x] Свежий review всей ветки и устранение существенного; обновить verify.md.
 
 ### Task 5: Знания и вливание
 
