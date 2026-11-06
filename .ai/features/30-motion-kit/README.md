@@ -2,7 +2,7 @@
 id: 30
 title: Моушен-кит Video SDK
 track: product
-stage: product
+stage: tech
 branch: feat/30-motion-kit
 pr:
 started: 2026-11-06
@@ -18,7 +18,7 @@ merged:
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Продукт — `product.md`
+- [x] Продукт — [product.md](product.md), принят расширенный объём; builder-check без вопросов
 - [ ] Техника — `tech.md`
 - [ ] План — `plan.md`
 - [ ] Реализация и QG — `verify.md`
