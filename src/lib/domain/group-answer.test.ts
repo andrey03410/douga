@@ -3,10 +3,10 @@ import {
   MAX_GROUP_SIZE,
   clampGroupSize,
   decodeGroupAnswer,
-  plannedScreens,
   targetComparisonsPerItem,
   validateGroupAnswer,
 } from "./group-answer";
+import { plannedScreens } from "./engines";
 
 describe("clampGroupSize", () => {
   it("keeps a sane size as is", () => {

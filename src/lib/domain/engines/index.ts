@@ -1,57 +1,67 @@
-import type { Comparison, Pair, Progress, RankedItem, Scheme } from "../types";
+import type { Scheme } from "../types";
+import type { SchemeSettings } from "../scheme-settings";
+import { clampGroupSize } from "../group-answer";
 import { mergeEngine } from "./merge";
 import { swissEngine } from "./swiss";
 import { roundRobinEngine } from "./round-robin";
+import { insertionEngine } from "./insertion";
+import { topKEngine } from "./top-k";
+import { tiersEngine } from "./tiers";
+import { ratingEngine } from "./rating";
+import { bracketEngine } from "./bracket";
+import type { Engine } from "./types";
+
+export type { Engine, EngineInput, EngineResult, Question, UnplacedItem } from "./types";
 
 /**
- * A tournament engine decides which pairs to ask and how to rank the result.
- * Engines are PURE and RESUMABLE: every method derives its answer solely from the
- * item list plus the recorded comparison log, so a paused tournament resumes by
- * replaying the log — no hidden state to persist.
- *
- * `items` must always be passed in original (upload) order, used for tiebreaks.
+ * Task 33: eight engines behind one input object (Engine v2). Every engine is
+ * PURE and RESUMABLE: the next screen and the result follow from the active
+ * participants (upload order), the answer log, tiers and settings alone, so a
+ * paused run — or a run switched to another algorithm — resumes by replaying.
  */
-export interface Engine {
-  scheme: Scheme;
-  /** Largest group this engine can ask about at once (2 = pairs only). */
-  maxGroupSize: number;
-  /**
-   * Tracks to rank on the next screen, best-first once answered. Two or more
-   * items, never larger than `groupSize`; null when the tournament is complete.
-   */
-  nextQuestion(
-    items: string[],
-    comparisons: Comparison[],
-    groupSize: number,
-    /** Extra opponents per track bought by "one more round" (Swiss only). */
-    bonusOpponents?: number,
-  ): string[] | null;
-  /** Next pair to compare, or null when the tournament is complete. */
-  nextPair(items: string[], comparisons: Comparison[]): Pair | null;
-  isComplete(
-    items: string[],
-    comparisons: Comparison[],
-    bonusOpponents?: number,
-  ): boolean;
-  /** Final ranking, best -> worst. Valid once isComplete() is true. */
-  ranking(items: string[], comparisons: Comparison[]): RankedItem[];
-  progress(items: string[], comparisons: Comparison[], groupSize?: number): Progress;
-  /**
-   * Provisional standings mid-tournament, or null if the scheme has no meaningful
-   * intermediate ranking (e.g. comparison sort). Used to show a live preliminary top.
-   */
-  partialRanking(items: string[], comparisons: Comparison[]): RankedItem[] | null;
-}
+const ENGINES: Record<Scheme, Engine> = {
+  merge: mergeEngine,
+  swiss: swissEngine,
+  round_robin: roundRobinEngine,
+  insertion: insertionEngine,
+  top_k: topKEngine,
+  tiers: tiersEngine,
+  rating: ratingEngine,
+  bracket: bracketEngine,
+};
+
+export const ENGINE_SCHEMES = Object.keys(ENGINES) as Scheme[];
 
 export function createEngine(scheme: Scheme): Engine {
-  switch (scheme) {
-    case "merge":
-      return mergeEngine;
-    case "swiss":
-      return swissEngine;
-    case "round_robin":
-      return roundRobinEngine;
-  }
+  return ENGINES[scheme];
 }
 
-export { mergeEngine, swissEngine, roundRobinEngine };
+/** Group size in force for an engine and a field. */
+export function engineGroupSize(scheme: Scheme, requested: number, n: number): number {
+  return Math.min(clampGroupSize(requested, n), ENGINES[scheme].maxGroupSize);
+}
+
+/**
+ * Screens the run is expected to take, for the progress bar and the "how long
+ * will this take" estimate in the algorithm picker.
+ */
+export function plannedScreens(
+  scheme: Scheme,
+  n: number,
+  groupSize: number,
+  settings?: SchemeSettings,
+): number {
+  if (n <= 1 && scheme !== "tiers") return 0;
+  return ENGINES[scheme].plannedScreens(n, engineGroupSize(scheme, groupSize, n), settings);
+}
+
+export {
+  mergeEngine,
+  swissEngine,
+  roundRobinEngine,
+  insertionEngine,
+  topKEngine,
+  tiersEngine,
+  ratingEngine,
+  bracketEngine,
+};

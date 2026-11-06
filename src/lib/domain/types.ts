@@ -1,6 +1,15 @@
 // Framework-agnostic domain types for the tournament engine.
 
-export const SCHEMES = ["merge", "swiss", "round_robin"] as const;
+export const SCHEMES = [
+  "merge",
+  "swiss",
+  "round_robin",
+  "insertion",
+  "top_k",
+  "tiers",
+  "rating",
+  "bracket",
+] as const;
 export type Scheme = (typeof SCHEMES)[number];
 
 export const COMPARISON_RESULTS = ["a", "b", "draw"] as const;
