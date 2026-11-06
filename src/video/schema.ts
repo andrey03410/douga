@@ -732,6 +732,7 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
         roundCount: nonnegative.int(),
         cardsPerRound: positive.int(),
         groupCount: nonnegative.int(),
+        boards: opt(z.array(z.object({ sceneId: id, roundCount: nonnegative.int(), cardsPerRound: positive.int() }).strict())),
       })
       .strict(),
     audio: opt(

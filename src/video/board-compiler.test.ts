@@ -17,6 +17,21 @@ export function doc(b = board()): VideoDocument {
   };
 }
 describe("board compilation", () => {
+  it("reports explicitly assigned missing audio instead of silently rendering a silent OST", () => {
+    const d = doc(); d.source.participants[0].media = { audio: "missing" };
+    const result = compileVideo(d);
+    expect(result.ready).toBe(false);
+    expect(result.diagnostics.map((d) => d.code)).toContain("ASSET_NOT_FOUND");
+  });
+  it("loops a short audition for its complete active window", () => {
+    const b = board(); b.presentation!.revealSec = 1.5;
+    const d = doc(b); d.source.participants[0].media = { audio: "song" };
+    d.settings.card = { loop: true };
+    const result = compileVideo(d, { song: { id: "song", kind: "audio", src: "song.wav", durationSec: .5 } });
+    expect(result.ready).toBe(true);
+    const audio = result.plan.audio.find((a) => a.role === "primary")!;
+    expect(audio.durationInFrames).toBe(45); expect(audio.loopFrames).toBe(15);
+  });
   it("compiles authored placements and does not expose future candidates early", () => {
     const result = compileVideo(doc());
     expect(result.ready).toBe(true);

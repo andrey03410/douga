@@ -38,54 +38,65 @@ export function createBoardDocument(options: {
   id?: string; title?: string; format?: VideoFormat; fps?: number; seed?: number;
   participants?: Participant[]; board?: BoardDefinition; roundCount?: number; cardsPerRound?: number;
 }, preset: VideoPreset): VideoDocument {
-  const design = preset.scenes.find((s) => s.board)?.board;
-  if (!design) throw new Error("Board preset requires a board scene");
-  const perRound = options.cardsPerRound ?? preset.skeleton.cardsPerRound;
-  const count = options.roundCount ?? (options.participants ? Math.ceil(options.participants.length / perRound) : preset.skeleton.roundCount);
-  if (!Number.isInteger(count) || count < 0 || !Number.isInteger(perRound) || perRound < 1 || count * perRound > 20000) throw new Error("RESOURCE_BUDGET_EXCEEDED: Invalid board factory counts");
-  const board = structuredClone(options.board ?? design);
-  const participants = structuredClone(options.participants ?? (options.board ?
-    [...new Set(options.board.rounds.flatMap((r) => r.cards.map((c) => c.participantId)))].map((id, i) => ({ id, label: `Candidate ${i + 1}` })) :
-    Array.from({ length: count * perRound }, (_, i) => ({ id: `board-participant-${i + 1}`, label: `Candidate ${i + 1}` }))));
-  if (!options.board) {
-    const occupied = new Map<string, { cardId: string; participantId: string }>();
-    const draft = board.carry === true;
-    board.rounds = Array.from({ length: count }, (_, ri): BoardRound => {
-      const cards = Array.from({ length: Math.min(perRound, participants.length) }, (_, ci) => ({
-        id: `board-card-${ri + 1}-${ci + 1}`, participantId: participants[(ri * perRound + ci) % participants.length].id,
-        ...(board.budget !== undefined ? { cost: [5, 4, 3, 3][ri % 4] + ci } : {}),
-      }));
-      const selected = draft ? cards.filter((c) => ![...occupied.values()].some((o) => o.participantId === c.participantId)).slice(0, 1) : cards;
-      const actions = selected.map((c, ci) => {
-        const slot = board.slots[(draft || perRound === 1 ? ri : ci) % board.slots.length];
-        const old = draft ? occupied.get(slot.id) : undefined;
-        occupied.set(slot.id, { cardId: c.id, participantId: c.participantId });
-        return old ? { id: `board-action-${ri + 1}-${ci + 1}`, type: "replace" as const, cardId: c.id, slotId: slot.id, replaceCardId: old.cardId } :
-          { id: `board-action-${ri + 1}-${ci + 1}`, type: "place" as const, cardId: c.id, slotId: slot.id };
-      });
-      return { id: `board-round-${ri + 1}`, prompt: `Round ${ri + 1}`, cards, actions };
-    });
-  }
   const scenes = structuredClone(preset.scenes);
-  scenes.find((s) => s.board)!.board = board;
-  const doc = parseVideoDocument({ schemaVersion: 2, id: options.id ?? "video", title: options.title ?? "Board", kind: "board", seed: options.seed ?? 1,
+  const boardScenes = scenes.filter((s) => s.board);
+  if (!boardScenes.length) throw new Error("Board preset requires a board scene");
+  const participantMap = new Map<string, Participant>();
+  let total = 0;
+  for (const [sceneIndex, scene] of boardScenes.entries()) {
+    const skeleton = preset.skeleton.boards?.find((b) => b.sceneId === scene.id) ?? preset.skeleton;
+    const perRound = options.cardsPerRound ?? skeleton.cardsPerRound;
+    const count = options.roundCount ?? (options.participants ? Math.ceil(options.participants.length / perRound) : skeleton.roundCount);
+    if (!Number.isInteger(count) || count < 0 || !Number.isInteger(perRound) || perRound < 1 || (total += count * perRound) > 20000) throw new Error("RESOURCE_BUDGET_EXCEEDED: Invalid board factory counts");
+    const board = structuredClone(sceneIndex === 0 && options.board ? options.board : scene.board!);
+    const prefix = `board-${sceneIndex + 1}`;
+    const participants = structuredClone(options.participants ?? (sceneIndex === 0 && options.board ?
+      [...new Set(board.rounds.flatMap((r) => r.cards.map((c) => c.participantId)))].map((id, i) => ({ id, label: `Candidate ${i + 1}` })) :
+      Array.from({ length: count * perRound }, (_, i) => ({ id: `${prefix}-participant-${i + 1}`, label: `Candidate ${i + 1}` }))));
+    participants.forEach((p) => participantMap.set(p.id, p));
+    if (!(sceneIndex === 0 && options.board)) {
+      const occupied = new Map<string, { cardId: string; participantId: string; cost: number }>();
+      const draft = board.carry === true;
+      let spent = 0;
+      board.rounds = Array.from({ length: count }, (_, ri): BoardRound => {
+        if (board.mode === "rounds" && !board.carry) { occupied.clear(); spent = 0; }
+        const length = options.participants && options.roundCount === undefined ? Math.min(perRound, Math.max(0, participants.length - ri * perRound)) : Math.min(perRound, participants.length);
+        const cards = Array.from({ length }, (_, ci) => ({
+          id: `${prefix}-card-${ri + 1}-${ci + 1}`, participantId: participants[(ri * perRound + ci) % participants.length].id,
+          ...(board.budget !== undefined ? { cost: [5, 4, 3, 3][ri % 4] + ci } : {}),
+        }));
+        const selected = draft ? cards.filter((c) => board.allowRepeatParticipants || ![...occupied.values()].some((o) => o.participantId === c.participantId)).slice(0, 1) : cards;
+        const actions = selected.map((c, ci) => {
+          const slot = board.slots[(draft ? ri : ri * perRound + ci) % board.slots.length];
+          const old = draft ? occupied.get(slot.id) : undefined;
+          if (board.budget !== undefined) c.cost = Math.max(0, Math.min(c.cost ?? 0, board.budget - spent + (old?.cost ?? 0)));
+          spent += (c.cost ?? 0) - (old?.cost ?? 0);
+          occupied.set(slot.id, { cardId: c.id, participantId: c.participantId, cost: c.cost ?? 0 });
+          return old ? { id: `${prefix}-action-${ri + 1}-${ci + 1}`, type: "replace" as const, cardId: c.id, slotId: slot.id, replaceCardId: old.cardId } :
+            { id: `${prefix}-action-${ri + 1}-${ci + 1}`, type: "place" as const, cardId: c.id, slotId: slot.id };
+        });
+        return { id: `${prefix}-round-${ri + 1}`, prompt: `Round ${ri + 1}`, cards, actions };
+      });
+    }
+    scene.board = board;
+    const errors = resolveBoard(board, participants).diagnostics;
+    if (errors.length) throw new Error(errors.map((e) => `${e.code}: ${e.message}`).join("\n"));
+  }
+  return parseVideoDocument({ schemaVersion: 2, id: options.id ?? "video", title: options.title ?? "Board", kind: "board", seed: options.seed ?? 1,
     output: { format: options.format ?? preset.output.format, fps: options.fps ?? preset.output.fps },
-    source: { kind: "manual", participants, rounds: [] }, bindings: {}, settings: preset.settings,
+    source: { kind: "manual", participants: [...participantMap.values()], rounds: [] }, bindings: {}, settings: preset.settings,
     ...(preset.formatSettings ? { formatSettings: preset.formatSettings } : {}), scenes: [],
     segments: [{ id: "board", title: options.title ?? "Board", kind: "board", scenes }],
     ...(preset.audio?.cues ? { audio: { cues: preset.audio.cues } } : {}), preset: { id: preset.id, version: preset.version },
   });
-  const errors = resolveBoard(board, participants).diagnostics;
-  if (errors.length) throw new Error(errors.map((e) => `${e.code}: ${e.message}`).join("\n"));
-  return doc;
 }
 
-export function extractBoardDesign(board: BoardDefinition): BoardDefinition {
+export function extractBoardDesign(board: BoardDefinition, indexes = { slot: 0, media: 0 }): BoardDefinition {
   const result = structuredClone(board); result.rounds = [];
-  let media = 0;
-  result.slots.forEach((s, i) => {
-    s.id = `board-slot-${i + 1}`;
-    for (const key of ["image", "backgroundAsset", "sound"] as const) if (s[key]) s[key] = `slot:${key === "sound" ? "sound" : "image"}:${++media}`;
+
+  result.slots.forEach((s) => {
+    s.id = `board-slot-${++indexes.slot}`;
+    for (const key of ["image", "backgroundAsset", "sound"] as const) if (s[key]) s[key] = `slot:${key === "sound" ? "boardsound" : "boardimage"}:${++indexes.media}`;
   });
   return result;
 }

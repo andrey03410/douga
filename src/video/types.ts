@@ -413,7 +413,10 @@ export interface VideoPreset {
   settings: Settings;
   formatSettings?: VideoDocument["formatSettings"];
   scenes: VideoScene[];
-  skeleton: { roundCount: number; cardsPerRound: number; groupCount: number };
+  skeleton: {
+    roundCount: number; cardsPerRound: number; groupCount: number;
+    boards?: { sceneId: string; roundCount: number; cardsPerRound: number }[];
+  };
   audio?: {
     cues?: AudioCue[];
     crossfadeSec?: number;

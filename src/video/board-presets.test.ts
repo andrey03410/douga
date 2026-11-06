@@ -5,6 +5,26 @@ import { compileVideo } from "./compiler";
 import { videoPresetSchema } from "./schema";
 
 describe("board presets", () => {
+  it.each(["tier", "kmk", "blind-rank", "budget-draft"])("starts a new ready video from a personal %s design", (family) => {
+    const original = createVideoDocument({ kind: "board", presetId: `board.${family}` });
+    const preset = extractVideoPreset(original, { id: "personal", name: "Personal" });
+    const next = createVideoDocument({ kind: "board", preset });
+    const result = compileVideo(next);
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(result.ready).toBe(true);
+    expect(next.segments![0].scenes[0].board!.rounds.length).toBeGreaterThan(0);
+  });
+  it("keeps multiple board scenes independently reusable", () => {
+    const d = createVideoDocument({ kind: "board", presetId: "board.kmk" });
+    const second = structuredClone(d.segments![0].scenes[0]); second.id = "second";
+    const b = second.board!, suffix = (s: string) => `${s}-second`;
+    b.slots.forEach((s) => { s.id = suffix(s.id); });
+    b.rounds.forEach((r) => { r.id = suffix(r.id); r.cards.forEach((c) => { c.id = suffix(c.id); }); r.actions.forEach((a) => { a.id = suffix(a.id); a.cardId = suffix(a.cardId); if ("slotId" in a) a.slotId = suffix(a.slotId); }); });
+    d.segments![0].scenes.push(second);
+    const preset = extractVideoPreset(d, { id: "two", name: "Two boards" });
+    expect(() => applyVideoPreset(d, preset)).not.toThrow();
+    expect(compileVideo(createVideoDocument({ kind: "board", preset })).ready).toBe(true);
+  });
   it("creates all eight families in all formats as ready segmented videos", () => {
     const presets = getBuiltinPresets().filter((p) => p.kind === "board");
     expect(presets).toHaveLength(24);

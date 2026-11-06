@@ -18,3 +18,5 @@
 Задача 2: RED 5/5 новых тестов; GREEN board-compiler + segments = 39/39. При проверке звука (systematic-debugging) найдено наследованное playSound:false из общих defaults; board учитывает только явно заданное отключение, поэтому активное аудио по умолчанию звучит. Прежние top/picker defaults не менялись.
 
 Задача 3: RED 4/4 пресетов; GREEN домен + MCP 229/229 в 15 файлах. 24 board-пресета, короткие aliases, фабрика v2, media-free extraction, безопасный apply, примеры MCP и подписи проектов реализованы. Дополнительные RED→GREEN: apply сохраняет ID действий/карточек, финал показывает всю доску, card.reveal не дублируется для уже размещённых карточек.
+
+Независимый review a722a52: 4 Important (R1–R4 в review.md), Critical/Minor нет. Все четыре исправлены одним проходом: явный missing audio → диагностика; loop передаётся звуку; skeleton извлекается из каждой board-сцены; глобальные IDs/media slots при extraction. Регрессионные проверки RED 7/16 → GREEN 16/16; сервисный alias RED 1/2 → GREEN 2/2. Живой MCP после исправлений: все 8 семейств прошли factory → stable patch → commit → save/get personal preset → apply/validate; получены реальные vertical/square PNG.

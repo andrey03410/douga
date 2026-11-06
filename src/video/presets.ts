@@ -101,6 +101,7 @@ export class PresetIncompatibleError extends Error {
  */
 function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
   let index = 0;
+  let boardSlotIndex = 0;
   const slots = new Map<string, string>();
   const assigned = (nodes: VideoNode[]): boolean =>
     nodes.some((n) =>
@@ -173,7 +174,8 @@ function transferCustomContent(doc: VideoDocument, preset: VideoPreset): void {
       const remap = new Map<string, string>();
       scene.board.slots.forEach((slot, j) => {
         const to = target.board!.slots[j];
-        if (to.id !== slot.id && to.id !== `board-slot-${j + 1}` && !slot.id.endsWith(`:${to.id}`))
+        const canonicalSlotId = `board-slot-${++boardSlotIndex}`;
+        if (to.id !== slot.id && to.id !== canonicalSlotId && !slot.id.endsWith(`:${to.id}`))
           throw new PresetIncompatibleError(`scenes.${i}.board.slots.${j}`);
         to.id = slot.id;
         remap.set(slot.id, slot.id);
@@ -280,10 +282,11 @@ export function extractVideoPreset(
       base.asset = `slot:${base.type}:${nodeIndex}`;
     return base;
   };
+  const boardIndexes = { slot: 0, media: 0 };
   const scenes: VideoScene[] = doc.scenes.map((s, i) => ({
     id: `scene-${i + 1}`,
     block: s.block,
-    ...(s.board ? { board: extractBoardDesign(s.board) } : {}),
+    ...(s.board ? { board: extractBoardDesign(s.board, boardIndexes) } : {}),
     ...(s.repeat
       ? { repeat: s.repeat }
       : s.participantId || s.block === "top"
@@ -297,6 +300,7 @@ export function extractVideoPreset(
     nodes: s.nodes.map(node),
   }));
   const first = doc.source.rounds[0];
+  const boards = doc.scenes.flatMap((s, i) => s.board ? [{ sceneId: `scene-${i + 1}`, roundCount: Math.max(1, s.board.rounds.length), cardsPerRound: Math.max(1, ...s.board.rounds.map((r) => r.cards.length)) }] : []);
   const playlist = doc.audio?.playlist;
   const formatSettings = doc.formatSettings
     ? Object.fromEntries(
@@ -316,9 +320,10 @@ export function extractVideoPreset(
     ...(formatSettings ? { formatSettings } : {}),
     scenes,
     skeleton: {
-      roundCount: doc.source.rounds.length,
-      cardsPerRound: Math.max(1, first?.cards.length ?? 4),
+      roundCount: doc.kind === "board" ? boards[0]?.roundCount ?? 1 : doc.source.rounds.length,
+      cardsPerRound: doc.kind === "board" ? boards[0]?.cardsPerRound ?? 1 : Math.max(1, first?.cards.length ?? 4),
       groupCount: first?.groups?.length ?? 0,
+      ...(boards.length ? { boards } : {}),
     },
     ...(playlist || doc.audio?.cues?.length
       ? {

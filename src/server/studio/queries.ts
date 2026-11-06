@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import {
   createVideoDocument,
   getBuiltinPresets,
+  getBuiltinPreset,
   videoPresetSchema,
 } from "@/video";
 import { actor } from "./shared";
@@ -265,7 +266,7 @@ export async function listStudioPresetSummaries(
 }
 export async function getStudioPreset(userId: string, id: string) {
   await actor(userId);
-  const builtin = getBuiltinPresets().find((p) => p.id === id);
+  const builtin = getBuiltinPreset(id);
   if (builtin) return builtin;
   const row = await prisma.studioPreset.findFirst({
     where: { userId, id },

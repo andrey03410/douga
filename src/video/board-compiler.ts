@@ -116,9 +116,9 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
     if (mergeSettings(ctx.settings, template.settings, person.settings).card?.playSound === false) return;
     const key = person.media?.audio ?? person.media?.visual;
     const source = key ? ctx.manifest[key] : undefined;
-    if (!source || source.kind === "image" || (source.kind === "video" && source.hasAudio !== true)) return;
+    if (!person.media?.audio && (!source || source.kind === "image" || (source.kind === "video" && source.hasAudio !== true))) return;
     const asset = resolveAsset(ctx, key, `source.participants.${person.id}.media.audio`, "audio");
-    if (asset) addAudio(ctx, { id: `${s.id}/primary/${c.id}`, asset, role: "primary", from: s.from + start, durationInFrames: duration, offsetSec: person.bestMomentSec ?? local.card?.offsetSec, volume: local.card?.volume });
+    if (asset) addAudio(ctx, { id: `${s.id}/primary/${c.id}`, asset, role: "primary", from: s.from + start, durationInFrames: duration, offsetSec: person.bestMomentSec ?? local.card?.offsetSec, volume: local.card?.volume, loop: local.card?.loop });
   };
   const shuffle = (cards: BoardCard[], index: number) => {
     const result = [...cards]; let seed = (ctx.document.seed + index * 2654435761) >>> 0;
