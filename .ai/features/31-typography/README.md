@@ -2,9 +2,9 @@
 id: 31
 title: Типографика Video SDK
 track: product
-stage: build
+stage: review
 branch: feat/31-typography
-pr:
+pr: https://github.com/andrey03410/douga/pull/12
 started: 2026-11-06
 merged:
 ---
@@ -28,7 +28,7 @@ merged:
 ## Следующий шаг
 
 Автономный режим до вливания. QG, собственная живая приёмка и независимое ревью
-зелёные. Создать PR, отметить review и влить по ранее данному разрешению.
+зелёные. PR #12 создан. Влить по ранее данному разрешению после проверки GitHub merge state.
 
 ## Проверка
 
