@@ -62,3 +62,31 @@ select/open path, отсутствие изменения env и worker fallback
 `storage/headless-probe/browser-policy-{red,green,typecheck}.log`.
 Полный bundled render/view/explicit accept/fresh repeat и последняя QG тройка
 остаются у координатора. Готовность всей матрицы по 37 samples не объявляется.
+
+## Измеренная CLI-only quantization calibration
+
+Независимый bundled 149/SW full repeat сохранил единичное расхождение:
+один RGBA pixel с maxDelta 1 в анимированной карточке; статическая ROI его не
+покрывала. Координатор и независимый reviewer приняли фиксированный глобальный
+бюджет **max 4 changed pixels AND maxDelta 1** для CLI, согласно T07. Это единый
+лимит всех кадров, не список frame exceptions и не настройка командной строки.
+
+`compareCliVisualFrame` использует ratio 4/(width×height), maxDelta 1 и неизменную
+геометрию существующих ROI с **exact 0**. SDK/project comparator остаётся exact 0.
+Ни baseline, ни PNG, ни renderer/fixtures не менялись. JSON/HTML и stdout содержат
+`comparisonPolicy`, `exactFrames`/`boundedNoiseFrames`, исходные метрики без
+округления/сокрытия и `roiScope:'compiled-static-rects',tracksMotion:false`.
+Статические прямоугольники не следуют motion и не доказывают покрытие всего
+критичного текста. Движущиеся области ограничены тем же hard 4×1; исчезновение
+контрастного глифа/метки не проходит такой лимит.
+
+TDD RED 5 новых cases → GREEN: 4×LSB1 вне ROI проходят, 5 pixels или Δ2 и старое
+550×Δ60 не проходят; один LSB внутри ROI всё ещё FAIL. SDK exact, dimension/env/
+missing guards, raw metrics и раздельные counts подтверждены. Последний targeted
+результат **18/18 PASS**, 2 файла, 1.25 с; `tsc --noEmit` exit 0. Логи:
+`storage/headless-probe/calibration-{red,green,typecheck}.log`.
+
+Полный independent actual проверяет координатор против **неизменённого** первого
+bundled 149 baseline. Любой выход за 4×1 или любое отличие ROI оставляет FAIL;
+этот бюджет не расширяется по результатам очередного failure. Нового accept
+ради зелёного результата не выполнялось.

@@ -26,6 +26,25 @@ export const verificationDirectory = path.join(root, "storage/verification/32-st
 const storageRelative = (absolute: string) => path.relative(path.join(root, "storage"), absolute);
 const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 const json = (value: unknown) => JSON.stringify(value, (_key, value) => value === Infinity ? "Infinity" : value, 2);
+/** Fixed CLI-only calibration from measured bundled-browser repeat quantization.
+ * The SDK comparator and project pixel comparison retain their exact defaults. */
+export const cliVisualComparisonPolicy = Object.freeze({
+  id: "rgba-global-4px-1lsb-static-roi-exact-v1", maxChangedPixels: 4, maxDelta: 1,
+  roiMaxChangedPixels: 0, roiMaxDelta: 0, roiScope: "compiled-static-rects", tracksMotion: false,
+  scopeNote: "Static compiled rectangles do not track motion or guarantee all critical text coverage; moving areas retain the same hard global 4-pixel/1-LSB limit.",
+});
+export function compareCliVisualFrame(input: Parameters<typeof compareVisualFrame>[0]): VisualFrameResult {
+  return compareVisualFrame({ ...input,
+    tolerance: { maxChangedPixelRatio: Math.min(1, cliVisualComparisonPolicy.maxChangedPixels / (input.actual.width * input.actual.height)), maxDelta: cliVisualComparisonPolicy.maxDelta },
+    rois: input.rois?.map(roi => ({ ...roi, tolerance: { maxChangedPixelRatio: 0, maxDelta: 0 } })),
+  });
+}
+export function summarizeCliVisualFrames(results: VisualFrameResult[]) {
+  return { ...summarizeVisualSuite(results),
+    exactFrames: results.filter(result => result.status === "passed" && result.metrics?.changedPixels === 0).length,
+    boundedNoiseFrames: results.filter(result => result.status === "passed" && (result.metrics?.changedPixels ?? 0) > 0).length,
+  };
+}
 interface FrameRecord {
   id: string; fixtureId: string; frame: number; fixtureHash: string; pngHash: string; file: string;
   width: number; height: number; environment: VisualEnvironment; engineId: string;
@@ -173,18 +192,18 @@ export async function checkVisualFixtures(options: ReturnType<typeof parseVisual
       if (a.fixtureHash !== current.get(fixtureId) || (r && r.fixtureHash !== a.fixtureHash)) { results.push({ id, status: "failed", mandatory: true, regions: [], reason: "fixture-mismatch", actual: a.file, reference: r?.file }); continue; }
       let referenceImage: RgbaImage | undefined;
       try { if (r) referenceImage = await readVerified(baselineDirectory, r); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-      const result = compareVisualFrame({ id, actual: await readVerified(verificationDirectory, a), reference: referenceImage, environment: a.environment, referenceEnvironment: r?.environment, engineId: a.engineId, referenceEngineId: r?.engineId, rois: r?.rois ?? a.rois });
+      const result = compareCliVisualFrame({ id, actual: await readVerified(verificationDirectory, a), reference: referenceImage, environment: a.environment, referenceEnvironment: r?.environment, engineId: a.engineId, referenceEngineId: r?.engineId, rois: r?.rois ?? a.rois });
       const diffFile = result.diff ? path.join("diff", fixtureId, `${frame}.png`) : undefined;
       if (result.diff && diffFile) await encodeVisualPng(path.join(verificationDirectory, diffFile), result.diff);
       const { diff: _diff, ...compact } = result;
       results.push({ ...compact, actual: a.file, reference: r?.file, diffFile });
     }
   }
-  const summary = summarizeVisualSuite(results), complete = selectedIds.length === expected.length && actual.complete && actual.catalogHash === full.catalogHash;
-  const report = { version: 1, ...full, complete, selectionPassed: summary.passed, ...summary, passed: complete && summary.passed, results };
+  const summary = summarizeCliVisualFrames(results), complete = selectedIds.length === expected.length && actual.complete && actual.catalogHash === full.catalogHash;
+  const report = { version: 1, comparisonPolicy: cliVisualComparisonPolicy, ...full, complete, selectionPassed: summary.passed, ...summary, passed: complete && summary.passed, results };
   await writeFile(path.join(verificationDirectory, "report.json"), json(report));
-  const rows = results.map((r) => `<tr><td>${r.id}<br>${r.status}${r.reason ? `: ${r.reason}` : ""}<br>PSNR ${r.metrics?.psnr ?? "—"}<br>changed ${r.metrics?.changedPixelRatio ?? "—"}<br>max Δ ${r.metrics?.maxDelta ?? "—"}<br>ROI failures: ${r.regions.filter((region) => region.status !== "passed").map((region) => region.id).join(", ")}</td>${[r.reference ? path.relative(verificationDirectory, artifactPath(baselineDirectory, r.reference)) : undefined, r.actual, r.diffFile].map((src) => `<td>${src ? `<a href="${src}"><img src="${src}" loading="lazy" width="320"></a>` : "absent"}</td>`).join("")}</tr>`);
-  await writeFile(path.join(verificationDirectory, "report.html"), `<!doctype html><meta charset="utf-8"><title>Douga visual regression</title><style>body{font:14px sans-serif;background:#171b24;color:white}td{border:1px solid #777;padding:8px;vertical-align:top}img{max-height:300px;object-fit:contain}a{color:#9cf}</style><h1>Визуальная регрессия: ${report.passed ? "PASS" : "FAIL"}</h1><p>Полнота: ${complete}; выборка: ${selectedIds.length}/${expected.length}; успешная выборка: ${report.selectionPassed}. Точный RGBA, масштаб 1.</p><table><tr><th>Кадр</th><th>Reference</th><th>Actual</th><th>Absolute difference</th></tr>${rows.join("")}</table>`);
+  const rows = results.map((r) => `<tr><td>${r.id}<br>${r.status}${r.reason ? `: ${r.reason}` : ""}<br>PSNR ${r.metrics?.psnr ?? "—"}<br>changed pixels ${r.metrics?.changedPixels ?? "—"} / ${r.metrics?.totalPixels ?? "—"}<br>changed ratio ${r.metrics?.changedPixelRatio ?? "—"}<br>max Δ ${r.metrics?.maxDelta ?? "—"}<br>ROI failures: ${r.regions.filter((region) => region.status !== "passed").map((region) => region.id).join(", ")}</td>${[r.reference ? path.relative(verificationDirectory, artifactPath(baselineDirectory, r.reference)) : undefined, r.actual, r.diffFile].map((src) => `<td>${src ? `<a href="${src}"><img src="${src}" loading="lazy" width="320"></a>` : "absent"}</td>`).join("")}</tr>`);
+  await writeFile(path.join(verificationDirectory, "report.html"), `<!doctype html><meta charset="utf-8"><title>Douga visual regression</title><style>body{font:14px sans-serif;background:#171b24;color:white}td{border:1px solid #777;padding:8px;vertical-align:top}img{max-height:300px;object-fit:contain}a{color:#9cf}</style><h1>Визуальная регрессия: ${report.passed ? "PASS" : "FAIL"}</h1><p>Полнота: ${complete}; выборка: ${selectedIds.length}/${expected.length}; успешная выборка: ${report.selectionPassed}. RGBA без округления, масштаб 1.</p><p>Фиксированный глобальный quantization limit: ≤${cliVisualComparisonPolicy.maxChangedPixels} изменённых pixels AND max Δ≤${cliVisualComparisonPolicy.maxDelta} (все RGBA channels). Exact frames: ${report.exactFrames}; bounded-noise frames: ${report.boundedNoiseFrames}. Raw metrics сохранены.</p><p>ROI exact 0; ROI_SCOPE=${cliVisualComparisonPolicy.roiScope}; tracksMotion=false. Статические rects не следуют motion и не гарантируют покрытие всего критичного текста; moving areas остаются под тем же глобальным hard limit 4×1. Frame-specific exceptions отсутствуют.</p><table><tr><th>Кадр</th><th>Reference</th><th>Actual</th><th>Absolute difference</th></tr>${rows.join("")}</table>`);
   return report;
 }
 export async function acceptVisualFixtures(reason: string, confirm: boolean) {
@@ -208,6 +227,6 @@ async function main() {
   const options = parseVisualArguments(process.argv.slice(2));
   if (options.command === "render") console.log(json(await renderVisualFixtures(options)));
   else if (options.command === "accept") console.log(json(await acceptVisualFixtures(options.reason!, options.confirm)));
-  else { const report = await checkVisualFixtures(options); console.log(json({ passed: report.passed, selectionPassed: report.selectionPassed, complete: report.complete, total: report.total, failed: report.failed, report: path.join(verificationDirectory, "report.html") })); if (!report.passed) process.exitCode = 1; }
+  else { const report = await checkVisualFixtures(options); console.log(json({ passed: report.passed, selectionPassed: report.selectionPassed, complete: report.complete, total: report.total, exactFrames: report.exactFrames, boundedNoiseFrames: report.boundedNoiseFrames, comparisonPolicy: report.comparisonPolicy, failed: report.failed, report: path.join(verificationDirectory, "report.html") })); if (!report.passed) process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((error) => { console.error(error instanceof Error ? error.message : "VISUAL_REGRESSION_FAILED"); process.exitCode = 1; });
