@@ -16,3 +16,5 @@ export * from "./motion-catalog";
 export { applySceneMotion } from "./motion-compiler";
 
 export * from "./compiled-media";
+
+export * from "./motion-examples";

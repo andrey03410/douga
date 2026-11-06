@@ -22,6 +22,9 @@ export default async function ProjectsPage() {
         <a className="btn" href="/studio/new">
           Создать через SDK
         </a>
+        <p>
+          <a href="/studio/motion">Посмотреть моушен-кит →</a>
+        </p>
         <StudioProjectList
           initial={{
             items: studio.items.map(({ id, kind, version, revision }) => ({

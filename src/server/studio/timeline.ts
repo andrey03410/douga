@@ -15,7 +15,7 @@ export type StudioTimelineInput = z.input<typeof studioTimelineSchema>;
 
 /** Inspection points come only from existing IR intervals/keyframes. No authoring
  * settings, timeline expansion, layout, asset resolution or compiler lives here. */
-function sceneSummary(scene: CompiledScene) {
+export function sceneSummary(scene: CompiledScene) {
   const frames = new Set<number>();
   const end = scene.from + scene.durationInFrames;
   const add = (frame: number) => {
@@ -27,8 +27,10 @@ function sceneSummary(scene: CompiledScene) {
     add(scene.from + frame);
     add(scene.from + frame - 1);
   }
-  if (scene.transition.durationInFrames)
+  if (scene.transition.durationInFrames) {
     add(scene.from + scene.transition.durationInFrames - 1);
+    add(scene.from + scene.transition.durationInFrames);
+  }
   for (const node of scene.nodes) {
     add(scene.from + node.from);
     add(scene.from + node.from + node.durationInFrames - 1);
@@ -40,6 +42,17 @@ function sceneSummary(scene: CompiledScene) {
     ]) {
       add(scene.from + window.from);
       add(scene.from + window.to - 1);
+    }
+    for (const clip of node.motion ?? []) {
+      for (const frame of [
+        clip.from,
+        clip.from + clip.durationInFrames - 1,
+        clip.from + clip.durationInFrames,
+        clip.window.from,
+        clip.window.to - 1,
+        clip.window.to,
+      ])
+        add(scene.from + frame);
     }
     for (const animation of node.animation)
       for (const keyframe of animation.keyframes)
@@ -111,7 +124,7 @@ export async function getStudioTimeline(
     durationInFrames: plan?.durationInFrames ?? null,
     segments: plan?.segments ?? [],
     frameConvention:
-      "composition-absolute, zero-based; intervals [from,to); recommendedFrames are valid still frame indices from existing phase/visibility/active/animation boundaries",
+      "composition-absolute, zero-based; intervals [from,to); recommendedFrames are valid still frame indices from existing phase/visibility/active/animation/motion/transition boundaries",
     items,
     nextCursor:
       plan && index + 1 + input.limit < plan.scenes.length

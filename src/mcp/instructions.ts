@@ -21,6 +21,8 @@ export const MCP_TOOL_NAMES = [
   "tournament_create",
   "tournament_segments_update",
   "video_capabilities",
+  "video_motion_list",
+  "video_motion_get",
   "video_schema_get",
   "video_examples",
   "video_preset_list",
@@ -62,5 +64,6 @@ export const MCP_INSTRUCTIONS = [
   'Свой топ без турнира: положите звук и картинки в пул (import_youtube_audio, import_local_media, import_shikimori_poster или video_import_start). artId из пула — это assetId привязки {kind:"pool", assetId}. Документ: source.kind:"manual", у участников rank и media. Фрагмент — settings.top.snippet; режим active сам находит громкое место. Дальше те же validate, commit и job.',
   "Подготовка турнира: list_local_media читает теги; tournament_create принимает segments с локальными path либо assetId пула. tournament_get и tournament_segments_update дают редактуру состава/подписей/постеров. Агент не отвечает на сравнения и не назначает места. requiresConfirmation и answersToReset требуют явного подтверждения перед confirmReset:true.",
   "Пикер: picker.*. Доски: board.* (тир-лист, KMK, слепой рейтинг, драфт, викторина, матрица, бюджет). Схема и готовые документы — video_schema_get и video_examples.",
+  "Моушен: video_motion_list → video_motion_get (name + category; flash неоднозначен). Полные примеры со stand-in manifest — video_examples, живая галерея — /studio/motion.",
   "Правки документа идут через CAS: передавайте expectedVersion. Повтор того же шага — с тем же idempotencyKey.",
 ].join("\n");

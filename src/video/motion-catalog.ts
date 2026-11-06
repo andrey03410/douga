@@ -19,6 +19,7 @@ export interface MotionCatalogEntry {
   blocks: ("custom" | "top" | "picker" | "board")[];
   nodes: string[];
   parameters: string[];
+  variants?: string[];
   example: Record<string, unknown>;
 }
 export function motionChannels(name: MotionName): MotionChannel[] {
@@ -218,6 +219,11 @@ export const motionCatalog = {
       description: `Виджет ${name}`,
       channels: [],
       nodes: [name],
+      ...(name === "timer"
+        ? { variants: ["digits", "ring", "segments", "bar"] }
+        : name === "versus"
+          ? { variants: ["clean", "neon", "slash", "impact"] }
+          : {}),
       parameters:
         name === "timer"
           ? [
