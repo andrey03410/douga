@@ -105,3 +105,33 @@ codePointAt сохраняет полный supplementary code point. Сущес
 
 - `npx vitest run src/video`: 16 файлов, 377 тестов, все зелёные.
 - `npx tsc --noEmit --project /tmp/douga31-domain.tsconfig.json`: зелёный.
+
+## Читаемость миниатюрных карточек доски
+
+Fresh QG на `d930ddb` обнаружил один реальный fail factory `board.tier`: постоянный
+caption inset 10 px оставлял миниатюрным карточкам меньше места, чем две строки
+читаемого минимума. Existing `studio-boards.integration.test.ts:17` воспроизведён
+RED; новая доменная регрессия 80×100 px также сначала дала ready=false.
+
+В новой типографике внешний inset подписи карточки равен
+`min(10, width * .03, height * .03)`: рамка текста имеет x=inset, y=height/2,
+width=width−2×inset, height=height/2−inset. Min font size не снижен; геометрия
+самой карточки, media и legacy path не менялась. Для 400×500 px прежние 10 px
+проверены отдельной регрессией.
+
+Реальные Fontkit метрики записаны в `storage/typography-card-insets.json`:
+
+- 80×100 px: inset 2.4, text rect 75.2×47.6, Oswald 21.25 px при min=20;
+  две строки по 23.8 px занимают ровно 47.6 px, ширины 41.0975/47.685 px.
+- 400×500 px: inset 10, text rect 380×240, штатный размер 36 px, overflow=false.
+- Минимальная overview-карточка board.tier 87.0912×108.864 px: min=20,
+  fitted size 23.13 px, text height 51.8193, две строки по 25.9056 px,
+  ready=true и ни одного error на всём board plan.
+
+После последних правок под Node 22.23.2:
+
+- `npx vitest run src/video src/integration/studio-boards.integration.test.ts`:
+  17 файлов, 381 тест, все зелёные (включая оба existing board integration cases).
+- Изолированный domain TypeScript: зелёный.
+- Root дополнительно сообщил о зелёной реальной matrix 54 populated presets ×
+  3 формата с clean, уже после responsive fix; общий fresh QG выполняет root.

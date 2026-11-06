@@ -224,13 +224,15 @@ function textOf(node: CompiledNode): string | undefined {
   return node.text;
 }
 function textBox(node: CompiledNode): CompiledNode["rect"] {
-  if (node.type === "card")
+  if (node.type === "card") {
+    const inset = Math.min(10, node.rect.width * 0.03, node.rect.height * 0.03);
     return {
-      x: 10,
+      x: inset,
       y: node.rect.height * 0.5,
-      width: Math.max(0, node.rect.width - 20),
-      height: Math.max(0, node.rect.height * 0.5 - 10),
+      width: Math.max(0, node.rect.width - 2 * inset),
+      height: Math.max(0, node.rect.height * 0.5 - inset),
     };
+  }
   if (node.type === "group")
     return {
       x: 12,

@@ -1233,3 +1233,50 @@ it("resolves one display label for each repeated card after a rich preset round 
     /Private prefix|Private full name|Nickname|Other name/,
   );
 });
+
+describe("responsive typography inside card captions", () => {
+  function cardDocument(width: number, height: number): VideoDocument {
+    const document = doc([
+      {
+        id: "card",
+        type: "card",
+        participantId: "p",
+        units: "px",
+        rect: { x: 0, y: 0, width, height },
+      },
+    ]);
+    document.source.participants = [{ id: "p", label: "Long Name" }];
+    document.settings.typography = { theme: "clean" };
+    return document;
+  }
+  it("retains the readable minimum in a small card using proportional outer insets", () => {
+    const r = compile(cardDocument(80, 100)),
+      card = r.plan.scenes[0].nodes[0];
+    expect(r.ready).toBe(true);
+    expect(card.typography?.minFontSize).toBe(20);
+    expect(card.textLayout?.rect).toEqual({
+      x: 2.4,
+      y: 50,
+      width: 75.2,
+      height: 47.6,
+    });
+    expect(card.textLayout?.lines).toHaveLength(2);
+    expect(card.textLayout!.fontSize).toBeGreaterThanOrEqual(20);
+    expect(
+      card.textLayout!.lines.length * card.textLayout!.lineHeight,
+    ).toBeLessThanOrEqual(47.6);
+    expect(card.rect).toEqual({ x: 0, y: 0, width: 80, height: 100 });
+  });
+  it("retains the existing ten-pixel caption inset in large cards", () => {
+    const r = compile(cardDocument(400, 500)),
+      card = r.plan.scenes[0].nodes[0];
+    expect(r.ready).toBe(true);
+    expect(card.textLayout?.rect).toEqual({
+      x: 10,
+      y: 250,
+      width: 380,
+      height: 240,
+    });
+    expect(card.rect).toEqual({ x: 0, y: 0, width: 400, height: 500 });
+  });
+});
