@@ -88,3 +88,34 @@ npx vitest run src/integration/storyboard-continuation.integration.test.ts src/i
 Типы новых файлов чисты; общий tsc пока видит параллельные unfinished
 review.test.ts mode literal и storyboard-diff.test.ts implicit-any. Это передано
 координатору; global tests/build/baselines этим заданием не запускались.
+
+## Дополнение: общий pinned loader для review/deep
+
+Извлечён экспорт:
+
+```ts
+loadPinnedInspectionProject(userId, projectId, sourceJobId,
+  assertions?: { expectedVersion?: number; revision?: number })
+// Promise<{ prepared: Awaited<ReturnType<typeof loadInspectionProject>>,
+//           engineId: string, summary: InspectionSummary,
+//           input: InspectionJobInput }>
+```
+
+`prepared.pinned=true`; материал, origin и engine берутся только из owned job.
+Helper допускает storyboard/clip/audio inspection с полным frozen plan,
+отклоняет import/non-inspection/чужой проект или job. Проверяет canonical frozen
+hash, document/content origin, bytes медиа/постеров, fonts/licenses и **обе**
+compare стороны при их наличии. Assertions относятся к pinned origin.
+Текущий invalid draft не разбирается и не подменяет материал. Полный summary,
+включая scope и статический comparison, возвращается без изменения.
+
+`startStudioStoryboard` вызывает этот helper и дополнительно сохраняет свой
+запрет clip/audio как корня pagination. Поведение existing continuation сохранено.
+Review/deep/MCP/UI интегрирует основной агент; эти файлы здесь не менялись.
+
+Focused helper RED: три новых теста отказали, потому что export отсутствовал.
+После извлечения GREEN: **8/8 continuation/helper**, включая current invalid +
+cover/engine change, clip/audio full-plan roots и повреждение compareFrozen.
+Последний совместный прогон history/current/continuation: **19/19 PASS**,
+3 файла, 3.93 с. Логи `storage/verification/32-storyboard/pinned-loader-{red,green}.log`.
+Renderer и baseline этим дополнением не запускались и не изменялись.

@@ -17,6 +17,7 @@ import { assertStudioJobQuota, jobDirectory, jobView, ownedJob } from "./jobs";
 import { activeJobStatuses, studioJobLimits, type StudioJobView } from "./job-types";
 import type { StudioFrozenRevision, StudioValidation } from "./types";
 import type { CompiledVideo } from "@/video/types";
+import { compareStoryboardDocuments } from "@/video/storyboard-diff";
 import type { InspectionJobInput, InspectionOrigin, InspectionSummary, StoryboardRenderInput } from "./storyboard-types";
 
 const key = z.string().min(1).max(4096);
@@ -126,6 +127,47 @@ export function inspectionSummary(value: string): InspectionSummary | undefined 
   return input ? summaryOf(input) : undefined;
 }
 
+/** Reads one immutable inspection root for storyboard, review and deep sampling. */
+export async function loadPinnedInspectionProject(userId: string, projectId: string, sourceJobId: string,
+  assertions: { expectedVersion?: number; revision?: number } = {}): Promise<{
+    prepared: Awaited<ReturnType<typeof loadInspectionProject>>; engineId: string;
+    summary: InspectionSummary; input: InspectionJobInput;
+  }> {
+  const expected = originInput.parse(assertions), current = await owned(userId, projectId);
+  const source = await ownedJob(userId, sourceJobId);
+  let saved: InspectionJobInput | undefined;
+  try { saved = inspectionInput(source.inputJson); } catch { /* Explicit refusal below. */ }
+  if (source.projectId !== projectId || !["storyboard", "clip", "audio"].includes(source.kind) ||
+    !saved || saved.render.kind !== source.kind) throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
+  const verifyPinned = async (frozen: StudioFrozenRevision, origin: InspectionOrigin) => {
+    if (!frozen || !origin || frozen.projectId !== projectId || origin.projectId !== projectId) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    const { snapshotId: _, hash: expected, ...content } = frozen;
+    if (hash(canonical(content)) !== expected || origin.documentHash !== hash(canonical(frozen.document)) ||
+      origin.contentHash !== hash(canonical({ document: frozen.document,
+        assets: Object.entries(frozen.manifest).map(([key, asset]) => [key, asset.hash]), fonts: frozen.plan.fonts?.map(font => font.hash) ?? [] })))
+      throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    for (const file of Object.values(frozen.files)) {
+      if (await fileHash(await safeFile(file.path)) !== file.hash ||
+        file.posterPath && await fileHash(await safeFile(file.posterPath)) !== file.posterHash) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    }
+    await verifyTypographyFonts(frozen.plan.fonts, frozen.fontFiles);
+  };
+  await verifyPinned(saved.frozen, saved.origin);
+  if (canonical(saved.summary.origin) !== canonical(saved.origin)) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+  if (expected.expectedVersion !== undefined && expected.expectedVersion !== saved.origin.version ||
+    expected.revision !== undefined && expected.revision !== saved.origin.revision) throw new StudioError("VERSION_CONFLICT");
+  if (saved.compareFrozen || saved.summary.compareOrigin) {
+    if (!saved.compareFrozen || !saved.summary.compareOrigin) throw new StudioError("COMPARISON_NOT_FOUND");
+    await verifyPinned(saved.compareFrozen, saved.summary.compareOrigin);
+  }
+  const frozen = saved.frozen;
+  const prepared: Awaited<ReturnType<typeof loadInspectionProject>> = { document: frozen.document,
+    resolvedDocument: frozen.resolvedDocument, plan: frozen.plan, manifest: frozen.manifest, files: frozen.files,
+    fontFiles: frozen.fontFiles ?? {}, validation: frozen.validation, origin: saved.origin, frozen,
+    projectVersion: current.version, pinned: true };
+  return { prepared, engineId: source.engineId, summary: saved.summary, input: saved };
+}
+
 async function copyFrozen(frozen: StudioFrozenRevision, directory: string) {
   const result = structuredClone(frozen);
   await mkdir(absPath(directory), { recursive: true });
@@ -151,49 +193,27 @@ async function copyFrozen(frozen: StudioFrozenRevision, directory: string) {
 /** One durable operation for an entire page; cached retries return current job status. */
 export async function startStudioStoryboard(userId: string, projectId: string, raw: StoryboardInput = {}): Promise<StudioJobView> {
   let input = storyboardSchema.parse(raw);
-  const current = await owned(userId, projectId);
+  await owned(userId, projectId);
   const request = requestHash(`storyboard:${projectId}`, input);
   const previous = await replay<{ jobId: string }>(prisma, userId, input.idempotencyKey, request);
   if (previous && !input.sourceJobId) return jobView(await ownedJob(userId, previous.jobId));
   let prepared: Awaited<ReturnType<typeof loadInspectionProject>>, engineId: string;
   let comparison: { frozen: StudioFrozenRevision; origin: InspectionOrigin } | undefined;
   if (input.sourceJobId) {
-    const source = await ownedJob(userId, input.sourceJobId);
-    let saved: InspectionJobInput | undefined;
-    try { saved = inspectionInput(source.inputJson); } catch { /* Explicit refusal below. */ }
-    if (source.projectId !== projectId || source.kind !== "storyboard" || !saved || saved.render.kind !== "storyboard")
-      throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
-    const verifyPinned = async (frozen: StudioFrozenRevision, origin: InspectionOrigin) => {
-      if (!frozen || !origin || frozen.projectId !== projectId || origin.projectId !== projectId) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
-      const { snapshotId: _, hash: expected, ...content } = frozen;
-      if (hash(canonical(content)) !== expected || origin.documentHash !== hash(canonical(frozen.document)) ||
-        origin.contentHash !== hash(canonical({ document: frozen.document,
-          assets: Object.entries(frozen.manifest).map(([key, asset]) => [key, asset.hash]), fonts: frozen.plan.fonts?.map(font => font.hash) ?? [] })))
-        throw new StudioError("SNAPSHOT_HASH_MISMATCH");
-      for (const file of Object.values(frozen.files)) {
-        if (await fileHash(await safeFile(file.path)) !== file.hash ||
-          file.posterPath && await fileHash(await safeFile(file.posterPath)) !== file.posterHash) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
-      }
-      await verifyTypographyFonts(frozen.plan.fonts, frozen.fontFiles);
-    };
-    await verifyPinned(saved.frozen, saved.origin);
-    if (canonical(saved.summary.origin) !== canonical(saved.origin)) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
-    if (input.expectedVersion !== undefined && input.expectedVersion !== saved.origin.version ||
-      input.revision !== undefined && input.revision !== saved.origin.revision) throw new StudioError("VERSION_CONFLICT");
+    const pinned = await loadPinnedInspectionProject(userId, projectId, input.sourceJobId,
+      { expectedVersion: input.expectedVersion, revision: input.revision });
+    const saved = pinned.input;
+    if (saved.render.kind !== "storyboard") throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
     const scope = saved.summary.scope;
     input = { ...input, mode: raw.mode ?? scope?.mode ?? (saved.compareFrozen ? "compare" : "overview"),
       sceneId: raw.sceneId ?? scope?.sceneId, segmentId: raw.segmentId ?? scope?.segmentId, pageSize: raw.pageSize ?? scope?.pageSize ?? input.pageSize };
     if (input.mode === "scene" && !input.sceneId) throw new StudioError("INSPECTION_SCOPE_INVALID");
     if (input.mode === "compare") {
       if (!saved.compareFrozen || !saved.summary.compareOrigin) throw new StudioError("COMPARISON_NOT_FOUND");
-      await verifyPinned(saved.compareFrozen, saved.summary.compareOrigin);
       comparison = { frozen: saved.compareFrozen, origin: saved.summary.compareOrigin };
     }
-    const frozen = saved.frozen;
-    prepared = { document: frozen.document, resolvedDocument: frozen.resolvedDocument, plan: frozen.plan,
-      manifest: frozen.manifest, files: frozen.files, fontFiles: frozen.fontFiles ?? {}, validation: frozen.validation,
-      origin: saved.origin, frozen, projectVersion: current.version, pinned: true };
-    engineId = source.engineId;
+    prepared = pinned.prepared;
+    engineId = pinned.engineId;
     if (previous) return jobView(await ownedJob(userId, previous.jobId));
   } else {
     prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
@@ -224,7 +244,10 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
   const summary: InspectionSummary = { origin: prepared.origin, selection,
     scope: { mode: comparison ? "compare" : input.sceneId ? "scene" : "overview", pageSize: input.pageSize,
       ...(input.sceneId ? { sceneId: input.sceneId } : {}), ...(input.segmentId ? { segmentId: input.segmentId } : {}) },
-    ...(comparison ? { compareOrigin: comparison.origin } : {}),
+    ...(comparison ? { compareOrigin: comparison.origin,
+      comparison: compareStoryboardDocuments({ document: comparison.frozen.document, plan: comparison.frozen.plan,
+        manifest: comparison.frozen.manifest, diagnostics: comparison.frozen.validation.diagnostics },
+      { document: prepared.document, plan: prepared.plan, manifest: prepared.manifest, diagnostics: prepared.validation.diagnostics }) } : {}),
     ...(!prepared.validation.ready ? { diagnostic: { ready: false as const, codes: [...new Set(prepared.validation.diagnostics.filter(d => d.severity === "error").map(d => d.code))] } } : {}) };
   const render: StoryboardRenderInput = { kind: "storyboard", tiles, summary };
   return enqueueInspection(userId, projectId, prepared, engineId, render, summary,

@@ -12,7 +12,7 @@ import { fileHash } from "@/server/studio/assets";
 import { getStudioJob } from "@/server/studio/jobs";
 const engine = vi.hoisted(() => ({ id: "a".repeat(64) }));
 vi.mock("@/server/studio/engine", async (original) => ({ ...(await original<object>()), prepareStudioEngine: async () => engine.id }));
-import { startStudioStoryboard } from "@/server/studio/storyboard";
+import { startStudioStoryboard, loadPinnedInspectionProject } from "@/server/studio/storyboard";
 let owner: string, other: string;
 const directory = `verification/32-storyboard/continuation-${randomUUID()}`;
 beforeAll(async () => {
@@ -129,4 +129,47 @@ it("rejects foreign/deleted/non-storyboard source jobs and corrupted frozen payl
   finally { await writeFile(fontPath, fontBytes); }
   await prisma.studioJob.delete({ where: { id: first.id } });
   await expect(startStudioStoryboard(owner, f.project.id, { sourceJobId: first.id, page: 1 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
+it("loads the exact pinned inspection for review after an invalid current draft and engine change", async () => {
+  const f = await fixture(), first = await done(await startStudioStoryboard(owner, f.project.id, { pageSize: 1 }));
+  const original = await payload(first.id);
+  await updateTrackMetadata(owner, f.track.id, { coverArtId: f.covers[1].id });
+  await saveStudioDraft(owner, f.project.id, { expectedVersion: f.project.version, text: "{" });
+  engine.id = "b".repeat(64);
+  const before = await f.state(), pinned = await loadPinnedInspectionProject(owner, f.project.id, first.id, { expectedVersion: f.project.version });
+  expect(pinned.prepared.pinned).toBe(true);
+  expect(pinned.prepared.plan).toEqual(original.frozen.plan);
+  expect(pinned.prepared.manifest.cover.hash).toBe(original.frozen.manifest.cover.hash);
+  expect(pinned.prepared.origin).toEqual(first.inspection!.origin);
+  expect(pinned.engineId).toBe(first.engineId);
+  expect(pinned.summary).toEqual(first.inspection);
+  expect(pinned.input).toEqual(original);
+  expect(await f.state()).toEqual(before);
+});
+it("allows clip/audio inspection roots for pinned review while storyboard continuation still requires a sheet root", async () => {
+  const f = await fixture(), first = await done(await startStudioStoryboard(owner, f.project.id, { pageSize: 1 })), original = await payload(first.id);
+  for (const kind of ["clip", "audio"] as const) {
+    const input = { ...structuredClone(original), render: { kind, fromFrame: 0, durationFrames: 10 } };
+    const row = await prisma.studioJob.create({ data: { userId: owner, projectId: f.project.id, kind, engineId: first.engineId, status: "done", inputJson: JSON.stringify(input) } });
+    const pinned = await loadPinnedInspectionProject(owner, f.project.id, row.id);
+    expect(pinned.prepared.plan.scenes).toHaveLength(3);
+    expect(pinned.prepared.frozen).toEqual(original.frozen);
+    expect(pinned.engineId).toBe(first.engineId);
+    await expect(startStudioStoryboard(owner, f.project.id, { sourceJobId: row.id, page: 1 })).rejects.toMatchObject({ code: "INSPECTION_SOURCE_NOT_FOUND" });
+  }
+  await expect(loadPinnedInspectionProject(other, f.project.id, first.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  const plain = await prisma.studioJob.create({ data: { userId: owner, projectId: f.project.id, kind: "import", engineId: first.engineId, status: "done", inputJson: "{}" } });
+  await expect(loadPinnedInspectionProject(owner, f.project.id, plain.id)).rejects.toMatchObject({ code: "INSPECTION_SOURCE_NOT_FOUND" });
+});
+it("validates the saved comparison side in the generic pinned inspection loader", async () => {
+  const f = await fixture();
+  await updateTrackMetadata(owner, f.track.id, { coverArtId: f.covers[1].id });
+  const first = await done(await startStudioStoryboard(owner, f.project.id, { mode: "compare", compareRevision: 1, pageSize: 2 }));
+  const original = await payload(first.id), pinned = await loadPinnedInspectionProject(owner, f.project.id, first.id);
+  expect(pinned.input.compareFrozen).toEqual(original.compareFrozen);
+  expect(pinned.summary.compareOrigin).toEqual(first.inspection!.compareOrigin);
+  const corrupt = structuredClone(original); corrupt.compareFrozen.plan.seed++;
+  await prisma.studioJob.update({ where: { id: first.id }, data: { inputJson: JSON.stringify(corrupt) } });
+  await expect(loadPinnedInspectionProject(owner, f.project.id, first.id)).rejects.toMatchObject({ code: "SNAPSHOT_HASH_MISMATCH" });
 });
