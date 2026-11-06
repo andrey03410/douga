@@ -11,11 +11,12 @@ import { actor, owned, canonical, hash, requestHash, replay, receipt } from "./s
 import { view } from "./projects";
 import { evaluate, runtime, cleanupDirectory, fileHash, safeFile } from "./assets";
 import { prepareStudioEngine } from "./engine";
-import { freezeTypographyFonts } from "./typography-fonts";
+import { freezeTypographyFonts, verifyTypographyFonts } from "./typography-fonts";
 import { StudioError } from "./errors";
 import { assertStudioJobQuota, jobDirectory, jobView, ownedJob } from "./jobs";
 import { activeJobStatuses, studioJobLimits, type StudioJobView } from "./job-types";
-import type { StudioFrozenRevision } from "./types";
+import type { StudioFrozenRevision, StudioValidation } from "./types";
+import type { CompiledVideo } from "@/video/types";
 import type { InspectionJobInput, InspectionOrigin, InspectionSummary, StoryboardRenderInput } from "./storyboard-types";
 
 const key = z.string().min(1).max(4096);
@@ -48,7 +49,47 @@ export async function loadInspectionProject(userId: string, projectId: string,
   if (input.revision !== undefined) {
     const revision = await prisma.studioRevision.findUnique({ where: { projectId_revision: { projectId, revision: input.revision } } });
     if (!revision) throw new StudioError("NOT_FOUND");
-    value = JSON.parse(revision.documentJson); revisionId = revision.id;
+    // History owns its saved plan and resource ledger. Re-evaluating bindings here
+    // would follow today's track cover/pool bytes and silently rewrite the past.
+    const validation = JSON.parse(revision.validationJson) as StudioValidation;
+    if (!validation.ready || validation.diagnostics.some(d => d.severity === "error") || !revision.assetsJson || !revision.planJson)
+      throw new StudioError("VALIDATION_FAILED", validation.diagnostics);
+    const parsed = videoDocumentSchema.safeParse(JSON.parse(revision.documentJson));
+    const assets = JSON.parse(revision.assetsJson) as Pick<StudioFrozenRevision,
+      "resolvedDocument" | "manifest" | "files" | "fontFiles" | "runtime">;
+    const plan = JSON.parse(revision.planJson) as CompiledVideo;
+    if (!parsed.success || !assets.resolvedDocument || !assets.manifest || !assets.files || !assets.runtime ||
+      !plan || !Array.isArray(plan.scenes) || !plan.scenes.length || !Number.isFinite(plan.fps) || plan.fps <= 0 ||
+      !Number.isInteger(plan.durationInFrames) || plan.durationInFrames <= 0)
+      throw new StudioError("VALIDATION_FAILED", validation.diagnostics);
+    // Check pinned revision references, including the OLD cover Art row. Looking
+    // through track.coverArtId would authorize the replacement instead of A.
+    const references = await prisma.studioAssetReference.findMany({
+      where: { projectId, scope: `revision:${input.revision}` },
+      include: { art: { select: { userId: true } }, track: { select: { tournament: { select: { userId: true } } } }, tournament: { select: { userId: true } } },
+    });
+    for (const reference of references)
+      if ((reference.artId && reference.art?.userId !== userId) ||
+        (reference.trackId && reference.track?.tournament.userId !== userId) ||
+        (reference.tournamentId && reference.tournament?.userId !== userId)) throw new StudioError("ASSET_NOT_FOUND");
+    for (const [key, file] of Object.entries(assets.files)) {
+      if (assets.manifest[key]?.hash !== file.hash || await fileHash(await safeFile(file.path)) !== file.hash)
+        throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      if (file.posterPath && await fileHash(await safeFile(file.posterPath)) !== file.posterHash)
+        throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    }
+    if (Object.keys(assets.manifest).some(key => !assets.files[key])) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    await verifyTypographyFonts(plan.fonts, assets.fontFiles);
+    const origin: InspectionOrigin = { projectId, version: null, revision: input.revision,
+      documentHash: hash(canonical(parsed.data)),
+      contentHash: hash(canonical({ document: parsed.data,
+        assets: Object.entries(assets.manifest).map(([key, asset]) => [key, asset.hash]),
+        fonts: plan.fonts?.map(font => font.hash) ?? [] })),
+      format: { width: plan.width, height: plan.height, fps: plan.fps } };
+    const content = { projectId, revisionId: revision.id, revision: revision.revision,
+      sourceVersion: revision.sourceVersion, document: parsed.data, ...assets, plan, validation };
+    const frozen: StudioFrozenRevision = { ...content, snapshotId: randomUUID(), hash: hash(canonical(content)) };
+    return { ...assets, fontFiles: assets.fontFiles ?? {}, validation, plan, document: parsed.data, origin, frozen, projectVersion: current.version };
   }
   const parsed = videoDocumentSchema.safeParse(value);
   if (!parsed.success) throw new StudioError("VALIDATION_FAILED", [{ severity: "error", code: "SCHEMA_INVALID", path: "document", message: "Текущий документ не проходит схему. Исправьте JSON; старое превью не используется." }]);
