@@ -1,3 +1,4 @@
+import { setNodeTypography, copyNodeTypography } from "./typography-compiler";
 import type {
   CompiledNode,
   CompiledScene,
@@ -202,6 +203,7 @@ export function compileTop(
     visualStyle.offsetSec = offset;
   }
   card.style = visualStyle;
+  setNodeTypography(card, s, undefined, "label");
   if (visual)
     card.media = compileMedia(
       ctx,
@@ -350,6 +352,7 @@ export function compilePicker(
       { ...s.card, fontSize: Math.min(56, ctx.width * 0.045) },
     );
     text.text = r.prompt;
+    setNodeTypography(text, s, undefined, "prompt");
     main.nodes.push(text);
   }
   const timerNode = baseNode(
@@ -369,6 +372,7 @@ export function compilePicker(
     visible: timer ? [{ from: finale, to: finale + timer }] : [],
     timerFrames: timer,
   });
+  setNodeTypography(timerNode, s, undefined, "timer");
   main.nodes.push(timerNode);
   const localCardSettings = new Map<string, Settings>();
   const addCard = (
@@ -438,6 +442,7 @@ export function compilePicker(
         ctx.fps,
       ),
     });
+    setNodeTypography(card, local, undefined, "label");
     localCardSettings.set(card.id, local);
     const visual = resolveAsset(
       ctx,
@@ -500,6 +505,12 @@ export function compilePicker(
         s.card,
       );
       panel.text = g.label ?? `Group ${gi + 1}`;
+      setNodeTypography(
+        panel,
+        effectiveSettings(ctx, s, g.settings),
+        undefined,
+        "label",
+      );
       panel.groupId = g.id;
       panel.answer = r.answer?.groupIds?.includes(g.id) ?? false;
       panel.answerFrom = separate ? undefined : answerAt;
@@ -629,24 +640,28 @@ export function compilePicker(
       .filter(
         (n) => n.type === "card" || n.type === "group" || n.type === "text",
       )
-      .map((n) => ({
-        ...structuredClone(n),
-        id: `${n.id}/answer`,
-        from: 0,
-        durationInFrames: answerDuration,
-        visible: [{ from: 0, to: answerDuration }],
-        activeWindow: undefined,
-        answerFrom: 0,
-        labelWindows: labelWindows(
-          localCardSettings.get(n.id) ?? s,
-          0,
-          0,
-          0,
-          0,
-          answerDuration,
-          ctx.fps,
-        ),
-      }));
+      .map((n) => {
+        const clone: CompiledNode = {
+          ...structuredClone(n),
+          id: `${n.id}/answer`,
+          from: 0,
+          durationInFrames: answerDuration,
+          visible: [{ from: 0, to: answerDuration }],
+          activeWindow: undefined,
+          answerFrom: 0,
+          labelWindows: labelWindows(
+            localCardSettings.get(n.id) ?? s,
+            0,
+            0,
+            0,
+            0,
+            answerDuration,
+            ctx.fps,
+          ),
+        };
+        copyNodeTypography(n, clone);
+        return clone;
+      });
     result.push(answer);
   }
   if (r.music) {

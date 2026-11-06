@@ -1,3 +1,4 @@
+import { setNodeTypography, semanticTypographyRole } from "./typography-compiler";
 import type { BoardCard, BoardDefinition, BoardEvent, BoardState, CompiledNode, CompiledScene, Rect, Settings, VideoScene } from "./types";
 import { diagnostic, effectiveSettings, resolveAsset, type CompileContext } from "./context";
 import { createBoardState, resolveBoard } from "./board-state";
@@ -64,7 +65,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
   };
   const text = (scene: CompiledScene, id: string, value: string, rect: Rect, size = 38, color = "#f5f5fa") => {
     const n = baseNode(`${scene.id}/${id}`, "text", rect, scene.durationInFrames, { color, fontSize: size });
-    n.text = value; n.layer = 8; scene.nodes.push(n); return n;
+    n.text = value; setNodeTypography(n, settings, undefined, semanticTypographyRole(n)); n.layer = 8; scene.nodes.push(n); return n;
   };
   const mediaNode = (scene: CompiledScene, id: string, key: string | undefined, rect: Rect, layer: number) => {
     if (!key) return;
@@ -76,6 +77,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
   const cardNode = (scene: CompiledScene, c: BoardCard, rect: Rect, placed: boolean, active?: { from: number; to: number }): CompiledNode => {
     const person = participant(c), local = effectiveSettings(ctx, settings, person.settings);
     const n = baseNode(`${scene.id}/card/${encodeURIComponent(c.id)}`, "card", rect, scene.durationInFrames, { ...local.card, borderRadius: local.card?.borderRadius ?? 12 });
+    setNodeTypography(n, local, undefined, "label");
     n.cardId = c.id; n.participantId = c.participantId; n.layer = placed ? 3 : 12;
     n.label = !placed && p.hideLabelsUntilPlaced ? "?" : (person.caption ?? person.label) + (b.budget !== undefined ? ` · ${c.cost ?? 0}` : "");
     n.labelWindows = [{ from: 0, to: scene.durationInFrames }]; n.showRank = false;
@@ -97,7 +99,8 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
       bg.shape = "rect"; bg.fill = slot.background ?? "#202b40"; bg.layer = 0; s.nodes.push(bg);
       mediaNode(s, `slot-bg/${slotId}`, slot.backgroundAsset, rect, 1);
       const labelRect: Rect = b.layout === "rows" || !b.layout ? { x: rect.x + rect.width * .015, y: rect.y + rect.height * .08, width: rect.width * .18, height: rect.height * .84 } : { x: rect.x + rect.width * .04, y: rect.y + rect.height * .02, width: rect.width * .92, height: rect.height * .18 };
-      text(s, `slot-label/${slotId}`, slot.label, labelRect, Math.min(38, labelRect.height * .6), slot.color);
+      const labelNode = text(s, `slot-label/${slotId}`, slot.label, labelRect, Math.min(38, labelRect.height * .6), slot.color);
+      setNodeTypography(labelNode, settings, slot.typography, "label", slot.color ? { color:slot.color } : undefined);
       if (slot.image) mediaNode(s, `slot-icon/${slotId}`, slot.image, { ...labelRect, width: labelRect.width * .35, height: labelRect.height * .35 }, 9);
     }
     for (const [id, rect] of placements(state, focus)) { const c = allCards.get(id); if (c) cardNode(s, c, rect, true); }
@@ -192,6 +195,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
       const shown = p.focusActive === false || !sequential ? candidates : displayed;
       tileRects(shown.length, candidateArea).forEach((r, i) => cardNode(s, shown[i], r, false));
       const timer = baseNode(`${s.id}/timer`, "timer", { x: ctx.width * .43, y: ctx.height * .88, width: ctx.width * .14, height: ctx.height * .08 }, think, { color: "#ffd166", fontSize: 56 });
+      setNodeTypography(timer, settings, undefined, "timer");
       timer.timerFrames = think; timer.layer = 20; s.nodes.push(timer); s.phases.timerStartFrame = 0;
     }
     if (p.answerReveal !== "end") actions(resolved);

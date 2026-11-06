@@ -33,10 +33,34 @@ export const DEFAULT_SETTINGS: Settings = {
     showPrompt: true,
   },
 };
+/** Authored layers let typography distinguish saved legacy overrides from defaults. */
+const typographyLayers = new WeakMap<Settings, Settings[]>();
+export function getTypographySettingLayers(settings: Settings): Settings[] {
+  return (
+    typographyLayers.get(settings) ??
+    (settings === DEFAULT_SETTINGS ? [] : [settings])
+  );
+}
+export function deepTypographyMerge<T>(base: T | undefined, value: T): T {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result: Record<string, unknown> = {
+    ...(base && typeof base === "object" ? base : {}),
+  };
+  for (const [key, item] of Object.entries(value)) {
+    if (item !== undefined)
+      result[key] =
+        item && typeof item === "object" && !Array.isArray(item)
+          ? deepTypographyMerge(result[key], item)
+          : item;
+  }
+  return result as T;
+}
 export function mergeSettings(...layers: (Settings | undefined)[]): Settings {
   const result: Settings = {};
+  const authored: Settings[] = [];
   for (const layer of layers) {
     if (!layer) continue;
+    authored.push(...getTypographySettingLayers(layer));
     for (const key of Object.keys(layer) as (keyof Settings)[]) {
       const value = layer[key];
       if (value === undefined) continue;
@@ -45,6 +69,13 @@ export function mergeSettings(...layers: (Settings | undefined)[]): Settings {
         typeof value === "object" &&
         !Array.isArray(value)
       ) {
+        if (key === "typography") {
+          result.typography = deepTypographyMerge(
+            result.typography,
+            layer.typography!,
+          );
+          continue;
+        }
         const previous = result.top?.snippet;
         (result as any)[key] = { ...((result[key] as object) ?? {}), ...value };
         if (key === "backdrop" && layer.backdrop) {
@@ -59,6 +90,7 @@ export function mergeSettings(...layers: (Settings | undefined)[]): Settings {
       } else (result as any)[key] = value;
     }
   }
+  typographyLayers.set(result, authored);
   return result;
 }
 export function frames(t: Time | undefined, fps: number, fallback = 0): number {

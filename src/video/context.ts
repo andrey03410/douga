@@ -1,3 +1,4 @@
+import type { MeasureText } from "./typography-types";
 import type {
   AssetManifest,
   CompiledAudio,
@@ -10,6 +11,7 @@ import type {
 } from "./types";
 import { mergeSettings, DEFAULT_SETTINGS } from "./settings";
 export interface CompileContext {
+  measureText?: MeasureText;
   document: VideoDocument;
   segment?: VideoSegment;
   segmentNumber?: number;

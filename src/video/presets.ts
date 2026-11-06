@@ -312,7 +312,19 @@ export function extractVideoPreset(
       (base.type === "badge" && base.text !== undefined)
     )
       base.text =
-        typeof base.text === "string" ? "Text" : { bind: base.text!.bind };
+        typeof base.text === "string"
+          ? "Text"
+          : "runs" in base.text!
+            ? {
+                runs: base.text!.runs.map((run) => ({
+                  ...run,
+                  text:
+                    typeof run.text === "string"
+                      ? "Text"
+                      : { bind: run.text.bind },
+                })),
+              }
+            : { bind: base.text!.bind };
     if (base.type === "card") {
       base.participantId = "$participant";
       if (base.label) base.label = { bind: "participant.label" };

@@ -1,3 +1,8 @@
+import type { TypographyCompileOptions } from "./typography-types";
+import {
+  collectTypographyFonts,
+  fitSegmentTypographyGroups,
+} from "./typography-compiler";
 import { applySceneMotion } from "./motion-compiler";
 import {
   preflightVideoResources,
@@ -26,8 +31,9 @@ import { compileGlobalAudio } from "./audio";
 export function compileVideo(
   input: VideoDocument,
   manifest: AssetManifest = {},
+  options: TypographyCompileOptions = {},
 ): CompileResult {
-  return compileDocument(input, manifest);
+  return compileDocument(input, manifest, undefined, options);
 }
 function compileDocument(
   input: VideoDocument,
@@ -37,7 +43,9 @@ function compileDocument(
     number: number;
     count: number;
     participants: Participant[];
+    authoredSettings: (VideoDocument["settings"] | undefined)[];
   },
+  options: TypographyCompileOptions = {},
 ): CompileResult {
   const plan: CompiledVideo = {
     schemaVersion: 1,
@@ -148,7 +156,13 @@ function compileDocument(
           number: index + 1,
           count: participants.length,
           participants: document.source.participants,
+          authoredSettings: [
+            document.settings,
+            document.formatSettings?.[document.output.format],
+            segment.settings,
+          ],
         },
+        options,
       );
       for (const diagnostic of local.diagnostics)
         diagnostics.push({
@@ -210,6 +224,7 @@ function compileDocument(
         }
       }
     const ctx: CompileContext = {
+      measureText: options.measureText,
       document,
       manifest: assets.data,
       fps: plan.fps,
@@ -259,6 +274,7 @@ function compileDocument(
         "Add enabled segments with source content or custom scenes.",
         "segments",
       );
+    collectTypographyFonts(plan);
     return {
       plan: JSON.parse(JSON.stringify(plan)),
       diagnostics,
@@ -266,6 +282,7 @@ function compileDocument(
     };
   }
   const ctx: CompileContext = {
+    measureText: options.measureText,
     document,
     segment: segmentContext?.segment,
     segmentNumber: segmentContext?.number,
@@ -279,8 +296,10 @@ function compileDocument(
     diagnostics: [],
     audio: plan.audio,
     settings: mergeSettings(
-      document.settings,
-      document.formatSettings?.[document.output.format],
+      ...(segmentContext?.authoredSettings ?? [
+        document.settings,
+        document.formatSettings?.[document.output.format],
+      ]),
     ),
   };
   const muteWindows: Window[] = [];
@@ -479,6 +498,7 @@ function compileDocument(
       "scenes",
     );
   plan.durationInFrames = Math.max(1, cursor);
+  fitSegmentTypographyGroups(ctx, plan.scenes);
   compileGlobalAudio(ctx, plan.durationInFrames, muteWindows, plan.scenes);
   for (const scene of plan.scenes)
     for (const node of scene.nodes) {
@@ -487,6 +507,7 @@ function compileDocument(
         node.progress.durationInFrames = plan.durationInFrames;
       }
     }
+  collectTypographyFonts(plan);
   return {
     plan: JSON.parse(JSON.stringify(plan)) as CompiledVideo,
     diagnostics: ctx.diagnostics,
