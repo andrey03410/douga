@@ -125,5 +125,5 @@ authenticated `/studio/motion` с настоящим Remotion Player и копи
 - [x] Обновить карточки по фактическому коду, описать API и ограничения.
 - [x] Сверить ссылки, отметить выполнение плана и evidence.
 - [x] Push, PR `30: Моушен-кит Video SDK`; stage review, ссылка и результаты QG.
-- [ ] В автономном режиме после зелёных QG/review: stage merged, history,
+- [x] В автономном режиме после зелёных QG/review: stage merged, history,
   commit/push, `gh pr merge --merge --delete-branch`, main/pull.

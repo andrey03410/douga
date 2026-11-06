@@ -220,3 +220,9 @@ Task4 complete: finalQG2/review/live passed. Task5 docs coherent; next commit/pu
 PR создан: https://github.com/andrey03410/douga/pull/11 (30: Моушен-кит Video SDK),
 ветка pushed origin/feat/30-motion-kit. Stage review; owner gate пропущен по
 явной автономности. QG2 source5a92ab0,после него только docs.
+
+Task5 complete: knowledge/links проверены, PR#11 открыт, mergeableCLEAN,
+main не изменился(bcab8fa). Все source послеQG совпадают с5a92ab0;
+дальнейшие коммиты только docs. По автономному разрешению stage merged/history
+подготовлены перед merge commit; выполнить ghprmerge --merge --delete-branch,
+перейти main/pull и подтвердить GitHubstate/tree/status.
