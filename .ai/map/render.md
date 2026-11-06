@@ -1,6 +1,44 @@
 # Рендер видео
 
-Как Douga превращает план студии в MP4: одна композиция Remotion `Studio` в headless Chrome. Очередь, бюджеты и воркер описаны в [studio-sdk.md](studio-sdk.md). Нарезка офлайн-`.html` живёт отдельно.
+Как Douga превращает план студии в MP4: композиция Remotion `Studio` в headless Chrome.
+Вторая закрытая композиция `StoryboardSheet` собирает PNG-сетку из уже полученных
+кадров того же renderer. Очередь, бюджеты и воркер описаны в [studio-sdk.md](studio-sdk.md).
+Нарезка офлайн-`.html` живёт отдельно.
+
+## Раскадровка и pixel regression (задача 32)
+
+[`render-frames.ts`](../../src/server/studio/render-frames.ts) — общая подготовка
+frozen media/fonts и renderStudioFrames для worker и regression runner.
+Один openBrowser переиспользуется для нескольких PNG. Preview кадры ≤720 long edge;
+эталоны всегда lossless scale1. [`storyboard-render.ts`](../../src/server/studio/storyboard-render.ts)
+собирает ≤24 плитки в PNG≤12MiB, сохраняет отдельные кадры с hash ledger,
+в compare может добавить pixelDiff:true: третья плитка RGBA-разницы и PSNR,
+missing/dimensions явно notComparable. Считает суммарные output bytes и удаляет временные копии bundle после успеха.
+
+`video_review mode:deep` использует те же private frozen inputs без auto-commit.
+Клип декодируется ffmpeg, mean/peak/silent измерены по реальным audio samples;
+визуальная/художественная оценка остаётся отдельной. Задание, декодированное без
+ошибки, не объявляет плавность доказанной.
+
+[`visual-fixtures.ts`](../../src/video/visual-fixtures.ts) содержит непустые fixed
+fixtures всех 54 прежних пресетов,33 рецептов,67 motion entries и типографики:
+локальные SVG/PCM, RU/JP, границы, dense/empty. Матрица хранит available/selected
+events и честно отмечает representative sampling (≤12 кадров/fixture).
+[`visual-regression.ts`](../../src/video/visual-regression.ts) считает PSNR,
+changed ratio/maxDelta и ROI на RGBA, различает missing baseline/размер/среду.
+EngineId — provenance, его изменение не отключает сравнение.
+
+- `npm run test:visual` — fresh full render и check.
+- `npm run visual:render -- --filter … --limit …` — ограниченная диагностика,
+  не полный зелёный результат.
+- `npm run visual:check` — HTML reference/actual/diff и JSON в storage/verification/32-storyboard.
+- `npm run visual:accept -- --confirm --reason "…"` — только после просмотра;
+  baseline в .ai/features/32-storyboard-reference/baselines версионируется.
+
+Совпадение — точное в закреплённой среде. У baseline есть browser/platform/node/fonts
+и условия RGBA; несовместимая среда даёт отдельный отказ, не pass. Новый каталог
+без fixture обнаруживается автоматическими тестами. Проверка маленькой пропавшей
+подписи не прячется за высоким средним PSNR всего кадра.
 
 ## Моушен и resolved media
 
@@ -112,3 +150,10 @@ aria-hidden слои, основной текст доступен один ра
 strings и эффекты у края. Compare watch/offline строки и координаты на тех же
 кадрах, загрузи HTML с network offline; проверь document.fonts и отсутствие HTTP.
 Артефакты задачи 31: `storage/verification/31-typography/`.
+
+Эталонный CLI явно использует штатный headless-shell закреплённой версии
+Remotion и программный Chromium rasterizer `swangle` через
+общий `renderStudioFrames`. Режим входит в environment identity: другой режим
+даёт environment-mismatch даже при совпадающих пикселях. Штатный worker
+сохраняет прежний default; это настройка воспроизводимых эталонов. Критерий
+RGBA/ROI остаётся точным, без послабления допуска.

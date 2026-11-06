@@ -38,14 +38,14 @@ presets.ts, MCP/HTTP: интеграция в задаче 5.
 videoContentInputSchema и buildVideoContent(document,input)->VideoDocument;
 setStudioContent(userId,projectId,input), selectStudioRecipes(userId,filters).
 
-- [ ] RED: все supported kind/format схемы и compile, смена содержимого сохраняет
+- [x] RED: все supported kind/format схемы и compile, смена содержимого сохраняет
   оформление, восьми board families передаются действия автора; ID/asset/answer
   ошибки, unsupported custom/tournament guards, CAS/idempotency.
-- [ ] GREEN: шесть направлений, metadata/contentForm/example, строгие формы,
+- [x] GREEN: шесть направлений, metadata/contentForm/example, строгие формы,
   стабильное сопоставление, missingInputs, атомарная запись штатным сервисом.
-- [ ] Проверка: npx vitest run src/video/recipes.test.ts src/video/content.test.ts
+- [x] Проверка: npx vitest run src/video/recipes.test.ts src/video/content.test.ts
   src/server/studio/content.test.ts . Ожидается PASS, включая отказ на wrong kind.
-- [ ] Коммит feat(studio): add curated recipes and semantic content authoring.
+- [x] Коммит feat(studio): add curated recipes and semantic content authoring.
 
 ### Задача 2: смысловые кадры и проверяемые замечания
 
@@ -53,12 +53,12 @@ setStudioContent(userId,projectId,input), selectStudioRecipes(userId,filters).
 Интерфейсы selectStoryboard/matchStoryboard/reviewVideo описаны в T02;
 diagnostics штатного compiler. Код browser-safe, без I/O/DB, прямые импорты.
 
-- [ ] RED: top/picker/board/custom, scene-local vs absolute, transitions,
+- [x] RED: top/picker/board/custom, scene-local vs absolute, transitions,
   короткие/нулевые окна, paging/segment, stable compare/add/remove; layout issues
   и only-valid-authoring-target fixes, intentional overlaps, notChecked.
-- [ ] GREEN: смысловой deterministic selection и explainable review/suggestions.
-- [ ] Проверка: npx vitest run src/video/storyboard.test.ts src/video/video-review.test.ts .
-- [ ] Коммит feat(video): select storyboard moments and actionable review checks.
+- [x] GREEN: смысловой deterministic selection и explainable review/suggestions.
+- [x] Проверка: npx vitest run src/video/storyboard.test.ts src/video/video-review.test.ts .
+- [x] Коммит feat(video): select storyboard moments and actionable review checks.
 
 ### Задача 3: воспроизводимые fixtures и pixel regression
 
@@ -66,12 +66,12 @@ diagnostics штатного compiler. Код browser-safe, без I/O/DB, пр�
 scripts/visual-regression.ts, baseline manifest под папкой задачи.
 Consumes renderStudioFrames({directory,engineId,frozen,frames,scale?}) из задачи4.
 
-- [ ] RED: identical infinity, changed small ROI, mismatch dimensions/missing
+- [x] RED: identical infinity, changed small ROI, mismatch dimensions/missing
   baseline, один failed frame красит suite; fixtures для всех54 и каталогов.
-- [ ] GREEN: локальные fixture media, manifest, render/check/explicit accept,
+- [x] GREEN: локальные fixture media, manifest, render/check/explicit accept,
   actual/reference/diff и PNG/RGBA metrics, environment provenance.
-- [ ] Проверка: npx vitest run src/video/visual-regression.test.ts src/video/visual-fixtures.test.ts .
-- [ ] Коммит test(video): add reproducible visual regression fixtures and runner.
+- [x] Проверка: npx vitest run src/video/visual-regression.test.ts src/video/visual-fixtures.test.ts .
+- [x] Коммит test(video): add reproducible visual regression fixtures and runner.
 
 ### Задача 4: durable inspection и общий renderer
 
@@ -80,13 +80,13 @@ jobs/job-types/worker/render, scripts/studio-render-child.ts;
 remotion/StoryboardSheet.tsx и Root.tsx, service/integration tests.
 Consumes задачи2; produces T03–T05 и renderStudioFrames для задачи3.
 
-- [ ] RED: current/invalid/stale/historical origin; no project writes,
+- [x] RED: current/invalid/stale/historical origin; no project writes,
   queued/cache/de-dupe/CAS/cancel/ownership/quota; review_apply recomputation,
   compare same moments, deep jobs не commit. Настоящий worker выдает grid PNG.
-- [ ] GREEN: frozen input в job directory, hash+lease fencing, shared renderer,
+- [x] GREEN: frozen input в job directory, hash+lease fencing, shared renderer,
   frame resources, compact report, bounded fixes и matching comparison.
-- [ ] Проверка: targeted service/integration tests плюс real still/clip/audio.
-- [ ] Коммит feat(studio): render durable storyboards and apply verified review fixes.
+- [x] Проверка: targeted service/integration tests плюс real still/clip/audio.
+- [x] Коммит feat(studio): render durable storyboards and apply verified review fixes.
 
 ### Задача 5: MCP, HTTP и пользовательские поверхности
 
@@ -94,21 +94,21 @@ Consumes задачи2; produces T03–T05 и renderStudioFrames для зада
 server/studio/http/index, video/presets/index; app/studio/storyboard/, recipes/,
 StudioWorkspace.tsx/new, studio.css, MCP/HTTP tests.
 
-- [ ] RED: четыре tool names/strict schemas/compact output, image block,
+- [x] RED: четыре tool names/strict schemas/compact output, image block,
   ready nextActions, recipe discovery/preview, authentication/Origin/CAS.
-- [ ] GREEN: короткий маршрут, формы примеров, галерея, storyboard page,
+- [x] GREEN: короткий маршрут, формы примеров, галерея, storyboard page,
   проблемы/до-после/плеер, origin/page/coverage, скачивание; dirty buffer сохранён.
-- [ ] Проверка: настоящий stdio + HTTP + браузер под отдельным аккаунтом,
+- [x] Проверка: настоящий stdio + HTTP + браузер под отдельным аккаунтом,
   шесть контрольных сценариев простым авторским маршрутом, все3 формата.
-- [ ] Коммит feat(studio): expose guided authoring and storyboard review in MCP and UI.
+- [x] Коммит feat(studio): expose guided authoring and storyboard review in MCP and UI.
 
 ### Задача 6: эталоны, QG и независимое ревью
 
 - [ ] Сгенерировать/посмотреть baselines, повторно render/check, внести контрольную
   pixel/ROI регрессию и подтвердить fail; сравнить реальный MP4 и decoded audio.
 - [ ] Сохранить воспроизводимые scripts/SDK guide и verify.md с evidence.
-- [ ] npm test → npm run build → npx tsc --noEmit, записать цифры.
-- [ ] Свежий ревьюер получает полный diff; существенное исправить и перепроверить.
+- [x] npm test → npm run build → npx tsc --noEmit:122files/1413tests,build/tscPASS.
+- [x] Свежий ревьюер получает полный diff; FR01–03 исправлены,повторный scopedPASS.
 - [ ] PR, stage review; автономная приёмка, stage merged/history и merge PR.
 
 ### Задача 7: знания

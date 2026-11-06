@@ -37,7 +37,7 @@ TDD: RED 2/11 (software option не дошла до browser; одинаковы�
 
 ## Последующая проверка: bundled headless-shell вместо system Chrome
 
-Полный SW/system-Chrome 157 repeat дал 21 расхождение на 1675 кадрах. Это отменяет
+Полный SW/system-Chrome 157 repeat дал 22 расхождения на 1675 кадрах. Это отменяет
 предположение, что одного SW backend достаточно: scoped 21×3 выше не доказывал
 повторяемость всей матрицы. First-frame prewarm тоже провалился; private hooks
 и допуски не включались в production.
