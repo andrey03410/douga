@@ -81,7 +81,7 @@ async function environment(): Promise<VisualEnvironment> {
   const browser = await ensureBrowser({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE });
   if (!("path" in browser)) throw new Error(`BROWSER_UNAVAILABLE:${browser.type}`);
   const version = (await processBytes(browser.path, ["--version"])).toString().trim();
-  return { platform: process.platform, arch: process.arch, node: process.versions.node, osVersion: release(), ffmpeg: sha256(await readFile(ffmpeg!)), colorSpace: "srgb", browser: `${version};binary-sha256=${sha256(await readFile(browser.path))}`, remotion: VERSION, fontHashes: [], pixelFormat: "rgba", scale: 1 };
+  return { platform: process.platform, arch: process.arch, node: process.versions.node, osVersion: release(), ffmpeg: sha256(await readFile(ffmpeg!)), colorSpace: "srgb", browser: `${version};binary-sha256=${sha256(await readFile(browser.path))}`, remotion: VERSION, fontHashes: [], pixelFormat: "rgba", scale: 1, rasterizer: "swangle" };
 }
 function pixelRegions(plan: StudioFrozenRevision["plan"], frame: number): VisualRegion[] {
   const regions: VisualRegion[] = [];
@@ -125,7 +125,7 @@ export async function renderVisualFixtures(options: ReturnType<typeof parseVisua
     const directory = path.join(verificationDirectory, "actual", fixture.id), frozen = await freezeVisualFixture(fixture, directory);
     const frames = [...new Set(fixture.frames.map((f) => f.frame))].sort((a, b) => a - b);
     const rendered: { frame: number; path: string }[] = [];
-    for (let offset = 0; offset < frames.length; offset += 64) rendered.push(...await renderStudioFrames({ directory: storageRelative(path.join(directory, "render")), engineId, frozen, frames: frames.slice(offset, offset + 64), scale: 1 }));
+    for (let offset = 0; offset < frames.length; offset += 64) rendered.push(...await renderStudioFrames({ directory: storageRelative(path.join(directory, "render")), engineId, frozen, frames: frames.slice(offset, offset + 64), scale: 1, rasterizer: "swangle" }));
     if (rendered.length !== frames.length || frames.some((frame) => !rendered.some((r) => r.frame === frame))) throw new Error(`INCOMPLETE_RENDER:${fixture.id}`);
     const frameEnvironment = { ...env, fontHashes: [...new Set((frozen.plan.fonts ?? []).map((f) => f.hash))].sort() };
     for (const frame of rendered) {

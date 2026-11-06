@@ -32,6 +32,9 @@ describe("visual pixel regression", () => {
   it("rejects incompatible environment before pixel comparison", () => {
     expect(compareVisualFrame({ id: "env", actual: image(), reference: image(), environment, referenceEnvironment: { ...environment, browser: "other" } }).status).toBe("environment-mismatch");
   });
+  it("rejects a different rasterizer even when every pixel is identical", () => {
+    expect(compareVisualFrame({ id: "rasterizer", actual: image(), reference: image(), environment: { ...environment, rasterizer: "swangle" }, referenceEnvironment: environment }).status).toBe("environment-mismatch");
+  });
   it("does not excuse pixels when only engine provenance changes", () => {
     const actual = image(); actual.data[0] = 0;
     expect(compareVisualFrame({ id: "engine", actual, reference: image(), environment, referenceEnvironment: environment, engineId: "new", referenceEngineId: "old" }).status).toBe("failed");

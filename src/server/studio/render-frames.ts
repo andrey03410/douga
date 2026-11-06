@@ -62,10 +62,11 @@ export async function prepareStudioRender(request: { directory: string; engineId
   return { directory, serveUrl, publicDir, plan, inputProps, browserExecutable, composition };
 }
 
-export async function renderStudioFrames(request: { directory: string; engineId: string; frozen: StudioFrozenRevision; frames: number[]; scale?: number }) {
+export async function renderStudioFrames(request: { directory: string; engineId: string; frozen: StudioFrozenRevision; frames: number[]; scale?: number; rasterizer?: "swangle" }) {
   if (!request.frames.length || request.frames.length > 64 || request.frames.some(f => !Number.isInteger(f) || f < 0 || f >= request.frozen.plan.durationInFrames)) throw new StudioError("FRAME_RANGE_INVALID");
   const prepared = await prepareStudioRender(request);
-  const browser = await openBrowser("chrome", { browserExecutable: prepared.browserExecutable, logLevel: "error" });
+  const browser = await openBrowser("chrome", { browserExecutable: prepared.browserExecutable, logLevel: "error",
+    ...(request.rasterizer ? { chromiumOptions: { gl: request.rasterizer } } : {}) });
   const frames: { frame: number; path: string }[] = [];
   try {
     for (const frame of [...new Set(request.frames)]) {

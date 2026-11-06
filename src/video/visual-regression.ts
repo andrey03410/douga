@@ -2,7 +2,7 @@
 export interface RgbaImage { width: number; height: number; data: Uint8Array }
 export interface VisualEnvironment {
   platform: string; arch: string; node: string; osVersion?: string; ffmpeg?: string; colorSpace?: "srgb"; browser: string; remotion: string;
-  fontHashes: string[]; pixelFormat: "rgba"; scale: number;
+  fontHashes: string[]; pixelFormat: "rgba"; scale: number; rasterizer?: "swangle";
 }
 export interface PixelTolerance { maxChangedPixelRatio?: number; maxDelta?: number; minPsnr?: number }
 export interface VisualRegion { id: string; x: number; y: number; width: number; height: number; tolerance?: PixelTolerance }
@@ -40,7 +40,7 @@ function passes(m: PixelMetrics, t: PixelTolerance = {}): boolean {
   return m.changedPixelRatio <= ratio && m.maxDelta <= delta && m.psnr >= psnr;
 }
 export function visualEnvironmentsMatch(a: VisualEnvironment, b: VisualEnvironment): boolean {
-  return a.platform === b.platform && a.arch === b.arch && a.node === b.node && a.osVersion === b.osVersion && a.ffmpeg === b.ffmpeg && a.colorSpace === b.colorSpace && a.browser === b.browser && a.remotion === b.remotion && a.pixelFormat === b.pixelFormat && a.scale === b.scale && JSON.stringify([...a.fontHashes].sort()) === JSON.stringify([...b.fontHashes].sort());
+  return a.platform === b.platform && a.arch === b.arch && a.node === b.node && a.osVersion === b.osVersion && a.ffmpeg === b.ffmpeg && a.colorSpace === b.colorSpace && a.browser === b.browser && a.remotion === b.remotion && a.pixelFormat === b.pixelFormat && a.scale === b.scale && a.rasterizer === b.rasterizer && JSON.stringify([...a.fontHashes].sort()) === JSON.stringify([...b.fontHashes].sort());
 }
 export function compareVisualFrame(input: {
   id: string; actual: RgbaImage; reference?: RgbaImage; environment: VisualEnvironment;
