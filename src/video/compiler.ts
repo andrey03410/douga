@@ -18,6 +18,7 @@ import { OUTPUT_DIMENSIONS } from "./layout";
 import { mergeSettings, frames } from "./settings";
 import { diagnostic, effectiveSettings, type CompileContext } from "./context";
 import { addBackground, compilePicker, compileTop, makeScene } from "./blocks";
+import { compileBoard } from "./board-compiler";
 import { compileCustomNodes } from "./nodes";
 import { compileGlobalAudio } from "./audio";
 /** Pure deterministic compiler. A non-ready partial plan is useful for diagnostics, never final rendering. */
@@ -321,6 +322,8 @@ function compileDocument(
         return;
       }
       scenes = [compileTop(ctx, template, participant, cursor, settings)];
+    } else if (template.block === "board") {
+      scenes = compileBoard(ctx, template, cursor, settings);
     } else if (template.block === "picker") {
       if (!round) {
         diagnostic(

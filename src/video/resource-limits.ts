@@ -48,6 +48,7 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
     repeat?: string;
     nodes?: unknown[];
     block?: string;
+    board?: { slots?: unknown[]; rounds?: { cards?: unknown[]; actions?: unknown[] }[]; presentation?: { rowFocusSec?: number } };
   };
   const doc = input as {
     source?: {
@@ -68,6 +69,7 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
       repeat?: string;
       nodes?: unknown[];
       block?: string;
+      board?: SceneInput["board"];
     }[];
     audio?: { cues?: { anchor?: { sceneId?: string; event?: string } }[] };
   };
@@ -163,6 +165,23 @@ export function preflightVideoResources(input: unknown): Diagnostic[] {
                   : 1),
             })),
           );
+      }
+      if (scene.block === "board" && scene.board) {
+        const board = scene.board;
+        const rounds = Array.isArray(board.rounds) ? board.rounds : [];
+        const slots = Array.isArray(board.slots) ? board.slots.length : 0;
+        let candidates = 0, phases = 2 + ((board.presentation?.rowFocusSec ?? 0) > 0 ? slots + 1 : 0);
+        for (const round of rounds) {
+          const cards = Array.isArray(round?.cards) ? round.cards.length : 0;
+          candidates += cards;
+          phases += 3 + cards + (Array.isArray(round?.actions) ? round.actions.length : 0);
+        }
+        const boardNodes = phases * (12 + slots * 4 + candidates * 2 + authored);
+        scenes += phases;
+        nodes += boardNodes;
+        if (scenes > videoResourceLimits.maxExpandedScenes || nodes > videoResourceLimits.maxExpandedNodes) return failure();
+        if (typeof scene.id === "string") sceneCopies.set(scene.id, phases);
+        continue;
       }
       const copies = count * (scene.block === "picker" ? 2 : 1);
       if (typeof scene.id === "string") sceneCopies.set(scene.id, copies);

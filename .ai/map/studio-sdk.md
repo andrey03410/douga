@@ -1,6 +1,6 @@
 # AI Video SDK (студия)
 
-Это единственная точка входа в видео Douga. Ролик (топ или пикер) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
+Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
 
 ## Где код
 - [`src/video/`](../../src/video/) — домен SDK без I/O. Публичный вход — [`index.ts`](../../src/video/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
@@ -8,7 +8,8 @@
   - [`builders.ts`](../../src/video/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
   - [`compiler.ts`](../../src/video/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
   - [`layout.ts`](../../src/video/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
-  - [`presets.ts`](../../src/video/presets.ts) — 30 встроенных пресетов `top|picker.<family>.<wide|vertical|square>`, `extractVideoPreset`/`applyVideoPreset`
+  - [`presets.ts`](../../src/video/presets.ts) — 54 встроенных пресета `top|picker|board.<family>.<wide|vertical|square>`, `extractVideoPreset`/`applyVideoPreset`
+  - [`board-state.ts`](../../src/video/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../src/video/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../src/video/board-presets.ts) — 8 семейств и factory
   - [`patches.ts`](../../src/video/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
   - [`resource-limits.ts`](../../src/video/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
 - [`src/remotion/StudioVideo.tsx`](../../src/remotion/StudioVideo.tsx) — единый рендерер плана (композиция `Studio` в [`Root.tsx`](../../src/remotion/Root.tsx)) для Player, PNG, клипов и финального MP4; покадровая математика — [`studio-frame.ts`](../../src/remotion/studio-frame.ts), градиент/тень → CSS — [`studio-paint.ts`](../../src/remotion/studio-paint.ts)
@@ -37,7 +38,7 @@
 ## Как устроено
 - Форматы `wide`/`vertical`/`square` = 1920×1080 / 1080×1920 / 1080×1080. Встроенные пресеты — 30 FPS (схема допускает 24/25/30/50/60). Действуют технические бюджеты схемы.
 - Документ v1: `source` (`manual`|`tournament`, participants, rounds с cards/groups/answer), `bindings`, `settings` + `formatSettings`, `scenes` (`block: custom|top|picker`, `repeat: participants|rounds`, узлы container/text/shape/image/video/card/timer/audio с анимациями) и `audio` (плейлист, cues с ролями primary/music/sfx/voice). Произвольный JS/TSX документ не исполняет: новый эффект = расширение схемы + компилятора + `StudioVideo`.
-- Документ v2: корневой `scenes: []` и `segments[]` с id/kind/title/subtitle/poster/sourceSegmentId/participantIds/roundIds/scenes/settings/audio/enabled. В одном видео top, picker и custom. Общие settings/пресет наследуются, локальные overrides сохраняются. Патч target segment меняет один сегмент, set массива document.segments позволяет копировать (с новыми ID), переставлять и удалять.
+- Документ v2: корневой `scenes: []` и `segments[]` с id/kind/title/subtitle/poster/sourceSegmentId/participantIds/roundIds/scenes/settings/audio/enabled. В одном видео top, picker, board и custom. Общие settings/пресет наследуются, локальные overrides сохраняются. Патч target segment меняет один сегмент, set массива document.segments позволяет копировать (с новыми ID), переставлять и удалять.
 - Примитивы v2: text bindings `segment.title/subtitle/number/count` (count — число мест), `participant.comment/album/score`; asset tokens `$participant.visual`, `$participant.audio`, `$segment.poster`; container `repeat:"participants"` + `selection:"segment"|"document"|"revealed"` + дочерний шаблон. `style.blur` = 0..200 px. `bestMomentSec` приоритетнее автоматического и ручного offset. Бюджеты развёртки суммируются по включённым сегментам и вложенным повторам.
 - План остаётся IR schemaVersion1/compilerVersion1.0.0 и дополняется `segments:[{id,title,kind,from,to}]`; у сцен segmentId/segmentTitle. Timeline возвращает границы [from,to), watch/offline называют главы по сегментам. Старый v1 проходит прежний путь; проверка задачи27 подтвердила идентичные планы, lossless PNG и PCM.
 - `StudioProject.version` — CAS-токен (`expectedVersion`), растёт при любой записи: черновик, синхронизация источника, commit. `revision` — номер сохранённой ревизии, растёт только при commit/restore/смене источника. Это разные числа.
@@ -45,7 +46,7 @@
 - Restore создаёт новую ревизию со старым содержимым. Идемпотентность — `idempotencyKey` в `StudioMutation`: ключ общий на аккаунт, тот же ключ с другим запросом → `IDEMPOTENCY_CONFLICT`.
 - Каждое чтение проекта вызывает `reconcileSource`. Новый проект по турниру — v2: `source.segments` содержит готовые непустые сегменты в порядке турнира, участники — top-N каждого с локальными rank. ID участника = trackId; metadata (label/comment/album/score/bestMoment/cover) авторитетны из турнира, оформление сохраняется по ID. Новый готовый сегмент наследует общий пресет и встаёт после последнего исходного перед аутро. Авторский порядок, копии и удаление video-сегментов сохраняются. Временно неготовый source-сегмент остаётся в документе с enabled:false и восстанавливает оформление после готовности; `source.dormantSegments` хранит авторский enabled по video segment ID, а `source.suppressedSegmentIds` удерживает авторское удаление через этот цикл (в том числе удаление уже dormant части). V1 закрепляется за `source.segmentId`, не смешивает локальные рейтинги. При смене отпечатка head получает ревизию reason source.
 - Задание: `startStudioJob` → `freezeStudioProject` (снимок: resolved document, manifest, файлы с SHA-256, план) + `engineId` → `StudioJob` в статусе `queued`. Воркер берёт единственный тяжёлый слот `StudioWorkerLease` (lease 30 с, heartbeat 5 с, ≤ 3 попытки) и форкает `studio-render-child.ts`. Виды: `still`/`clip`/`audio` (≤ 15 с, длинная сторона 720) и `render` (весь таймлайн).
-- Пресеты (30 встроенных + личные `StudioPreset`) содержат только оформление и абстрактные слоты; схема отвергает участников и реальные медиа-привязки. Применение переносит медиа только по совместимой структуре, иначе `PRESET_INCOMPATIBLE`.
+- Пресеты (54 встроенных + личные `StudioPreset`) содержат только оформление и абстрактные слоты; схема отвергает участников и реальные медиа-привязки. Применение переносит медиа только по совместимой структуре, иначе `PRESET_INCOMPATIBLE`.
 
 ## Грабли
 - `expectedVersion` ≠ `revision`. Устаревшая версия → `VERSION_CONFLICT` (HTTP 409); `revision` в задании выбирает сохранённый документ. Даже чтение может поднять `version` (синхронизация источника), поэтому перед записью перечитывайте.

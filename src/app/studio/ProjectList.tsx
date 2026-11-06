@@ -16,7 +16,7 @@ export function StudioProjectList({ initial }: { initial: Page }) {
           <div className="list-item" key={p.id}>
             <div>
               <a href={`/studio/${p.id}`}>
-                SDK · {p.kind === "top" ? "Топ" : "Пикер"}
+                SDK · {p.kind === "top" ? "Топ" : p.kind === "board" ? "Доска" : "Пикер"}
               </a>
               <div className="muted">
                 <code>{p.id}</code> · v{p.version} · r{p.revision}

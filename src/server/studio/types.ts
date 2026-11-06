@@ -142,7 +142,7 @@ export interface StudioValidation {
 export interface StudioProjectView {
   id: string;
   title: string;
-  kind: "top" | "picker";
+  kind: "top" | "picker" | "board";
   version: number;
   revision: number;
   document: VideoDocument;

@@ -41,6 +41,8 @@ export function collectVideoAssetKeys(document: VideoDocument): string[] {
     ...document.scenes,
     ...(document.segments ?? []).flatMap((s) => s.scenes),
   ].forEach((s) => {
+    s.board?.slots.forEach((slot) => { add(slot.image); add(slot.backgroundAsset); add(slot.sound); });
+    s.board?.rounds.forEach((r) => r.actions.forEach((a) => add(a.sound)));
     add(s.background);
     settings(s.settings);
     nodes(s.nodes);

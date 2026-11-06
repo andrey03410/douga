@@ -451,7 +451,7 @@ describe("canonical document and deterministic compilation", () => {
   });
   it("ships all media-free families in three formats with useful picker skeletons", () => {
     const presets = getBuiltinPresets();
-    expect(presets).toHaveLength(30);
+    expect(presets.filter((p) => p.kind !== "board")).toHaveLength(30);
     for (const preset of presets) {
       expect(preset.schemaVersion).toBe(1);
       const d = createVideoDocument({ kind: preset.kind, presetId: preset.id });

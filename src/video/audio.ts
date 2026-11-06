@@ -122,16 +122,21 @@ export function compileGlobalAudio(
           if (
             a.participantId &&
             scene.participantId !== a.participantId &&
-            a.event !== "card.reveal"
+            a.event !== "card.reveal" && !a.event.startsWith("board.")
           )
             return [];
           if (a.roundId && scene.roundId !== a.roundId) return [];
+          if (a.event.startsWith("board."))
+            return (scene.boardEvents ?? []).filter((e) => e.event === a.event &&
+              (!a.cardId || e.cardId === a.cardId) && (!a.participantId || e.participantId === a.participantId) &&
+              (!a.slotId || e.slotId === a.slotId) && (!a.actionId || e.actionId === a.actionId)
+            ).map((e) => scene.from + e.frame);
           if (a.event === "card.reveal")
             return scene.nodes
               .filter(
                 (n) =>
                   n.type === "card" &&
-                  n.activeWindow &&
+                  n.activeWindow && n.activeWindow.to > n.activeWindow.from &&
                   (!a.cardId || n.cardId === a.cardId) &&
                   (!a.participantId || n.participantId === a.participantId),
               )

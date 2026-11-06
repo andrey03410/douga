@@ -76,7 +76,7 @@ export async function view(
   return {
     id: row.id,
     title: row.title,
-    kind: row.kind as "top" | "picker",
+    kind: row.kind as "top" | "picker" | "board",
     version: row.version,
     revision: row.revision,
     document: JSON.parse(row.documentJson),

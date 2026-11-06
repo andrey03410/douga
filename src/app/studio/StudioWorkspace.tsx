@@ -351,7 +351,7 @@ export function StudioWorkspace({
     <>
       <a href="/projects">← Мои видео</a>
       <h1 style={{ marginTop: 16 }}>
-        SDK · {meta.kind === "top" ? "Топ" : "Пикер"}
+        SDK · {meta.kind === "top" ? "Топ" : meta.kind === "board" ? "Доска" : "Пикер"}
       </h1>
       <p className="muted">
         Проект <code>{id}</code>. Код, ответы, медиа и звук скрыты до вашего
