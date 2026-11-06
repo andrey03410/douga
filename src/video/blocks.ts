@@ -39,6 +39,12 @@ export function makeScene(
     phases: {},
     transition: {
       type: template.transition?.type ?? "none",
+      ...(template.transition?.direction
+        ? { direction: template.transition.direction }
+        : {}),
+      ...(template.transition?.color
+        ? { color: template.transition.color }
+        : {}),
       durationInFrames: Math.min(
         durationInFrames,
         frames(template.transition?.duration, ctx.fps),

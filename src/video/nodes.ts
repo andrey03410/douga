@@ -1,3 +1,8 @@
+import {
+  setNodeMotion,
+  normalizeTimer,
+  normalizeVersus,
+} from "./motion-compiler";
 import type {
   CompiledNode,
   CompiledScene,
@@ -248,6 +253,12 @@ export function compileCustomNodes(
           .sort((a, b) => a.frame - b.frame),
       })),
     });
+    setNodeMotion(
+      compiled,
+      node.type === "container"
+        ? node.motion
+        : { ...settings.motion, ...node.motion },
+    );
     for (const animation of compiled.animation) {
       if (
         new Set(animation.keyframes.map((k) => k.frame)).size !==
@@ -310,8 +321,88 @@ export function compileCustomNodes(
         }
       }
     }
-    if (node.type === "timer")
+    if (node.type === "timer") {
       compiled.timerFrames = frames(node.duration, ctx.fps, duration);
+      const { variant, color, trackColor, strokeWidth, showValue, warningSec } =
+        node;
+      if (
+        settings.timer ||
+        [variant, color, trackColor, strokeWidth, showValue, warningSec].some(
+          (v) => v !== undefined,
+        )
+      )
+        compiled.timer = normalizeTimer(
+          Object.fromEntries(
+            Object.entries({
+              ...settings.timer,
+              ...Object.fromEntries(
+                Object.entries({
+                  variant,
+                  color,
+                  trackColor,
+                  strokeWidth,
+                  showValue,
+                  warningSec,
+                }).filter(([, v]) => v !== undefined),
+              ),
+            }).filter(([, v]) => v !== undefined),
+          ),
+        );
+    }
+    if (node.type === "versus")
+      compiled.versus = normalizeVersus({
+        ...settings.versus,
+        ...(node.variant ? { variant: node.variant } : {}),
+        ...(node.color ? { color: node.color } : {}),
+      });
+    if (node.type === "badge") {
+      compiled.badge = {
+        kind: node.kind,
+        ...(node.color ? { color: node.color } : {}),
+      };
+      compiled.text =
+        node.text !== undefined
+          ? boundText(ctx, node.text, participant, round)
+          : node.kind === "rank"
+            ? String(participant?.rank ?? "")
+            : node.kind === "winner"
+              ? "Победитель"
+              : node.kind === "round" && round
+                ? String(ctx.document.source.rounds.indexOf(round) + 1)
+                : "";
+      if (!compiled.text)
+        diagnostic(
+          ctx,
+          "WIDGET_BINDING_UNRESOLVED",
+          `Badge ${node.kind} has no value in this context.`,
+          `nodes.${node.id}`,
+          node.id,
+        );
+      if (node.kind === "winner" && node.text === undefined) {
+        const answer = scene.phases.answerStartFrame;
+        if (answer !== undefined)
+          compiled.visible =
+            answer < end ? [{ from: Math.max(from, answer), to: end }] : [];
+        else if (round?.answer) compiled.visible = [];
+        else
+          diagnostic(
+            ctx,
+            "WIDGET_BINDING_UNRESOLVED",
+            "Winner badge requires an answer event.",
+            `nodes.${node.id}`,
+            node.id,
+          );
+      }
+    }
+    if (node.type === "progress")
+      compiled.progress = {
+        scope: node.scope ?? "scene",
+        color: node.color ?? "#ffffff",
+        trackColor: node.trackColor ?? "#ffffff33",
+        strokeWidth: node.strokeWidth ?? 6,
+        from: 0,
+        durationInFrames: scene.durationInFrames,
+      };
     if (node.type === "card") {
       const p =
         node.participantId === "$participant"
@@ -331,6 +422,7 @@ export function compileCustomNodes(
         const local = effectiveSettings(ctx, settings, p.settings, {
           card: node.style,
         });
+        setNodeMotion(compiled, { ...local.motion, ...node.motion });
         compiled.style = {
           ...local.card,
           ...(p.bestMomentSec !== undefined

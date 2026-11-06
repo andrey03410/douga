@@ -309,6 +309,9 @@ describe("discovery and service integration", () => {
       "video",
       "card",
       "timer",
+      "versus",
+      "badge",
+      "progress",
       "audio",
     ]);
     expect(

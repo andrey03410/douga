@@ -40,7 +40,11 @@ export function mergeSettings(...layers: (Settings | undefined)[]): Settings {
     for (const key of Object.keys(layer) as (keyof Settings)[]) {
       const value = layer[key];
       if (value === undefined) continue;
-      if (typeof value === "object" && !Array.isArray(value)) {
+      if (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
         const previous = result.top?.snippet;
         (result as any)[key] = { ...((result[key] as object) ?? {}), ...value };
         if (key === "top" && layer.top?.snippet)
