@@ -72,9 +72,9 @@
 
 ## 6. MCP
 
-- [ ] Файлы: `src/mcp/tournament-tools.ts` (items, три новых инструмента, рецепт),
+- [x] Файлы: `src/mcp/tournament-tools.ts` (items, три новых инструмента, рецепт),
   `src/mcp/instructions.ts`, тесты списка имён.
-- [ ] Тест: `tournament-mcp.integration.test.ts` дополнен Shikimori-, pool- и path-картинками,
+- [x] Тест: `tournament-mcp.integration.test.ts` дополнен Shikimori-, pool- и path-картинками,
   `items_add/update/remove`, отсутствием ответов у агента.
 - Готово: настоящий stdio создаёт базу персонажей.
 

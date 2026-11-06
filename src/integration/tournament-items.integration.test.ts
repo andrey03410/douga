@@ -230,12 +230,13 @@ describe("pool, disk and duplicates", () => {
     const { tracks } = await resolveItemSources(userId, [shiki("character", 1), shiki("character", 2)], Infinity);
     const ready = tracks as ExtractedTrack[];
     await expect(
-      createTournament(userId, { title: "Dup" }, [ready[0], ready[0]]),
+      createTournament(userId, { title: "Dup", blindMode: false }, [ready[0], ready[0]]),
     ).rejects.toThrow("DUPLICATE_ITEM:Беатриче");
     const t = await createTournament(
       userId,
       {
         title: "Umineko",
+        blindMode: false,
         segments: [
           { title: "Ep 1", trackIndexes: [0, 1] },
           { title: "Ep 2", trackIndexes: [2] },
