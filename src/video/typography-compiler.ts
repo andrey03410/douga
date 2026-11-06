@@ -559,7 +559,13 @@ export function applySceneTypography(
       diagnostic(
         ctx,
         "FONT_GLYPH_MISSING",
-        `No packaged font covers: ${node.textLayout.missing.slice(0, 20).join(" ")}`,
+        `No packaged font covers: ${node.textLayout.missing
+          .slice(0, 20)
+          .map(
+            (char) =>
+              `${char} (${Array.from(char, (point) => `U+${point.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")})`,
+          )
+          .join(" ")}`,
         `nodes.${node.id}.text`,
         node.id,
       );

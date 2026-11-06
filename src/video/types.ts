@@ -30,6 +30,7 @@ export type PlainTextValue =
       bind:
         | "document.title"
         | "participant.label"
+        | "participant.displayLabel"
         | "participant.rank"
         | "participant.comment"
         | "participant.album"

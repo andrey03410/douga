@@ -88,6 +88,9 @@ export function boundText(
     case "participant.label":
       result = p?.label;
       break;
+    case "participant.displayLabel":
+      result = p?.caption ?? p?.label;
+      break;
     case "participant.rank":
       result = p?.rank;
       break;

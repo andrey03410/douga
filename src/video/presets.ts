@@ -301,9 +301,31 @@ function sanitizePresetText(
 ): TextValue {
   const plain = (text: PlainTextValue): PlainTextValue =>
     fallback ?? (typeof text === "string" ? "Text" : { bind: text.bind });
-  return typeof value === "object" && "runs" in value
-    ? { runs: value.runs.map((run) => ({ ...run, text: plain(run.text) })) }
-    : plain(value);
+  if (typeof value !== "object" || !("runs" in value)) return plain(value);
+  if (fallback === undefined)
+    return {
+      runs: value.runs.map((run) => ({ ...run, text: plain(run.text) })),
+    };
+  const boundIndex = value.runs.findIndex(
+    (run) =>
+      typeof run.text === "object" &&
+      typeof fallback === "object" &&
+      (run.text.bind === fallback.bind ||
+        (fallback.bind === "participant.displayLabel" &&
+          run.text.bind === "participant.label")),
+  );
+  const nonemptyIndex = value.runs.findIndex(
+    (run) => typeof run.text !== "string" || run.text.length > 0,
+  );
+  const labelIndex = boundIndex >= 0 ? boundIndex : Math.max(0, nonemptyIndex);
+  // One safe name fills the default caption. Other runs retain their styles as
+  // empty slots for an explicit rich caption in the destination project.
+  return {
+    runs: value.runs.map((run, index) => ({
+      ...run,
+      text: index === labelIndex ? fallback : "",
+    })),
+  };
 }
 /** Explicit extraction: never serialize source, bindings, literal content or project identifiers. */
 export function extractVideoPreset(
@@ -350,7 +372,7 @@ export function extractVideoPreset(
       base.participantId = "$participant";
       if (base.label)
         base.label = sanitizePresetText(base.label, {
-          bind: "participant.label",
+          bind: "participant.displayLabel",
         });
     }
     if (

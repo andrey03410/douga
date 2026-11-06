@@ -79,3 +79,29 @@ GREEN после исправления и форматирования, под 
 - `npx vitest run src/video`: 16 файлов, 374 теста, все зелёные.
 - `npx tsc --noEmit --project /tmp/douga31-domain.tsconfig.json`: зелёный.
 - Полный QG и настоящий renderer остаются у root; renderer/сервисы не менялись.
+
+## Повторное ревью F31-05 и Unicode диагностика
+
+Повторное чтение выявило регрессию первого F31-05 fix (`4a4f616`): safe fallback
+в каждом rich run повторял имя. RED compile-roundtrip заменил ошибочное ожидание
+двух bindings; default caption теперь содержит ровно один name binding, остальные
+style slots имеют пустой текст. Если исходный run уже был привязан к имени,
+сохраняется его позиция и оформление; иначе выбирается первый непустой слот.
+Явный destination rich text снова заполняет все соответствующие style slots.
+
+Добавлен согласованный binding `participant.displayLabel` = `caption ?? label`.
+Именно он служит default label сохранённого card preset. Благодаря разрешению
+binding при компиляции default caption корректен как у конкретной карточки,
+так и внутри repeat participants; подпись не превращается в статическую копию
+и не меняется с nickname на полное исходное имя. Explicit destination label и
+текст его runs сохраняются. Проверены отсутствие private prefix, ровно одно имя,
+caption concrete/repeated карточек, fallback на label и оформление всех slots.
+
+`FONT_GLYPH_MISSING` теперь показывает до 20 entries как `символ (U+XXXX)`;
+codePointAt сохраняет полный supplementary code point. Существующий тест проверяет
+`𰻞 (U+30EDE)`, nodeId/path продолжают приходить через штатный diagnostic.
+
+После последних правок под Node 22.23.2:
+
+- `npx vitest run src/video`: 16 файлов, 377 тестов, все зелёные.
+- `npx tsc --noEmit --project /tmp/douga31-domain.tsconfig.json`: зелёный.

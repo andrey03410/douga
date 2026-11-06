@@ -312,6 +312,9 @@ describe("pixel layout", () => {
       { measureText: (t, s) => ({ ...measureText(t, s), missing: ["𰻞"] }) },
     );
     expect(r.diagnostics.map((d) => d.code)).toContain("FONT_GLYPH_MISSING");
+    expect(
+      r.diagnostics.find((d) => d.code === "FONT_GLYPH_MISSING")?.message,
+    ).toContain("𰻞 (U+30EDE)");
   });
   it("fits compatible groups to the smallest required size and rejects incompatible groups", () => {
     const d = doc(
@@ -881,7 +884,18 @@ describe("review F31-05 rich card preset round trip", () => {
       VideoNode,
       { type: "card" }
     >;
-    expect(saved.label).toEqual(richLabel);
+    const displayLabel = {
+      runs: [
+        {
+          text: { bind: "participant.displayLabel" as const },
+          color: "yellow",
+          weight: 400 as const,
+          italic: true,
+          decoration: "underline" as const,
+        },
+      ],
+    };
+    expect(saved.label).toEqual(displayLabel);
     const destination = doc([
       { id: "card", type: "card", participantId: "destination" },
     ]);
@@ -891,7 +905,7 @@ describe("review F31-05 rich card preset round trip", () => {
       VideoNode,
       { type: "card" }
     >;
-    expect(card.label).toEqual(richLabel);
+    expect(card.label).toEqual(displayLabel);
     expect(card.participantId).toBe("destination");
     expect(compile(applied).plan.scenes[0].nodes[0].textRuns).toEqual([
       {
@@ -903,7 +917,7 @@ describe("review F31-05 rich card preset round trip", () => {
       },
     ]);
   });
-  it("clears private literals and group selectors while retaining rich card styles", () => {
+  it("clears private literals and group selectors and renders one default participant label", () => {
     const source = doc([
       {
         id: "card",
@@ -936,14 +950,83 @@ describe("review F31-05 rich card preset round trip", () => {
     >;
     expect(card.label).toEqual({
       runs: [
-        { text: { bind: "participant.label" }, color: "yellow" },
-        { text: { bind: "participant.label" }, weight: 400, italic: true },
+        { text: { bind: "participant.displayLabel" }, color: "yellow" },
+        { text: "", weight: 400, italic: true },
       ],
     });
     expect(JSON.stringify(preset)).not.toMatch(
       /Private caption|private-group|Private prefix/,
     );
+    const destination = doc([
+      { id: "card", type: "card", participantId: "destination" },
+    ]);
+    destination.source.participants = [{ id: "destination", label: "Акира" }];
+    const compiled = compile(sdk.applyVideoPreset(destination, preset));
+    expect(compiled.ready).toBe(true);
+    expect(compiled.plan.scenes[0].nodes[0].label).toBe("Акира");
+    expect(
+      compiled.plan.scenes[0].nodes[0].textRuns
+        ?.map((run) => run.text)
+        .join(""),
+    ).toBe("Акира");
   });
+});
+
+it("retains the original name slot style and keeps other slots available for explicit destination rich text", () => {
+  const source = doc([
+    {
+      id: "card",
+      type: "card",
+      participantId: "source",
+      label: {
+        runs: [
+          { text: "Private prefix ", color: "yellow" },
+          { text: { bind: "participant.label" }, weight: 400, italic: true },
+        ],
+      },
+    },
+  ]);
+  source.source.participants = [{ id: "source", label: "Private name" }];
+  const preset = extractVideoPreset(source, {
+    id: "one-name",
+    name: "One name",
+  });
+  const saved = preset.scenes[0].nodes[0] as Extract<
+    VideoNode,
+    { type: "card" }
+  >;
+  expect(saved.label).toEqual({
+    runs: [
+      { text: "", color: "yellow" },
+      { text: { bind: "participant.displayLabel" }, weight: 400, italic: true },
+    ],
+  });
+  const destination = doc([
+    { id: "card", type: "card", participantId: "destination" },
+  ]);
+  destination.source.participants = [{ id: "destination", label: "Акира" }];
+  const applied = sdk.applyVideoPreset(destination, preset),
+    compiled = compile(applied);
+  expect(compiled.ready).toBe(true);
+  expect(compiled.plan.scenes[0].nodes[0].label).toBe("Акира");
+  expect(compiled.plan.scenes[0].nodes[0].textRuns).toEqual([
+    { text: "", color: "yellow" },
+    { text: "Акира", weight: 400, italic: true },
+  ]);
+  const explicit = destination.scenes[0].nodes[0] as Extract<
+    VideoNode,
+    { type: "card" }
+  >;
+  explicit.label = {
+    runs: [{ text: "Новый: " }, { text: { bind: "participant.label" } }],
+  };
+  const withCopy = compile(sdk.applyVideoPreset(destination, preset));
+  expect(withCopy.plan.scenes[0].nodes[0].label).toBe("Новый: Акира");
+  expect(withCopy.plan.scenes[0].nodes[0].textRuns).toEqual([
+    { text: "Новый: ", color: "yellow" },
+    { text: "Акира", weight: 400, italic: true },
+  ]);
+  expect(JSON.stringify(preset)).not.toMatch(/Private prefix|Private name/);
 });
 
 describe("review F31-03 numeric output forms", () => {
@@ -1050,4 +1133,103 @@ describe("review F31-03 numeric output forms", () => {
     expect(n.textLayout?.lines.length).toBeGreaterThan(1);
     expect(n.textLayout?.reservedText).toBeUndefined();
   });
+});
+
+it("keeps a destination's default caption once when applying a rich card template", () => {
+  const source = doc([
+    {
+      id: "card",
+      type: "card",
+      participantId: "source",
+      label: {
+        runs: [
+          { text: "Private prefix ", color: "yellow" },
+          { text: { bind: "participant.label" }, weight: 400, italic: true },
+        ],
+      },
+    },
+  ]);
+  source.source.participants = [{ id: "source", label: "Private full name" }];
+  const preset = extractVideoPreset(source, {
+    id: "caption-template",
+    name: "Caption template",
+  });
+  const destination = doc([
+    { id: "card", type: "card", participantId: "destination" },
+  ]);
+  destination.source.participants = [
+    { id: "destination", label: "Full name", caption: "Nickname" },
+  ];
+  const applied = sdk.applyVideoPreset(destination, preset),
+    compiled = compile(applied);
+  expect(compiled.ready).toBe(true);
+  expect(compiled.plan.scenes[0].nodes[0].label).toBe("Nickname");
+  expect(compiled.plan.scenes[0].nodes[0].textRuns).toEqual([
+    { text: "", color: "yellow" },
+    { text: "Nickname", weight: 400, italic: true },
+  ]);
+  expect(JSON.stringify(preset)).not.toMatch(
+    /Private prefix|Private full name|Nickname/,
+  );
+});
+
+it("resolves one display label for each repeated card after a rich preset round trip", () => {
+  const source = doc([
+    {
+      id: "people",
+      type: "container",
+      repeat: "participants",
+      children: [
+        {
+          id: "card",
+          type: "card",
+          participantId: "$participant",
+          label: {
+            runs: [
+              { text: "Private prefix ", color: "yellow" },
+              {
+                text: { bind: "participant.label" },
+                weight: 400,
+                italic: true,
+              },
+            ],
+          },
+        },
+      ],
+    },
+  ]);
+  source.source.participants = [{ id: "source", label: "Private full name" }];
+  const preset = extractVideoPreset(source, {
+    id: "repeated-labels",
+    name: "Repeated labels",
+  });
+  const destination = doc([
+    {
+      id: "people",
+      type: "container",
+      repeat: "participants",
+      children: [{ id: "card", type: "card", participantId: "$participant" }],
+    },
+  ]);
+  destination.source.participants = [
+    { id: "a", label: "Full name", caption: "Nickname" },
+    { id: "b", label: "Other name" },
+  ];
+  const compiled = compile(sdk.applyVideoPreset(destination, preset));
+  expect(compiled.ready).toBe(true);
+  const cards = compiled.plan.scenes[0].nodes.filter((n) => n.type === "card");
+  expect(cards.map((n) => n.label)).toEqual(["Nickname", "Other name"]);
+  expect(cards.map((n) => n.textRuns)).toEqual([
+    [
+      { text: "", color: "yellow" },
+      { text: "Nickname", weight: 400, italic: true },
+    ],
+    [
+      { text: "", color: "yellow" },
+      { text: "Other name", weight: 400, italic: true },
+    ],
+  ]);
+  expect(JSON.stringify(preset)).not.toMatch(
+    /Private prefix|Private full name|Nickname|Other name/,
+  );
 });

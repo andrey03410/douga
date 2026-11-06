@@ -226,6 +226,7 @@ const plainText = z.union([
       bind: z.enum([
         "document.title",
         "participant.label",
+        "participant.displayLabel",
         "participant.rank",
         "participant.comment",
         "participant.album",
