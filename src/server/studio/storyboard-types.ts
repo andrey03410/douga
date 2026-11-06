@@ -12,13 +12,14 @@ export interface InspectionOrigin {
 export interface InspectionSummary {
   origin: InspectionOrigin;
   selection: StoryboardSelection;
-  scope?: { mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string; pageSize: number };
+  scope?: { mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string; pageSize: number; pixelDiff?: boolean };
   compareOrigin?: InspectionOrigin;
   diagnostic?: { ready: false; codes: string[] };
+  comparison?: import("@/video/storyboard-diff").StoryboardDocumentDiff;
 }
 export interface StoryboardRenderInput {
   kind: "storyboard";
-  tiles: (StoryboardTile & { side?: "before" | "after"; source?: number; missing?: boolean })[];
+  tiles: (StoryboardTile & { side?: "before" | "after" | "diff"; source?: number; missing?: boolean })[];
   summary: InspectionSummary;
 }
 export interface InspectionJobInput {
@@ -38,5 +39,5 @@ export interface StoryboardFrameArtifact {
   frame: number;
   sceneId: string;
   state: string;
-  side?: "before" | "after";
+  side?: "before" | "after" | "diff";
 }

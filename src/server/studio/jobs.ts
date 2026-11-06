@@ -81,7 +81,8 @@ export async function jobView(
     inspection && scope && inspection.selection.page + 1 < inspection.selection.totalPages
     ? { tool: "video_storyboard", arguments: { projectId: row.projectId, sourceJobId: row.id,
       page: inspection.selection.page + 1, pageSize: scope.pageSize, mode: scope.mode,
-      ...(scope.sceneId ? { sceneId: scope.sceneId } : {}), ...(scope.segmentId ? { segmentId: scope.segmentId } : {}) } } : undefined;
+      ...(scope.sceneId ? { sceneId: scope.sceneId } : {}), ...(scope.segmentId ? { segmentId: scope.segmentId } : {}),
+      ...(scope.pixelDiff !== undefined ? { pixelDiff: scope.pixelDiff } : {}) } } : undefined;
   return {
     id: row.id,
     projectId: row.projectId,

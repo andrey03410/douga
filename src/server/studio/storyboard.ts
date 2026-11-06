@@ -31,8 +31,13 @@ export const storyboardSchema = z.object({
   compareRevision: z.number().int().positive().optional(),
   compareJobId: key.optional(),
   sourceJobId: key.optional(),
+  pixelDiff: z.boolean().optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
 }).strict().superRefine((v, ctx) => {
+  if (v.pixelDiff !== undefined && v.mode !== "compare" && !v.sourceJobId)
+    ctx.addIssue({ code: "custom", message: "pixelDiff requires compare mode", path: ["pixelDiff"] });
+  if (v.mode === "compare" && v.pageSize < (v.pixelDiff ? 3 : 2))
+    ctx.addIssue({ code: "custom", message: "Compare pageSize must fit a complete pair or pixel triple", path: ["pageSize"] });
   if (v.mode === "scene" && !v.sceneId && !v.sourceJobId) ctx.addIssue({ code: "custom", message: "sceneId required", path: ["sceneId"] });
   if (v.sourceJobId ? !!v.compareRevision || !!v.compareJobId : v.mode === "compare" ? Number(!!v.compareRevision) + Number(!!v.compareJobId) !== 1 : !!v.compareRevision || !!v.compareJobId)
     ctx.addIssue({ code: "custom", message: "Compare requires one origin; continuation uses the source job's pinned origins" });
@@ -206,7 +211,8 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
     if (saved.render.kind !== "storyboard") throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
     const scope = saved.summary.scope;
     input = { ...input, mode: raw.mode ?? scope?.mode ?? (saved.compareFrozen ? "compare" : "overview"),
-      sceneId: raw.sceneId ?? scope?.sceneId, segmentId: raw.segmentId ?? scope?.segmentId, pageSize: raw.pageSize ?? scope?.pageSize ?? input.pageSize };
+      sceneId: raw.sceneId ?? scope?.sceneId, segmentId: raw.segmentId ?? scope?.segmentId, pageSize: raw.pageSize ?? scope?.pageSize ?? input.pageSize,
+      pixelDiff: raw.pixelDiff ?? scope?.pixelDiff };
     if (input.mode === "scene" && !input.sceneId) throw new StudioError("INSPECTION_SCOPE_INVALID");
     if (input.mode === "compare") {
       if (!saved.compareFrozen || !saved.summary.compareOrigin) throw new StudioError("COMPARISON_NOT_FOUND");
@@ -219,6 +225,8 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
     prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
     engineId = await prepareStudioEngine();
   }
+  if (input.pixelDiff !== undefined && input.mode !== "compare") throw new StudioError("PIXEL_DIFF_REQUIRES_COMPARE");
+  if (input.mode === "compare" && input.pageSize < (input.pixelDiff ? 3 : 2)) throw new StudioError("STORYBOARD_BUDGET_EXCEEDED");
   const options = { mode: input.sceneId ? "scene" as const : "overview" as const, sceneId: input.sceneId, segmentId: input.segmentId, page: input.page, pageSize: input.pageSize };
   if (input.compareJobId) {
     const other = await ownedJob(userId, input.compareJobId);
@@ -232,18 +240,20 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
   let selection = selectStoryboard(prepared.plan, options);
   let tiles: StoryboardRenderInput["tiles"] = selection.tiles.map(t => ({ ...t, source: 0 }));
   if (comparison) {
-    const matches = matchStoryboard(comparison.frozen.plan, prepared.plan, { ...options, pageSize: Math.max(1, Math.floor(input.pageSize / 2)) });
+    const matches = matchStoryboard(comparison.frozen.plan, prepared.plan, { ...options, pageSize: Math.floor(input.pageSize / (input.pixelDiff ? 3 : 2)) });
     tiles = matches.pairs.flatMap(pair => [
       { ...(pair.before ?? pair.after!), id: `${pair.id}:before`, side: "before" as const, source: 1, missing: !pair.before },
       { ...(pair.after ?? pair.before!), id: `${pair.id}:after`, side: "after" as const, source: 0, missing: !pair.after },
+      ...(input.pixelDiff ? [{ ...(pair.after ?? pair.before!), id: `${pair.id}:diff`, side: "diff" as const, source: 2, missing: !pair.before || !pair.after }] : []),
     ]);
-    selection = { ...selection, tiles, totalScenes: matches.totalScenes, totalTiles: matches.totalPairs * 2, totalPages: matches.totalPages,
+    selection = { ...selection, tiles, totalScenes: matches.totalScenes, totalTiles: matches.totalPairs * (input.pixelDiff ? 3 : 2), totalPages: matches.totalPages,
       scenesCovered: matches.scenesCovered, remainingScenes: matches.remainingScenes };
   }
   if (!tiles.length) throw new StudioError("STORYBOARD_EMPTY");
   const summary: InspectionSummary = { origin: prepared.origin, selection,
     scope: { mode: comparison ? "compare" : input.sceneId ? "scene" : "overview", pageSize: input.pageSize,
-      ...(input.sceneId ? { sceneId: input.sceneId } : {}), ...(input.segmentId ? { segmentId: input.segmentId } : {}) },
+      ...(input.sceneId ? { sceneId: input.sceneId } : {}), ...(input.segmentId ? { segmentId: input.segmentId } : {}),
+      ...(input.pixelDiff !== undefined ? { pixelDiff: input.pixelDiff } : {}) },
     ...(comparison ? { compareOrigin: comparison.origin,
       comparison: compareStoryboardDocuments({ document: comparison.frozen.document, plan: comparison.frozen.plan,
         manifest: comparison.frozen.manifest, diagnostics: comparison.frozen.validation.diagnostics },

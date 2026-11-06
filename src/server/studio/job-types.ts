@@ -86,6 +86,8 @@ export interface StudioJobResult {
     summary: import("./storyboard-types").InspectionSummary;
     frames: import("./storyboard-types").StoryboardFrameArtifact[];
     partial: boolean;
+    pixelComparisons?: { beforeFrame: number | null; afterFrame: number | null; status: "identical" | "different" | "notComparable";
+      metrics?: { psnr: number | "Infinity"; changedPixelRatio: number; maxDelta: number }; reason?: string }[];
   };
   storageBytes?: number;
   measurements?: import("./preview-measurements").PreviewMeasurements;
@@ -110,7 +112,7 @@ export interface StudioJobView {
   snapshotId: string | null;
   kind: StartStudioJobInput["kind"] | "import" | "storyboard";
   inspection?: import("./storyboard-types").InspectionSummary;
-  nextPageAction?: { tool: "video_storyboard"; arguments: { projectId: string; sourceJobId: string; page: number; pageSize: number; mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string } };
+  nextPageAction?: { tool: "video_storyboard"; arguments: { projectId: string; sourceJobId: string; page: number; pageSize: number; mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string; pixelDiff?: boolean } };
   status: StudioJobStatus;
   progress: number;
   attempts: number;
