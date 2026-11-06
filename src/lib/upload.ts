@@ -1,13 +1,25 @@
 import AdmZip from "adm-zip";
 import {
   AUDIO_EXT,
+  IMG_EXT,
   VIDEO_EXT,
   isJunkName as isJunk,
 } from "@/lib/domain/media-ext";
 
-export { AUDIO_EXT, VIDEO_EXT };
+export { AUDIO_EXT, VIDEO_EXT, IMG_EXT };
 
-export type TrackKind = "audio" | "video";
+/** Kind of a tournament participant (task 33 adds images). */
+export type TrackKind = "audio" | "video" | "image";
+
+/** A picture participant is at most this big (same ceiling as image links). */
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+
+/** Pure: is this filename a supported picture? */
+export function isImageFile(name: string): boolean {
+  if (isJunk(name)) return false;
+  const lower = name.toLowerCase();
+  return IMG_EXT.some((ext) => lower.endsWith(ext));
+}
 
 /** Pure: is this filename a supported audio file? */
 export function isAudioFile(name: string): boolean {
@@ -23,11 +35,16 @@ export function isVideoFile(name: string): boolean {
   return VIDEO_EXT.some((ext) => lower.endsWith(ext));
 }
 
-/** Pure: media kind by filename, or null if unsupported. */
-export function mediaKind(name: string): TrackKind | null {
+/** Pure: listenable kind by filename (archives of tracks), or null. */
+export function mediaKind(name: string): "audio" | "video" | null {
   if (isAudioFile(name)) return "audio";
   if (isVideoFile(name)) return "video";
   return null;
+}
+
+/** Pure: participant kind by filename, pictures included, or null. */
+export function participantKind(name: string): TrackKind | null {
+  return mediaKind(name) ?? (isImageFile(name) ? "image" : null);
 }
 
 /** Pure: pick a display title — ID3 tag wins, else the filename without extension. */
@@ -51,6 +68,13 @@ export interface ExtractedTrack {
   album?: string | null;
   sourceFolder?: string | null;
   cover?: { data: Buffer; format: string };
+  /** Task 33: second caption line (anime of a character, "year · studio"). */
+  subtitle?: string | null;
+  sourceUrl?: string | null;
+  /** Duplicate key: shikimori:character:1, art:<id>. */
+  sourceKey?: string | null;
+  /** Agent's reason for including the participant. */
+  note?: string | null;
 }
 
 /**
@@ -62,23 +86,47 @@ export interface ExtractedTrack {
 export async function extractTracksFromZip(
   zipBuffer: Buffer,
 ): Promise<ExtractedTrack[]> {
-  const zip = new AdmZip(zipBuffer);
+  const entries = archiveEntries(new AdmZip(zipBuffer));
   const tracks: ExtractedTrack[] = [];
-  for (const entry of zip
-    .getEntries()
-    .filter((e) => !e.isDirectory && mediaKind(e.entryName) !== null)) {
+  for (const entry of entries)
     tracks.push(await extractTrackFromBuffer(entry.entryName, entry.getData()));
-  }
   tracks.sort((a, b) => a.filename.localeCompare(b.filename));
   return tracks;
+}
+
+/**
+ * Task 33 (P07): an archive with any audio or video is a track archive and its
+ * pictures are covers or junk, as before. Only an archive of pictures alone
+ * turns them into participants — an OST with cover.jpg never changes meaning.
+ */
+function archiveEntries(zip: AdmZip) {
+  const files = zip.getEntries().filter((e) => !e.isDirectory);
+  const media = files.filter((e) => mediaKind(e.entryName) !== null);
+  return media.length ? media : files.filter((e) => isImageFile(e.entryName));
 }
 
 export async function extractTrackFromBuffer(
   filename: string,
   data: Buffer,
 ): Promise<ExtractedTrack> {
-  const kind = mediaKind(filename);
+  const kind = participantKind(filename);
   if (!kind) throw new Error("BAD_EXT");
+  const normalizedName = filename.replaceAll("\\", "/");
+  if (kind === "image") {
+    if (data.length > MAX_IMAGE_BYTES) throw new Error("IMAGE_TOO_LARGE");
+    return {
+      filename,
+      kind,
+      title: deriveTitle(filename),
+      artist: null,
+      album: null,
+      sourceFolder: normalizedName.includes("/")
+        ? normalizedName.slice(0, normalizedName.lastIndexOf("/"))
+        : null,
+      durationSec: null,
+      data,
+    };
+  }
   const mm = await import("music-metadata");
   let title: string | undefined,
     artist: string | null = null,
@@ -132,13 +180,18 @@ export function archiveFolders(filenames: string[]): string[] {
 }
 
 export function inspectTrackArchive(zipBuffer: Buffer) {
-  const names = new AdmZip(zipBuffer)
+  const zip = new AdmZip(zipBuffer);
+  const names = archiveEntries(zip).map((e) => e.entryName);
+  const images = zip
     .getEntries()
-    .filter((e) => !e.isDirectory && mediaKind(e.entryName) !== null)
-    .map((e) => e.entryName);
+    .filter((e) => !e.isDirectory && isImageFile(e.entryName)).length;
+  const kind = names.length && names.every(isImageFile) ? "images" : "media";
   return {
     folders: [...new Set(archiveFolders(names).filter(Boolean))].sort(),
     trackCount: names.length,
+    /** Pictures in the archive; participants only when kind is "images". */
+    imageCount: images,
+    kind,
   };
 }
 

@@ -2,9 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { createEngine } from "@/lib/domain/engines";
-import type { Scheme } from "@/lib/domain/types";
-import { clampGroupSize } from "@/lib/domain/group-answer";
+import { effectiveScheme, effectiveSettings, runSegment } from "@/lib/domain/segment-run";
 
 type Db = Prisma.TransactionClient;
 export const segmentsUpdateSchema = z
@@ -68,7 +66,8 @@ export async function ensureTournamentSegments(db: Db, tournamentId: string) {
 }
 
 export async function completeSingleton(db: Db, segmentId: string) {
-  const tracks = await db.track.findMany({ where: { segmentId } });
+  // Task 33: excluded participants do not count — one active participant is a finished top.
+  const tracks = await db.track.findMany({ where: { segmentId, excluded: false } });
   if (tracks.length !== 1) return;
   const tr = tracks[0];
   await db.tournamentSegment.update({
@@ -222,7 +221,7 @@ export async function updateTournamentSegments(
             data: {
               ...data,
               ...(changedSegments.has(s.id)
-                ? { status: "in_progress", topSize: null, bonusOpponents: 0 }
+                ? { status: "in_progress", topSize: null, bonusOpponents: 0, insertBase: null }
                 : {}),
             },
           })
@@ -293,24 +292,32 @@ export function segmentProgress(
       (c) => ids.has(c.trackAId) && ids.has(c.trackBId),
     );
     const batches = t.batches.filter((b) => b.segmentId === s.id);
-    const log = comparisons.map((c) => ({
-      a: c.trackAId,
-      b: c.trackBId,
-      result: c.result as "a" | "b" | "draw",
-    }));
-    const engine = createEngine(t.scheme as Scheme);
-    const progress = engine.progress(
-      [...ids],
-      log,
-      Math.min(clampGroupSize(t.groupSize, tracks.length), engine.maxGroupSize),
-    );
+    const scheme = effectiveScheme(t, s);
+    const answeredScreens =
+      batches.length + comparisons.filter((c) => !c.batchId).length;
+    const run = runSegment({
+      scheme,
+      settings: scheme ? effectiveSettings(scheme, t, s) : {},
+      groupSize: t.groupSize,
+      bonusOpponents: s.bonusOpponents,
+      tracks,
+      comparisons,
+      batches,
+      overlay: s.insertBase,
+      completed: s.status === "completed",
+    });
     return {
       ...s,
       tracks,
       trackCount: tracks.length,
-      answeredScreens:
-        batches.length + comparisons.filter((c) => !c.batchId).length,
-      progress,
+      activeCount: run.items.length,
+      effectiveScheme: scheme,
+      answeredScreens,
+      // Screens, like the compare page (task 33: engines no longer count pairs).
+      progress: {
+        completed: answeredScreens,
+        estimatedTotal: Math.max(answeredScreens, run.overlay ? answeredScreens + run.planned : run.planned),
+      },
     };
   });
 }

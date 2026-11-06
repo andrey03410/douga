@@ -271,3 +271,63 @@ export async function fetchFreshPosterUrls(
   }
   return out;
 }
+
+export interface ShikimoriCard {
+  id: number;
+  name: string | null;
+  russian: string | null;
+  url: string | null;
+  posterUrl: string | null;
+  /** Anime only. */
+  kind?: string | null;
+  year?: number | null;
+  studios?: string[];
+}
+
+/**
+ * Task 33: names, links and full-size poster URLs of many characters or anime
+ * in pages of 50 — one API request per page instead of one per participant,
+ * so a base of 150 characters fits the minute budget. `limit` is mandatory
+ * for the same reason as in fetchFreshPosterUrls.
+ */
+export async function fetchShikimoriCards(
+  type: "anime" | "character",
+  ids: number[],
+): Promise<Map<number, ShikimoriCard>> {
+  const clean = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+  const out = new Map<number, ShikimoriCard>();
+  const field = type === "anime" ? "animes" : "characters";
+  const extra = type === "anime" ? " kind airedOn { year } studios { name }" : "";
+  for (let i = 0; i < clean.length; i += GRAPHQL_PAGE) {
+    const page = clean.slice(i, i + GRAPHQL_PAGE);
+    const body = await fetchGraphql(
+      `{${field}(ids: "${page.join(",")}", limit: ${page.length}){ id name russian url poster { originalUrl }${extra} }}`,
+    );
+    const rows = (body as { data?: Record<string, unknown> })?.data?.[field];
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      const r = row as Record<string, unknown>;
+      const id = Number(r?.id);
+      if (!Number.isInteger(id)) continue;
+      const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+      const poster = (r.poster as { originalUrl?: unknown } | null)?.originalUrl;
+      const studios = Array.isArray(r.studios)
+        ? r.studios
+            .map((s) => str((s as { name?: unknown })?.name))
+            .filter((s): s is string => Boolean(s))
+        : undefined;
+      const year = (r.airedOn as { year?: unknown } | null)?.year;
+      out.set(id, {
+        id,
+        name: str(r.name),
+        russian: str(r.russian),
+        url: str(r.url),
+        posterUrl: typeof poster === "string" ? poster : null,
+        ...(type === "anime"
+          ? { kind: str(r.kind), year: typeof year === "number" ? year : null, studios: studios ?? [] }
+          : {}),
+      });
+    }
+  }
+  return out;
+}

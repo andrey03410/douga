@@ -3,34 +3,51 @@ import path from "node:path";
 import { prisma } from "@/lib/db";
 import { saveFile, trackPath, removePath } from "@/lib/storage";
 import { createEngine } from "@/lib/domain/engines";
+import type { Question } from "@/lib/domain/engines";
 import type { Comparison, ComparisonResult, Scheme } from "@/lib/domain/types";
-import { isComparisonResult } from "@/lib/domain/types";
-import { lookup } from "@/lib/domain/comparisons";
+import { isComparisonResult, isScheme } from "@/lib/domain/types";
 import {
+  MAX_GROUP_SIZE,
   clampGroupSize,
   decodeGroupAnswer,
-  plannedScreens,
+  decodePickAnswer,
   validateGroupAnswer,
+  validatePickAnswer,
 } from "@/lib/domain/group-answer";
+import { parseSchemeSettings, type SchemeSettings } from "@/lib/domain/scheme-settings";
 import { can, quotasFor } from "@/lib/domain/permissions";
-import { assertOwnedImage } from "./tournament-segments";
 import { orderCoverage } from "@/lib/domain/order-coverage";
+import {
+  OVERLAY_SCHEMES,
+  canExtend as runCanExtend,
+  effectiveScheme,
+  effectiveSettings,
+  parseOverlay,
+  runSegment,
+  type SegmentRun,
+} from "@/lib/domain/segment-run";
+import { lookup } from "@/lib/domain/comparisons";
+import { assertOwnedImage } from "./tournament-segments";
 import {
   loadTournamentSegments,
   loadTournamentSegmentsFromDb,
   segmentProgress,
   aggregateTournamentStatus,
-  ensureTournamentSegments,
   completeSingleton,
 } from "./tournament-segments";
 export { updateTournamentSegments } from "./tournament-segments";
 import type { ExtractedTrack } from "@/lib/upload";
 
+/** Technical budget: engines stay in milliseconds up to this many participants. */
+export const MAX_PARTICIPANTS = 2000;
+
 export interface CreateInput {
   title: string;
-  scheme: Scheme;
+  /** Omitted: the person picks the algorithm later (task 33, P15). */
+  scheme?: Scheme;
+  schemeSettings?: SchemeSettings;
   blindMode: boolean;
-  /** How many tracks one screen ranks; clamped to the engine and the field. */
+  /** How many participants one screen ranks; clamped to the engine and the field. */
   groupSize?: number;
   segments?: {
     title: string;
@@ -40,6 +57,66 @@ export interface CreateInput {
   }[];
 }
 
+/** Bytes a participant occupies: its file, plus an embedded cover for tracks. */
+export const participantBytes = (t: ExtractedTrack) =>
+  t.data.length + (t.kind === "image" ? 0 : (t.cover?.data.length ?? 0));
+
+const COVER_EXT: Record<string, string> = {
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
+/**
+ * Write one participant's files under the tournament and return the stored
+ * paths. An image participant is its own cover (task 33, T01): thumbnails,
+ * pool replacement and the SDK cover binding all work unchanged.
+ */
+export async function storeParticipantFiles(
+  tournamentId: string,
+  trackId: string,
+  t: ExtractedTrack,
+): Promise<{ filePath: string; coverPath?: string }> {
+  const fallback = t.kind === "video" ? ".mp4" : t.kind === "image" ? ".jpg" : ".mp3";
+  const ext = path.extname(t.filename).toLowerCase() || fallback;
+  const filePath = await saveFile(trackPath(tournamentId, trackId, ext), t.data);
+  if (t.kind === "image") return { filePath, coverPath: filePath };
+  if (!t.cover) return { filePath };
+  const coverPath = await saveFile(
+    trackPath(tournamentId, trackId + "-cover", COVER_EXT[t.cover.format] ?? ".jpg"),
+    t.cover.data,
+  );
+  return { filePath, coverPath };
+}
+
+export function participantRow(t: ExtractedTrack) {
+  return {
+    title: t.title,
+    artist: t.artist,
+    album: t.album,
+    sourceFolder: t.sourceFolder,
+    durationSec: t.durationSec,
+    kind: t.kind,
+    subtitle: t.subtitle ?? null,
+    sourceUrl: t.sourceUrl ?? null,
+    sourceKey: t.sourceKey ?? null,
+    note: t.note ?? null,
+    sizeBytes: participantBytes(t),
+  };
+}
+
+/** Same participant twice in one segment (by sourceKey) is refused. */
+export function assertNoDuplicates(
+  tracks: readonly { title: string; sourceKey?: string | null }[],
+) {
+  const seen = new Map<string, string>();
+  for (const t of tracks) {
+    if (!t.sourceKey) continue;
+    if (seen.has(t.sourceKey)) throw new Error(`DUPLICATE_ITEM:${t.title}`);
+    seen.set(t.sourceKey, t.title);
+  }
+}
+
 export async function createTournament(
   userId: string,
   input: CreateInput,
@@ -47,6 +124,7 @@ export async function createTournament(
   limits?: { maxTournaments: number | null },
 ) {
   if (!tracks.length) throw new Error("NEED_AT_LEAST_TWO_TRACKS");
+  if (tracks.length > MAX_PARTICIPANTS) throw new Error("TOO_MANY_PARTICIPANTS");
   const layout = input.segments ?? [
     { title: "Все треки", trackIndexes: tracks.map((_, i) => i) },
   ];
@@ -59,6 +137,10 @@ export async function createTournament(
     indices.some((i) => !Number.isInteger(i) || i < 0 || i >= tracks.length)
   )
     throw new Error("INVALID_SEGMENTS");
+  for (const s of layout) assertNoDuplicates(s.trackIndexes.map((i) => tracks[i]));
+  const settings = input.scheme
+    ? parseSchemeSettings(input.scheme, input.schemeSettings ?? {})
+    : null;
   let createdId: string | undefined;
   try {
     return await prisma.$transaction(
@@ -73,23 +155,19 @@ export async function createTournament(
           (await tx.tournament.count({ where: { userId } })) >= max
         )
           throw new Error("TOURNAMENT_LIMIT");
-        if (
-          tracks.reduce(
-            (n, t) => n + t.data.length + (t.cover?.data.length ?? 0),
-            0,
-          ) > quota.maxArchiveBytes
-        )
+        if (tracks.reduce((n, t) => n + participantBytes(t), 0) > quota.maxArchiveBytes)
           throw new Error("ARCHIVE_QUOTA");
+        const cap = input.scheme ? createEngine(input.scheme).maxGroupSize : MAX_GROUP_SIZE;
         const tournament = await tx.tournament.create({
           data: {
             userId,
             title: input.title,
-            scheme: input.scheme,
+            // Placeholder while pending: effectiveScheme ignores it.
+            scheme: input.scheme ?? "swiss",
+            schemePending: !input.scheme,
+            schemeSettings: settings ? JSON.stringify(settings) : null,
             blindMode: input.blindMode,
-            groupSize: Math.min(
-              clampGroupSize(input.groupSize ?? 2, tracks.length),
-              createEngine(input.scheme).maxGroupSize,
-            ),
+            groupSize: Math.min(clampGroupSize(input.groupSize ?? 2, tracks.length), cap),
             status: "in_progress",
           },
         });
@@ -111,41 +189,13 @@ export async function createTournament(
               data: {
                 tournamentId: tournament.id,
                 segmentId: segment.id,
-                title: t.title,
-                artist: t.artist,
-                album: t.album,
-                sourceFolder: t.sourceFolder,
-                durationSec: t.durationSec,
-                kind: t.kind,
+                ...participantRow(t),
                 filePath: "",
                 order,
-                sizeBytes: t.data.length + (t.cover?.data.length ?? 0),
               },
             });
-            const ext =
-              path.extname(t.filename) ||
-              (t.kind === "video" ? ".mp4" : ".mp3");
-            const filePath = await saveFile(
-              trackPath(tournament.id, created.id, ext),
-              t.data,
-            );
-            let coverPath: string | undefined;
-            if (t.cover) {
-              const coverExt =
-                t.cover.format === "image/png"
-                  ? ".png"
-                  : t.cover.format === "image/webp"
-                    ? ".webp"
-                    : ".jpg";
-              coverPath = await saveFile(
-                trackPath(tournament.id, created.id + "-cover", coverExt),
-                t.cover.data,
-              );
-            }
-            await tx.track.update({
-              where: { id: created.id },
-              data: { filePath, coverPath },
-            });
+            const files = await storeParticipantFiles(tournament.id, created.id, t);
+            await tx.track.update({ where: { id: created.id }, data: files });
           }
           await completeSingleton(tx, segment.id);
         }
@@ -154,7 +204,7 @@ export async function createTournament(
           where: { id: tournament.id },
         });
       },
-      { timeout: 120000 },
+      { timeout: 300000 },
     );
   } catch (e) {
     if (createdId) await removePath(path.join("tournaments", createdId));
@@ -191,11 +241,18 @@ function tournamentSlice(
     : segments[0];
   if (!active) return null;
   const ids = new Set(active.tracks.map((tr) => tr.id));
+  const scheme = effectiveScheme(t, active);
   return {
     ...t,
+    tournamentScheme: t.scheme,
     tournamentStatus: t.status,
     segments,
     activeSegmentId: active.id,
+    /** Effective algorithm of the active segment; null = not chosen yet. */
+    scheme,
+    schemeSettings: scheme ? effectiveSettings(scheme, t, active) : {},
+    segmentHasOwnScheme: active.scheme !== null,
+    insertBase: active.insertBase,
     status: active.status,
     topSize: active.topSize,
     bonusOpponents: active.bonusOpponents,
@@ -220,55 +277,54 @@ export function toDomainComparisons(
     }));
 }
 
-type LoadedTournament = NonNullable<Awaited<ReturnType<typeof getTournament>>>;
+export type LoadedTournament = NonNullable<Awaited<ReturnType<typeof getTournament>>>;
+
+/** The engine's view of the active segment (see segment-run.ts). */
+export function segmentRun(t: LoadedTournament): SegmentRun {
+  return runSegment({
+    scheme: t.scheme,
+    settings: t.schemeSettings,
+    groupSize: t.groupSize,
+    bonusOpponents: t.bonusOpponents,
+    tracks: t.tracks,
+    comparisons: t.comparisons,
+    batches: t.batches,
+    overlay: t.insertBase,
+    completed: t.status === "completed",
+  });
+}
 
 /** Group size actually in force: the stored one, capped by the engine and field. */
 export function effectiveGroupSize(t: LoadedTournament): number {
-  const engine = createEngine(t.scheme as Scheme);
-  return Math.min(
-    clampGroupSize(t.groupSize, t.tracks.length),
-    engine.maxGroupSize,
-  );
+  return segmentRun(t).groupSize;
 }
 
-export function nextComparison(t: LoadedTournament) {
-  const items = t.tracks.map((tr) => tr.id);
-  const log = toDomainComparisons(t.comparisons);
-  const engine = createEngine(t.scheme as Scheme);
-  const groupSize = effectiveGroupSize(t);
-  const bonus = t.bonusOpponents;
+const questionItems = (q: Question | null): string[] | null =>
+  q ? (q.kind === "tier" ? [q.item] : q.items) : null;
 
+export function nextComparison(t: LoadedTournament) {
+  const run = segmentRun(t);
+  const completed = t.status === "completed";
   // A finalized tournament must not reopen for more questions — its ranking is
   // persisted and may have been reordered by hand since.
-  const question =
-    t.status === "completed"
-      ? null
-      : engine.nextQuestion(items, log, groupSize, bonus);
-  const progress = engine.progress(items, log, groupSize);
+  const question = completed ? null : run.question;
+  const engine = run.engine;
 
-  // Buying another round only makes sense while the engine still has something
-  // left to ask; round-robin and merge simply end when they are done.
-  const canExtend =
-    t.status !== "completed" &&
-    question === null &&
-    engine.nextQuestion(items, log, groupSize, bonus + (groupSize - 1)) !==
-      null;
-
-  // Provisional standings (null for schemes without a meaningful interim ranking).
-  const partial = engine.partialRanking(items, log);
+  // Provisional standings (only for schemes with a meaningful interim top).
   const byId = new Map(t.tracks.map((tr) => [tr.id, tr]));
-  const standings = partial
-    ? partial.map((r) => {
-        const tr = byId.get(r.id)!;
-        return {
-          trackId: r.id,
-          rank: r.rank,
-          title: tr.title,
-          artist: tr.artist,
-          score: r.score,
-        };
-      })
-    : null;
+  const standings =
+    engine?.partial || run.overlay
+      ? run.result.placed.map((r) => {
+          const tr = byId.get(r.id)!;
+          return {
+            trackId: r.id,
+            rank: r.rank,
+            title: tr.title,
+            artist: tr.artist,
+            score: r.score,
+          };
+        })
+      : null;
 
   // Screens, not comparisons: with a changeable group size the comparison count
   // is not something the user can feel, and the bar would jump when k changes.
@@ -281,35 +337,44 @@ export function nextComparison(t: LoadedTournament) {
     // inside it — "screen 3 of ~2" is nonsense.
     estimatedTotal: Math.max(
       done + (question ? 1 : 0),
-      plannedScreens(t.scheme as Scheme, items.length, groupSize),
+      run.overlay ? done + run.planned : run.planned,
     ),
   };
 
   return {
-    question,
-    groupSize,
-    maxGroupSize: engine.maxGroupSize,
-    progress,
+    scheme: run.scheme,
+    schemeRequired: run.scheme === null,
+    settings: run.settings,
+    /** Items of the screen (tier screens: the one participant). */
+    question: questionItems(question),
+    questionKind: question?.kind ?? null,
+    groupSize: run.groupSize,
+    maxGroupSize: engine ? Math.min(engine.maxGroupSize, MAX_GROUP_SIZE) : MAX_GROUP_SIZE,
+    progress: screens,
     screens,
-    coverage: orderCoverage(items, log),
-    canExtend,
-    isComplete: question === null,
+    coverage: orderCoverage(run.items, run.log),
+    canExtend: runCanExtend(run, completed),
+    isComplete: run.scheme !== null && question === null,
     standings,
+    result: run.result,
+    tiers: run.tiers,
+    activeCount: run.items.length,
   };
 }
 
+export type Answer =
+  | { kind: "rank"; ranked: string[]; rest: string[] }
+  | { kind: "pick"; winner: string }
+  | { kind: "tier"; itemId: string; tier: number };
+
 /**
- * Record one screen. The answer must be to the group the engine is actually
+ * Record one screen. The answer must be to the screen the engine is actually
  * asking — a stale screen is refused rather than folded in, so the log can never
  * disagree with the schedule that produced it. Pairs already in the log are
  * skipped: `lookup` honours the first answer, so writing a second row would
  * silently inflate the score without changing the order.
  */
-export async function recordGroupAnswer(
-  t: LoadedTournament,
-  ranked: string[],
-  rest: string[],
-) {
+export async function recordAnswer(t: LoadedTournament, answer: Answer) {
   return prisma.$transaction(async (tx) => {
     await tx.tournament.update({
       where: { id: t.id },
@@ -318,23 +383,47 @@ export async function recordGroupAnswer(
     const fresh = await loadTournamentSegmentsFromDb(tx, t.userId, t.id);
     const current = fresh ? tournamentSlice(fresh, t.activeSegmentId) : null;
     if (!current) throw new Error("NOT_FOUND");
-    const step = nextComparison(current);
-    if (!step.question) throw new Error("NOTHING_TO_ANSWER");
-    const invalid = validateGroupAnswer(step.question, ranked, rest);
-    if (invalid) throw new Error(invalid);
+    const run = segmentRun(current);
+    const q = current.status === "completed" ? null : run.question;
+    if (!q) throw new Error(run.scheme ? "NOTHING_TO_ANSWER" : "SCHEME_REQUIRED");
+
+    if (q.kind === "tier") {
+      if (answer.kind !== "tier" || answer.itemId !== q.item) throw new Error("GROUP_MISMATCH");
+      const names = run.settings.tiers ?? [];
+      if (!Number.isInteger(answer.tier) || answer.tier < -1 || answer.tier >= names.length)
+        throw new Error("INVALID_TIER");
+      await writeTier(tx, t.id, current.activeSegmentId, q.item, answer.tier);
+      return { written: 0 };
+    }
+
+    let pairs: Comparison[];
+    if (q.kind === "pick") {
+      // Older clients answer every screen with a ranking; its winner is the pick.
+      const winner =
+        answer.kind === "pick" ? answer.winner : answer.kind === "rank" ? answer.ranked[0] : undefined;
+      if (!winner || validatePickAnswer(q.items, winner)) throw new Error("GROUP_MISMATCH");
+      if (answer.kind === "rank" && validateGroupAnswer(q.items, answer.ranked, answer.rest))
+        throw new Error("GROUP_MISMATCH");
+      pairs = decodePickAnswer(winner, q.items);
+    } else {
+      if (answer.kind !== "rank") throw new Error("GROUP_MISMATCH");
+      const invalid = validateGroupAnswer(q.items, answer.ranked, answer.rest);
+      if (invalid) throw new Error(invalid);
+      pairs = decodeGroupAnswer(answer.ranked, answer.rest);
+    }
     const log = toDomainComparisons(current.comparisons);
-    const pairs = decodeGroupAnswer(ranked, rest).filter(
-      (p) => lookup(log, p.a, p.b) === undefined,
-    );
+    const freshPairs = pairs.filter((p) => lookup(log, p.a, p.b) === undefined);
+    const shown = answer.kind === "rank" ? [...answer.ranked, ...answer.rest] : q.items;
     const batch = await tx.comparisonBatch.create({
       data: {
         tournamentId: t.id,
         segmentId: current.activeSegmentId,
-        size: ranked.length + rest.length,
-        itemIds: JSON.stringify([...ranked, ...rest]),
+        size: q.items.length,
+        itemIds: JSON.stringify(shown),
+        kind: q.kind,
       },
     });
-    for (const p of pairs)
+    for (const p of freshPairs)
       await tx.comparison.create({
         data: {
           tournamentId: t.id,
@@ -344,8 +433,30 @@ export async function recordGroupAnswer(
           batchId: batch.id,
         },
       });
-    return { written: pairs.length };
+    return { written: freshPairs.length };
   });
+}
+
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+async function writeTier(tx: Tx, tournamentId: string, segmentId: string, itemId: string, tier: number) {
+  await tx.comparisonBatch.create({
+    data: {
+      tournamentId,
+      segmentId,
+      size: 1,
+      itemIds: JSON.stringify([itemId]),
+      kind: "tier",
+      tier,
+    },
+  });
+  // "Не участвует" is the same exclusion as in the composition view (P13).
+  if (tier === -1) await tx.track.update({ where: { id: itemId }, data: { excluded: true } });
+}
+
+/** Pre-33 entry point: a ranked screen. Kept for callers and tests. */
+export function recordGroupAnswer(t: LoadedTournament, ranked: string[], rest: string[]) {
+  return recordAnswer(t, { kind: "rank", ranked, rest });
 }
 
 /** Undo the last screen: a whole batch, or a single pre-phase-18 comparison. */
@@ -370,6 +481,10 @@ export async function undoLastAnswer(t: LoadedTournament) {
         (c) => c.batchId === lastBatch.id,
       ).length;
       await tx.comparisonBatch.delete({ where: { id: lastBatch.id } });
+      if (lastBatch.kind === "tier" && lastBatch.tier === -1) {
+        const [itemId] = JSON.parse(lastBatch.itemIds) as string[];
+        await tx.track.updateMany({ where: { id: itemId, tournamentId: t.id }, data: { excluded: false } });
+      }
       return { removed };
     }
     if (lastLegacy) {
@@ -380,7 +495,7 @@ export async function undoLastAnswer(t: LoadedTournament) {
   });
 }
 
-/** Change how many tracks one screen ranks. Takes effect on the next question. */
+/** Change how many participants one screen ranks. Takes effect on the next question. */
 export async function setGroupSize(
   userId: string,
   tournamentId: string,
@@ -388,14 +503,18 @@ export async function setGroupSize(
 ) {
   const t = await prisma.tournament.findFirst({
     where: { id: tournamentId, userId },
-    include: { _count: { select: { tracks: true } } },
+    include: { _count: { select: { tracks: true } }, segments: true },
   });
   if (!t) throw new Error("NOT_FOUND");
-  const engine = createEngine(t.scheme as Scheme);
-  const groupSize = Math.min(
-    clampGroupSize(size, t._count.tracks),
-    engine.maxGroupSize,
+  // The cap is the most generous engine among the segments: a merge-only
+  // tournament stays on pairs, a mixed one keeps groups for those who can.
+  const schemes = t.segments.length
+    ? t.segments.map((s) => effectiveScheme(t, s))
+    : [effectiveScheme(t, { scheme: null })];
+  const cap = Math.max(
+    ...schemes.map((s) => (s ? createEngine(s).maxGroupSize : MAX_GROUP_SIZE)),
   );
+  const groupSize = Math.min(clampGroupSize(size, t._count.tracks), cap);
   await prisma.tournament.update({
     where: { id: tournamentId },
     data: { groupSize },
@@ -403,17 +522,11 @@ export async function setGroupSize(
   return groupSize;
 }
 
-/** Buy one more round: every track gets a group's worth of extra opponents. */
+/** Buy one more round: every participant gets a group's worth of extra opponents. */
 export async function extendPlan(t: LoadedTournament) {
-  const items = t.tracks.map((tr) => tr.id);
-  const log = toDomainComparisons(t.comparisons);
-  const engine = createEngine(t.scheme as Scheme);
-  const groupSize = effectiveGroupSize(t);
-  const bonusOpponents = t.bonusOpponents + (groupSize - 1);
-
-  if (engine.nextQuestion(items, log, groupSize, bonusOpponents) === null) {
-    throw new Error("NOTHING_MORE_TO_ASK");
-  }
+  const run = segmentRun(t);
+  if (!runCanExtend(run, t.status === "completed")) throw new Error("NOTHING_MORE_TO_ASK");
+  const bonusOpponents = t.bonusOpponents + (run.groupSize - 1);
   await prisma.$transaction(async (tx) => {
     await tx.tournamentSegment.update({
       where: { id: t.activeSegmentId },
@@ -425,9 +538,9 @@ export async function extendPlan(t: LoadedTournament) {
 }
 
 /**
- * Finalize a completed tournament. The first call computes the ranking from the
- * comparison log and persists it. Subsequent calls only adjust top-N and DO NOT
- * recompute the ranking — this preserves any manual reordering the user made.
+ * Finalize a completed segment. The first call computes the ranking from the
+ * log and persists the strict places. Subsequent calls only adjust top-N and DO
+ * NOT recompute the ranking — this preserves any manual reordering.
  */
 export async function finalize(t: LoadedTournament, topSize: number) {
   return prisma.$transaction(async (tx) => {
@@ -438,24 +551,20 @@ export async function finalize(t: LoadedTournament, topSize: number) {
     const fresh = await loadTournamentSegmentsFromDb(tx, t.userId, t.id);
     const current = fresh ? tournamentSlice(fresh, t.activeSegmentId) : null;
     if (!current) throw new Error("NOT_FOUND");
-    const items = current.tracks.map((tr) => tr.id);
-    const log = toDomainComparisons(current.comparisons);
-    const engine = createEngine(current.scheme as Scheme);
-    if (
-      !items.length ||
-      (current.status !== "completed" &&
-        !engine.isComplete(items, log, current.bonusOpponents))
-    )
+    const run = segmentRun(current);
+    const completed = current.status === "completed";
+    if (!run.items.length || (!completed && (!run.scheme || run.question)))
       throw new Error("NOT_COMPLETE");
-    const clampedTop = Math.max(
-      1,
-      Math.min(Math.trunc(topSize) || items.length, items.length),
-    );
-    if (current.status !== "completed" || !current.rankings.length) {
+    const rewrite = !completed || !current.rankings.length;
+    const placed = rewrite ? run.result.placed : current.rankings;
+    const clampedTop = placed.length
+      ? Math.max(1, Math.min(Math.trunc(topSize) || placed.length, placed.length))
+      : null;
+    if (rewrite) {
       await tx.ranking.deleteMany({
         where: { tournamentId: t.id, segmentId: current.activeSegmentId },
       });
-      for (const r of engine.ranking(items, log))
+      for (const r of run.result.placed)
         await tx.ranking.create({
           data: {
             tournamentId: t.id,
@@ -468,7 +577,7 @@ export async function finalize(t: LoadedTournament, topSize: number) {
     }
     await tx.tournamentSegment.update({
       where: { id: current.activeSegmentId },
-      data: { status: "completed", topSize: clampedTop },
+      data: { status: "completed", topSize: clampedTop, insertBase: null },
     });
     await aggregateTournamentStatus(tx, t.id);
     return { topSize: clampedTop };
@@ -505,6 +614,136 @@ export async function reorderRanking(
         data: { rank: i + 1 },
       });
   });
+}
+
+/**
+ * Task 33 (P15, P16): pick the algorithm of one segment or of all of them.
+ * The log is kept — the new engine replays it and only asks what it lacks. A
+ * finished segment reopens: its persisted order belonged to the old algorithm.
+ */
+export async function setSegmentScheme(
+  userId: string,
+  tournamentId: string,
+  input: { segmentId?: string; scheme: string; settings?: unknown; allSegments?: boolean },
+) {
+  if (!isScheme(input.scheme)) throw new Error("UNKNOWN_SCHEME");
+  const scheme = input.scheme;
+  const settings = parseSchemeSettings(scheme, input.settings ?? {});
+  const json = JSON.stringify(settings);
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.tournament.updateMany({
+      where: { id: tournamentId, userId },
+      data: { updatedAt: new Date() },
+    });
+    if (!claimed.count) throw new Error("NOT_FOUND");
+    const fresh = await loadTournamentSegmentsFromDb(tx, userId, tournamentId);
+    if (!fresh) throw new Error("NOT_FOUND");
+    const targets = input.allSegments
+      ? fresh.segments
+      : fresh.segments.filter((s) => s.id === (input.segmentId ?? fresh.segments[0]?.id));
+    if (!targets.length) throw new Error("NOT_FOUND");
+    let reopened = 0;
+    for (const s of targets) {
+      const before = effectiveScheme(fresh, s);
+      const beforeSettings = before ? JSON.stringify(effectiveSettings(before, fresh, s)) : null;
+      const same = before === scheme && beforeSettings === json;
+      const reopen = !same && s.status === "completed";
+      if (reopen) {
+        reopened++;
+        await tx.ranking.deleteMany({ where: { tournamentId, segmentId: s.id } });
+      }
+      await tx.tournamentSegment.update({
+        where: { id: s.id },
+        data: {
+          scheme,
+          schemeSettings: json,
+          ...(same ? {} : { insertBase: null }),
+          ...(reopen ? { status: "in_progress", topSize: null } : {}),
+        },
+      });
+      await completeSingleton(tx, s.id);
+    }
+    if (input.allSegments || fresh.segments.length === 1)
+      await tx.tournament.update({
+        where: { id: tournamentId },
+        data: { scheme, schemeSettings: json, schemePending: false },
+      });
+    await aggregateTournamentStatus(tx, tournamentId);
+    return { scheme, settings, segments: targets.length, reopened };
+  });
+}
+
+/**
+ * Task 33 (P21): move a participant on the tier board, outside the screen
+ * order. A change that touches the strictly ordered top tiers of a finished
+ * segment reopens it; a pure tier list stays finished.
+ */
+export async function setTier(t: LoadedTournament, itemId: string, tier: number) {
+  return prisma.$transaction(async (tx) => {
+    await tx.tournament.update({ where: { id: t.id }, data: { updatedAt: new Date() } });
+    const fresh = await loadTournamentSegmentsFromDb(tx, t.userId, t.id);
+    const current = fresh ? tournamentSlice(fresh, t.activeSegmentId) : null;
+    if (!current) throw new Error("NOT_FOUND");
+    if (current.scheme !== "tiers") throw new Error("NOT_TIERS");
+    if (!current.tracks.some((tr) => tr.id === itemId)) throw new Error("NOT_FOUND");
+    const names = current.schemeSettings.tiers ?? [];
+    if (!Number.isInteger(tier) || tier < -1 || tier >= names.length) throw new Error("INVALID_TIER");
+    const run = segmentRun(current);
+    const old = run.tiers.get(itemId);
+    const rankTop = current.schemeSettings.rankTop ?? 0;
+    await writeTier(tx, t.id, current.activeSegmentId, itemId, tier);
+    if (tier !== -1) await tx.track.update({ where: { id: itemId }, data: { excluded: false } });
+    const touchesOrder = (old !== undefined && old < rankTop) || (tier >= 0 && tier < rankTop) || tier === -1;
+    if (current.status === "completed" && touchesOrder && rankTop > 0) {
+      await tx.ranking.deleteMany({ where: { tournamentId: t.id, segmentId: current.activeSegmentId } });
+      await tx.tournamentSegment.update({
+        where: { id: current.activeSegmentId },
+        data: { status: "in_progress", topSize: null },
+      });
+      await aggregateTournamentStatus(tx, t.id);
+      return { reopened: true };
+    }
+    return { reopened: false };
+  });
+}
+
+/**
+ * After participants join or return to a finished segment: newcomers are
+ * inserted into the persisted order (P14), or — for tier lists and brackets,
+ * whose result is not one strict order — the segment simply reopens.
+ */
+export async function reopenForNewcomers(
+  tx: Tx,
+  tournament: { id: string; scheme: string; schemePending: boolean },
+  segment: { id: string; status: string; scheme: string | null; insertBase: string | null },
+  newcomers: string[],
+) {
+  if (!newcomers.length) return;
+  const overlay = parseOverlay(segment.insertBase);
+  if (segment.status !== "completed" && !overlay) return;
+  const scheme = effectiveScheme(tournament, segment);
+  if (scheme && OVERLAY_SCHEMES.includes(scheme)) {
+    const base =
+      overlay?.base ??
+      (
+        await tx.ranking.findMany({
+          where: { tournamentId: tournament.id, segmentId: segment.id },
+          orderBy: { rank: "asc" },
+        })
+      ).map((r) => r.trackId);
+    const pending = [...new Set([...(overlay?.pending ?? []), ...newcomers])];
+    await tx.tournamentSegment.update({
+      where: { id: segment.id },
+      data: { insertBase: JSON.stringify({ base, pending }), status: "in_progress", topSize: null },
+    });
+  } else {
+    await tx.tournamentSegment.update({
+      where: { id: segment.id },
+      data: { status: "in_progress", topSize: null, insertBase: null },
+    });
+  }
+  await tx.ranking.deleteMany({ where: { tournamentId: tournament.id, segmentId: segment.id } });
+  await aggregateTournamentStatus(tx, tournament.id);
 }
 
 /** Delete a tournament the user owns, including its stored media. */
