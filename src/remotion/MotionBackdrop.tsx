@@ -2,6 +2,7 @@ import React from "react";
 import type { CompiledBackdrop } from "../video/motion-types";
 import type { CompiledMedia } from "../video/types";
 import { clamp01 } from "./motion-frame";
+import { colorWithAlpha } from "./studio-paint";
 
 /** No future layer is returned, including during crossfades. Fade to neutral at gaps. */
 export function backdropLayersAt(backdrop: CompiledBackdrop, frame: number) {
@@ -71,7 +72,7 @@ export const MotionBackdrop: React.FC<{
         />
       ) : null}
       {b.preset === "light-orbs"
-        ? Array.from({ length: 5 }, (_, i) => (
+        ? Array.from({ length: Math.min(32, b.particles) }, (_, i) => (
             <div
               key={i}
               style={{
@@ -122,7 +123,7 @@ export const MotionBackdrop: React.FC<{
         <div
           style={{
             ...base,
-            background: `radial-gradient(ellipse at ${50 + Math.sin(time * 0.3) * 8 * a}% ${50 + Math.cos(time * 0.2) * 8 * a}%,transparent 20%,${colors[0]}cc 80%,#000 100%)`,
+            background: `radial-gradient(ellipse at ${50 + Math.sin(time * 0.3) * 8 * a}% ${50 + Math.cos(time * 0.2) * 8 * a}%,transparent 20%,${colorWithAlpha(colors[0], 0.8)} 80%,#000 100%)`,
           }}
         />
       ) : null}

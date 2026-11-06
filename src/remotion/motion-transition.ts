@@ -69,7 +69,7 @@ export function transitionLayers(
       incoming.filter = `blur(${q * 24}px)`;
       incoming.opacity = p;
       outgoing.filter = `blur(${p * 24}px)`;
-      outgoing.opacity = q;
+      outgoing.opacity = q === 0 ? 0 : 1;
       break;
   }
   return { active, progress, incoming, outgoing, overlay };

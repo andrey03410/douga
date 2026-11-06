@@ -18,3 +18,8 @@ export function shadowToCss(shadow?: ShadowStyle | null): string | undefined {
     ? `${shadow.x ?? 0}px ${shadow.y ?? 8}px ${shadow.blur ?? 24}px ${shadow.spread ?? 0}px ${shadow.color}`
     : undefined;
 }
+
+/** Multiply any schema-validated CSS color alpha without assuming a hex format. */
+export function colorWithAlpha(color: string, alpha: number): string {
+  return `color-mix(in srgb, ${color} ${Math.max(0, Math.min(1, alpha)) * 100}%, transparent)`;
+}

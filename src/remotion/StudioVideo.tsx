@@ -228,7 +228,11 @@ export const StudioSceneFrame: React.FC<{
     const framed = card || group;
     const fontSize =
       style.fontSize ??
-      Math.max(18, Math.min(48, rect.width * 0.07, rect.height * 0.16));
+      (node.type === "versus"
+        ? Math.max(18, Math.min(rect.width * 0.38, rect.height * 0.6))
+        : node.type === "badge"
+          ? Math.max(18, Math.min(rect.width * 0.2, rect.height * 0.55))
+          : Math.max(18, Math.min(48, rect.width * 0.07, rect.height * 0.16)));
     const textStyle: React.CSSProperties = {
       color: style.color ?? "white",
       fontSize,
@@ -241,18 +245,28 @@ export const StudioSceneFrame: React.FC<{
     const label = `${node.showRank && node.rank !== undefined ? `#${node.rank} ` : ""}${node.label ?? ""}`;
     const textPadding = Math.min(20, rect.width * 0.03);
     const text =
-      node.type === "timer" ? String(state.countdown) : (node.text ?? "");
+      node.type === "timer"
+        ? String(state.countdown)
+        : node.type === "versus"
+          ? "VS"
+          : (node.text ?? "");
     const labelSize = fitTextSize(
       label,
       Math.max(1, rect.width - 46),
       Math.max(1, rect.height * 0.5 - 18),
       fontSize,
     );
-    const textSize = fitTextSize(
-      text,
-      Math.max(1, rect.width - textPadding * 2),
-      Math.max(1, rect.height - textPadding * 2),
-      fontSize,
+    const textSize = Math.min(
+      fitTextSize(
+        text,
+        Math.max(1, rect.width - textPadding * 2),
+        Math.max(1, rect.height - textPadding * 2),
+        fontSize,
+      ),
+      // VS is a single mark: prevent the generic fitter from wrapping V/S.
+      node.type === "versus"
+        ? Math.max(1, rect.width - textPadding * 2) / (text.length * 0.72)
+        : Infinity,
     );
     return (
       <div

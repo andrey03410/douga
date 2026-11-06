@@ -14,8 +14,8 @@ import {
   progressAt,
 } from "./motion-frame";
 import { textFragments, counterText, MotionText } from "./MotionText";
-import { MotionTimer } from "./MotionWidgets";
-import { backdropLayersAt } from "./MotionBackdrop";
+import { MotionBadge, MotionTimer } from "./MotionWidgets";
+import { MotionBackdrop, backdropLayersAt } from "./MotionBackdrop";
 import { evaluateNode } from "./studio-frame";
 import { videoNode } from "../watch/fixtures";
 const rect = { x: 0, y: 0, width: 640, height: 200 };
@@ -265,3 +265,89 @@ it("matches compiler word budgets while preserving whitespace and decimal commas
   expect(textFragments("  один   два\nтри  ", "text-words")).toHaveLength(3);
   expect(counterText(" 003,50 ", 0.5)).toBe(" 1,75 ");
 });
+
+it("keeps full central coverage throughout blur transitions", () => {
+  for (const frame of [0, 1, 5, 10, 15, 19, 20]) {
+    const layers = transitionLayers(
+      { type: "blur", durationInFrames: 21 },
+      frame,
+      100,
+      640,
+      360,
+    );
+    const incoming = Number(layers.incoming.opacity ?? 1),
+      outgoing = Number(layers.outgoing.opacity ?? 1);
+    expect(incoming + outgoing * (1 - incoming)).toBe(1);
+    expect(layers.incoming.filter).toContain("blur(");
+    expect(layers.outgoing.filter).toContain("blur(");
+  }
+});
+it.each([
+  "#123",
+  "#123456",
+  "#1234",
+  "#12345678",
+  "red",
+  "rgb(1, 2, 3)",
+  "rgba(1, 2, 3, 0.5)",
+])(
+  "uses valid alpha composition for vignette and winner badge with %s",
+  (color) => {
+    const backdrop = renderToStaticMarkup(
+      React.createElement(MotionBackdrop, {
+        backdrop: {
+          preset: "vignette",
+          source: "asset",
+          colors: [color],
+          blur: 0,
+          dim: 0,
+          motion: false,
+          intensity: 1,
+          particles: 0,
+          layers: [],
+        },
+        frame: 0,
+        fps: 30,
+        seed: 1,
+        renderMedia: () => null,
+      }),
+    );
+    const badge = renderToStaticMarkup(
+      React.createElement(MotionBadge, {
+        node: videoNode({ type: "badge", badge: { kind: "winner", color } }),
+        children: "Winner",
+      }),
+    );
+    expect(backdrop).toContain(`color-mix(in srgb, ${color} 80%, transparent)`);
+    expect(badge).toContain(
+      `color-mix(in srgb, ${color} 15.686274509803921%, transparent)`,
+    );
+  },
+);
+it.each([0, 3, 32, 40])(
+  "uses the normalized particle count for light-orbs (%i)",
+  (count) => {
+    const html = renderToStaticMarkup(
+      React.createElement(MotionBackdrop, {
+        backdrop: {
+          preset: "light-orbs",
+          source: "asset",
+          colors: ["red"],
+          blur: 0,
+          dim: 0,
+          motion: false,
+          intensity: 1,
+          particles: count,
+          layers: [],
+        },
+        frame: 0,
+        fps: 30,
+        seed: 1,
+        renderMedia: () => null,
+      }),
+    );
+    expect((html.match(/background:radial-gradient/g) ?? []).length).toBe(
+      Math.min(32, count),
+    );
+  },
+);

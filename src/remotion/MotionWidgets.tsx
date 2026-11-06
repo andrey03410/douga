@@ -1,6 +1,7 @@
 import React from "react";
 import type { CompiledNode } from "../video/types";
 import { progressAt, timerState } from "./motion-frame";
+import { colorWithAlpha } from "./studio-paint";
 
 export const MotionTimer: React.FC<{
   node: CompiledNode;
@@ -184,7 +185,8 @@ export const MotionBadge: React.FC<{
         border: `2px solid ${color}`,
         borderRadius: kind === "rank" ? 999 : kind === "label" ? 8 : 18,
         color,
-        background: kind === "winner" ? `${color}28` : "#101726",
+        background:
+          kind === "winner" ? colorWithAlpha(color, 40 / 255) : "#101726",
         fontWeight: 900,
       }}
     >
