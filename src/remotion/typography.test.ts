@@ -181,7 +181,7 @@ describe("measured typography renderer", () => {
     });
     const html = render([rich]);
     expect(html.match(/data-typography-outline="/g)).toHaveLength(2);
-    expect(html.match(/aria-hidden="true"/g)).toHaveLength(2);
+    expect(html.match(/aria-hidden="true"/g)).toHaveLength(3);
     expect(html).toContain("-webkit-text-stroke:12px #000000");
     expect(html).toContain("-webkit-text-stroke:4px #ffffff");
     expect(html).toContain("3px 4px 2px #121212, 0px 0px 8px #ff0000");
@@ -189,6 +189,38 @@ describe("measured typography renderer", () => {
     expect(html).toContain("background:#222222");
     expect(html).toContain("color:#ffff00");
     expect(html).toContain("text-decoration:underline");
+  });
+
+  it("paints shadows behind the gradient in an inaccessible decorative layer", () => {
+    const html = render([
+      node({
+        typography: {
+          ...typography,
+          gradient: {
+            type: "linear",
+            angle: 90,
+            stops: [
+              { at: 0, color: "#00ffff" },
+              { at: 1, color: "#bb00ff" },
+            ],
+          },
+          shadows: [{ color: "#000000", x: 0, y: 2, blur: 8 }],
+        },
+      }),
+    ]);
+    const shadowStart = html.indexOf('data-typography-shadow="true"');
+    const fillStart = html.indexOf('data-typography-fill="true"');
+    expect(shadowStart).toBeGreaterThan(-1);
+    expect(fillStart).toBeGreaterThan(shadowStart);
+    const shadowLayer = html.slice(shadowStart, fillStart);
+    const fillLayer = html.slice(fillStart);
+    expect(shadowLayer).toContain('aria-hidden="true"');
+    expect(shadowLayer).toContain("text-shadow:0px 2px 8px #000000");
+    expect(shadowLayer).toContain("-webkit-text-fill-color:transparent");
+    expect(shadowLayer).not.toContain("linear-gradient(");
+    expect(fillLayer).toContain("linear-gradient(90deg");
+    expect(fillLayer).not.toContain("text-shadow:");
+    expect(fillLayer).not.toContain('aria-hidden="true"');
   });
 
   it("reveals actual visual lines on their fixed full-text positions", () => {

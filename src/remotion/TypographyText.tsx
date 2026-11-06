@@ -3,6 +3,7 @@ import type { CompiledNode } from "../video/types";
 import type {
   CompiledTextLine,
   CompiledTextRun,
+  TextOutline,
 } from "../video/typography-types";
 import { getFontFace } from "../video/font-manifest";
 import { gradientToCss } from "./studio-paint";
@@ -14,6 +15,8 @@ import {
 } from "./MotionText";
 import { motionProgress } from "./motion-frame";
 import { useTypographyFonts } from "./typography-fonts";
+
+type TextPaint = "fill" | "outline" | "shadow";
 
 /** Each run stays in its measured box. Neither effects nor reveal poses change wrapping. */
 export const TypographyText: React.FC<{
@@ -97,7 +100,7 @@ export const TypographyText: React.FC<{
   function lineContent(
     line: CompiledTextLine,
     lineIndex: number,
-    outline: boolean,
+    paint: TextPaint,
     offset: number,
   ) {
     let index = offset;
@@ -136,7 +139,8 @@ export const TypographyText: React.FC<{
           </span>
         );
       });
-      const ownGradient = !outline && gradient && !run.color;
+      const decorative = paint !== "fill";
+      const ownGradient = !decorative && gradient && !run.color;
       return (
         <span
           key={runIndex}
@@ -149,15 +153,15 @@ export const TypographyText: React.FC<{
             width: run.width,
             height: layout!.lineHeight,
             textAlign: dynamicText !== undefined ? style!.align : "left",
-            color: outline ? "transparent" : (run.color ?? style!.fill),
+            color: decorative ? "transparent" : (run.color ?? style!.fill),
             WebkitTextFillColor:
-              outline || ownGradient
+              decorative || ownGradient
                 ? "transparent"
                 : (run.color ?? style!.fill),
             backgroundImage: ownGradient ? gradient : undefined,
             backgroundClip: ownGradient ? "text" : undefined,
             WebkitBackgroundClip: ownGradient ? "text" : undefined,
-            textShadow: outline ? undefined : shadow,
+            textShadow: paint === "shadow" ? shadow : undefined,
           }}
         >
           {children}
@@ -165,16 +169,15 @@ export const TypographyText: React.FC<{
       );
     });
   }
-  function layer(
-    outline?: { color: string; width: number },
-    layerIndex?: number,
-  ) {
+  function layer(paint: TextPaint, outline?: TextOutline, layerIndex?: number) {
     let offset = 0;
     return (
       <div
-        key={layerIndex ?? "fill"}
+        key={layerIndex ?? paint}
         data-typography-outline={outline ? layerIndex : undefined}
-        aria-hidden={outline ? true : undefined}
+        data-typography-shadow={paint === "shadow" ? true : undefined}
+        data-typography-fill={paint === "fill" ? true : undefined}
+        aria-hidden={paint !== "fill" ? true : undefined}
         style={{
           position: "absolute",
           inset: 0,
@@ -206,7 +209,7 @@ export const TypographyText: React.FC<{
           return (
             <div
               key={lineIndex}
-              data-typography-line={outline ? undefined : lineIndex}
+              data-typography-line={paint === "fill" ? lineIndex : undefined}
               style={{
                 position: "absolute",
                 left: line.x,
@@ -217,7 +220,7 @@ export const TypographyText: React.FC<{
                 ...motion.style,
               }}
             >
-              {lineContent(line, lineIndex, !!outline, start)}
+              {lineContent(line, lineIndex, paint, start)}
             </div>
           );
         })}
@@ -234,6 +237,7 @@ export const TypographyText: React.FC<{
         position: "absolute",
         inset: 0,
         fontSynthesis: "none",
+        textShadow: "none",
         overflow:
           style.overflow === "clip" && layout.overflow ? "hidden" : "visible",
       }}
@@ -261,11 +265,12 @@ export const TypographyText: React.FC<{
             }}
           />
         ) : null}
+        {shadow ? layer("shadow") : null}
         {[...style.outlines]
           .slice(0, 2)
           .sort((a, b) => b.width - a.width)
-          .map((outline, index) => layer(outline, index))}
-        {layer()}
+          .map((outline, index) => layer("outline", outline, index))}
+        {layer("fill")}
       </div>
     </div>
   );
