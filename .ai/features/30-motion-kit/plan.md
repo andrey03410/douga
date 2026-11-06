@@ -92,28 +92,28 @@ motionCatalog/getMotionCatalogEntry, applySceneMotion, typed widgets/backdrop,
 `video_motion_list`, `video_motion_get`, capabilities metadata, validated examples;
 authenticated `/studio/motion` с настоящим Remotion Player и копированием JSON.
 
-- [ ] RED: tools доступны и возвращают bounded summaries/filter/get/error;
+- [x] RED: tools доступны и возвращают bounded summaries/filter/get/error;
   все выдаваемые примеры schema-valid и compile ready; инструкции короткие.
-- [ ] RED: timeline включает начала/концы motion anchors и стыки переходов.
-- [ ] Реализовать каталог, маршруты, примеры всех категорий и выбор профиля;
+- [x] RED: timeline включает начала/концы motion anchors и стыки переходов.
+- [x] Реализовать каталог, маршруты, примеры всех категорий и выбор профиля;
   превью использует тот же compiler/renderer, без CSS animation и внешних медиа.
-- [ ] GREEN: targeted MCP/timeline/example tests; browser-safe bundle.
-- [ ] Коммит `feat(studio): expose motion catalog and live preview gallery`.
-- [ ] Свежий task review; исправить существенное.
+- [x] GREEN: targeted MCP/timeline/example tests; browser-safe bundle.
+- [x] Коммит `feat(studio): expose motion catalog and live preview gallery`.
+- [x] Свежий task review; исправить существенное.
 
 ### Task 4: Живая проверка и QG
 
 **Файлы:** `scripts/verify-motion.mjs` при необходимости,
 `.ai/features/30-motion-kit/verify.md`, evidence только в storage.
 
-- [ ] Создать отдельный проверочный аккаунт/медиа; настоящий stdio MCP:
+- [x] Создать отдельный проверочный аккаунт/медиа; настоящий stdio MCP:
   catalog/schema/examples/create/validate/stable patch/commit/jobs.
-- [ ] Render showcase с хореографиями, эффектами, фонами, переходами и звуком;
+- [x] Render showcase с хореографиями, эффектами, фонами, переходами и звуком;
   извлечь и просмотреть кадры начала/середины/конца и стыков; декодировать аудио.
-- [ ] Проверить portrait/square, настоящие board actions и separate answer.
-- [ ] Браузер: галерея, Studio, watch, offline без сети; seek и playback;
+- [x] Проверить portrait/square, настоящие board actions и separate answer.
+- [x] Браузер: галерея, Studio, watch, offline без сети; seek и playback;
   screenshots и page errors. Исправления — через RED→GREEN.
-- [ ] После последних правок `npm test` → `npm run build` → `npx tsc --noEmit`;
+- [x] После последних правок `npm test` → `npm run build` → `npx tsc --noEmit`;
   проверить порт/процессы, писать полные логи в storage.
 - [ ] Свежий review всей ветки и устранение существенного; обновить verify.md.
 
@@ -122,8 +122,8 @@ authenticated `/studio/motion` с настоящим Remotion Player и копи
 **Файлы:** `.ai/map/studio-sdk.md`, `render.md`, `mcp.md`, README задачи,
 `.ai/history.md`, SDK-гид задачи по необходимости.
 
-- [ ] Обновить карточки по фактическому коду, описать API и ограничения.
-- [ ] Сверить ссылки, отметить выполнение плана и evidence.
+- [x] Обновить карточки по фактическому коду, описать API и ограничения.
+- [x] Сверить ссылки, отметить выполнение плана и evidence.
 - [ ] Push, PR `30: Моушен-кит Video SDK`; stage review, ссылка и результаты QG.
 - [ ] В автономном режиме после зелёных QG/review: stage merged, history,
   commit/push, `gh pr merge --merge --delete-branch`, main/pull.

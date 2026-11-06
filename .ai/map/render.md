@@ -7,7 +7,9 @@
 - [`motion-frame.ts`](../../src/remotion/motion-frame.ts) оценивает 40 закрытых
   эффектов по scene-local frame/fps; движение складывается с keyframes.
   [`MotionText.tsx`](../../src/remotion/MotionText.tsx) сохраняет пробелы,
-  графемы Unicode и конечное число; [`MotionWidgets.tsx`](../../src/remotion/MotionWidgets.tsx)
+  графемы Unicode и конечное число;
+  переводы строк остаются в общем inline flow, а нейтральная поза возвращает
+  исходный text node для сохранения кернинга; [`MotionWidgets.tsx`](../../src/remotion/MotionWidgets.tsx)
   рисует timer/VS/badge/progress, [`MotionBackdrop.tsx`](../../src/remotion/MotionBackdrop.tsx)
   — пять фонов из seed/кадра. CSS animations и wall-clock не используются.
 - [`motion-transition.ts`](../../src/remotion/motion-transition.ts) соединяет

@@ -107,3 +107,47 @@ Task 2: fix round 1/5 (4 addressed,0 open; f9a44b0..bc4a675).
 Task 2: complete (b65e8af..bc4a675, review clean; target229/229,tsc0,
 Chromium color/coverage/font probe passed, legacy decodedRGBA5/5 on latestcode).
 Final MP4 must be regenerated after Task3; intermediate showcase remains f9a44b0.
+
+### Task 3 — в работе
+
+Исполнитель /root/motion_catalog_ui, base3cda802, стандартный свежий контекст.
+RED5 observed. Каталог list default20/max100/category/cursor; get name/category.
+Решение root: default video_examples около12 полных motion docs (10recipes+2samplers),
+67 preview cases локально, get короткие fragments; optional id для одного full doc.
+
+### Живая находка для Task4 (проверяется)
+
+Root увидел на actual MP4 text sampler (frame-004.png), что text-words/text-letters
+могут визуально терять явный newline внутри отдельных inline-block fragments.
+Raw text / text-wipe / lines выглядят с переносом. Render reviewer возобновлён
+read-only для одного Chromium y-rect probe, без suite/изменений кода.
+Если подтвердится, исправить после завершения Task3 (не параллелить implementers).
+
+Task 3: complete (3cda802..d3aae86, fresh review clean; targeted176/4files,tsc0).
+Actual MCP probe passed:67entries/category/get,67paging,12recipes create/patch/
+commit/preset save/get/apply/validate; evidence mcp-probe.json.
+LT-01 sourcefix1e2abe0: Chromium252cases/0fail, targeted216/6files,tsc0;
+scoped reviewer render_review проверяет live-text-fix.diff.
+Own dev запущен на проверенном свободном3000, session10642, лог dev.log;
+остановить перед общим QG/build. Gallery browser driver session14562.
+
+### Task4 — live checks complete, QG running
+
+Все live checks passed на1e2abe0: main finalMP411968066bytes/SHA verified,
+30frames viewed, decodedPCM identical to initial;3format/video probes passed.
+Gallery auth/play/profile/copy/mobile0errors; Studio explicit preview, watch
+/offline seek1568/1568; backdrop-only video loop/seek/mute offline; native
+outgoing video held65/30 across75/80/70 and removed84 inwatch/offline.
+Legacy compiler285/285 latest; rendererRGBA5/5 latest. Evidence в verify.md.
+Own dev PID38162 terminated,3000 free; no global worker. Combined final QG
+process session82472: npm test→build→tsc, logs qg-*.log in storage.
+Не менять src/tests до окончания этого прогона.
+
+QG1 complete на1e2abe0:1129/1129,91files,374.13s;build0;tsc0 emptylog.
+Все local links main docs/maps132 проверены, missing0. origin/main послеfetch
+не изменился; repo допускает merge commit. Итоговый broad review следующий.
+Два конкретных риска для оценки reviewer: React key фонового B меняется при
+выходе A из filtered active layers (standalone React DOM probe sameB=false);
+стык legacy fade/slide → new adjacent transition (SSR-only white probe
+не воспроизвёл, actual renderStill probe запущен отдельно). Не менять src до
+заключения review; при подтверждении все findings одним fix wave.

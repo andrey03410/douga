@@ -1,7 +1,22 @@
 # Моушен-кит для внешнего агента
 
-Черновик руководства: примеры ниже сверяются с фактическим каталогом и compiler
-перед завершением задачи. Авторитетные типы — `src/video/motion-types.ts`.
+Авторитетные типы — `src/video/motion-types.ts`. Каталог v1 содержит 67 записей:
+40 эффектов, 10 хореографий, 8 переходов, 5 фонов, 4 семейства виджетов.
+
+## Найти приём через MCP
+
+1. `video_motion_list({category:"effect",limit:20})` — короткие summaries; для
+   следующей страницы передайте nextCursor с тем же category.
+2. `video_motion_get({name:"pop",category:"effect"})` — параметры и entry.example
+   выбранного приёма. Для flash category обязателен: effect и transition различны.
+3. `video_examples({id:"motion-choreography-picker-cascade"})` — полный документ
+   с явным standInManifest. Перед сохранением замените synthetic pool IDs своими.
+4. `/studio/motion` — живая галерея с тем же renderer, профилями и вариантами.
+   JSON копируется как подписанный envelope: используйте его поле fragment в
+   указанной области node/settings/scene, весь envelope не является VideoDocument.
+
+Полных motion-рецептов 12; default examples сохраняет и 15 прежних. Каталог
+покрывает все приёмы короткими фрагментами, чтобы не читать десятки полных документов.
 
 ## Быстро собрать сцену
 
