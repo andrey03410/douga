@@ -19,6 +19,10 @@ function targetObject(document: VideoDocument, target: PatchTarget): object {
   ];
   scenes.forEach((s) => collect(s.nodes));
   const lists = {
+    boardSlot: scenes.flatMap((s) => s.board?.slots ?? []),
+    boardRound: scenes.flatMap((s) => s.board?.rounds ?? []),
+    boardCard: scenes.flatMap((s) => s.board?.rounds.flatMap((r) => r.cards) ?? []),
+    boardAction: scenes.flatMap((s) => s.board?.rounds.flatMap((r) => r.actions) ?? []),
     participant: document.source.participants,
     round: document.source.rounds,
     card: document.source.rounds.flatMap((r) => r.cards),

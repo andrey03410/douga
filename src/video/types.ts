@@ -225,9 +225,106 @@ export type VideoNode = NodeBase &
         fadeOutSec?: number;
       }
   );
+/** Declarative board v1: authored choices, independent of playback and UI. */
+export interface BoardSlot {
+  id: string;
+  label: string;
+  capacity?: number;
+  color?: string;
+  background?: string;
+  image?: string;
+  backgroundAsset?: string;
+  sound?: string;
+  rect?: Rect;
+  style?: CardStyle;
+}
+export interface BoardCard {
+  id: string;
+  participantId: string;
+  cost?: number;
+}
+export type BoardAction = {
+  id: string;
+  comment?: string;
+  sound?: string;
+} & (
+  | { type: "place" | "move"; cardId: string; slotId: string }
+  | { type: "replace"; cardId: string; slotId: string; replaceCardId: string }
+  | { type: "swap"; cardId: string; otherCardId: string }
+  | { type: "remove" | "lock" | "unlock"; cardId: string }
+);
+export interface BoardRound {
+  id: string;
+  prompt?: string;
+  cards: BoardCard[];
+  actions: BoardAction[];
+  clearSlotIds?: string[];
+}
+export interface BoardDefinition {
+  version: 1;
+  mode: "accumulate" | "rounds";
+  slots: BoardSlot[];
+  rounds: BoardRound[];
+  carry?: boolean;
+  budget?: number;
+  allowMoves?: boolean;
+  allowReplacements?: boolean;
+  lockOnPlace?: boolean;
+  allowRepeatParticipants?: boolean;
+  requireAllAssigned?: boolean;
+  layout?: "rows" | "grid" | "free";
+  columns?: number;
+  xLabel?: string;
+  yLabel?: string;
+  presentation?: {
+    reveal?: "together" | "sequential";
+    answerReveal?: "round" | "end";
+    hideLabelsUntilPlaced?: boolean;
+    hideVisualsUntilPlaced?: boolean;
+    shuffleCandidates?: boolean;
+    focusActive?: boolean;
+    leadSec?: number;
+    revealSec?: number;
+    thinkSec?: number;
+    moveSec?: number;
+    holdSec?: number;
+    finalSec?: number;
+    rowFocusSec?: number;
+  };
+}
+export interface BoardState {
+  placements: Record<string, string>;
+  lockedCardIds: string[];
+  spent: number;
+}
+export interface BoardStep {
+  action: BoardAction;
+  before: BoardState;
+  after: BoardState;
+}
+export interface ResolvedBoardRound {
+  round: BoardRound;
+  initial: BoardState;
+  steps: BoardStep[];
+  final: BoardState;
+}
+export interface BoardResolution {
+  rounds: ResolvedBoardRound[];
+  final: BoardState;
+  diagnostics: Diagnostic[];
+}
+export interface BoardEvent {
+  event: "board.reveal" | "board.place" | "board.move" | "board.replace" | "board.swap" | "board.remove" | "board.lock" | "board.unlock" | "board.summary";
+  frame: number;
+  cardId?: string;
+  participantId?: string;
+  slotId?: string;
+  actionId?: string;
+}
 export interface VideoScene {
   id: string;
-  block: "custom" | "top" | "picker";
+  block: "custom" | "top" | "picker" | "board";
+  board?: BoardDefinition;
   repeat?: "participants" | "rounds";
   participantId?: string;
   roundId?: string;
@@ -243,11 +340,14 @@ export interface AudioAnchor {
     | "card.reveal"
     | "timer.start"
     | "answer.start"
-    | "transition.start";
+    | "transition.start"
+    | BoardEvent["event"];
   sceneId?: string;
   participantId?: string;
   roundId?: string;
   cardId?: string;
+  slotId?: string;
+  actionId?: string;
 }
 export interface AudioCue {
   id: string;
@@ -271,7 +371,7 @@ export interface Playlist {
 }
 export interface VideoSegment {
   id: string;
-  kind: "top" | "picker" | "custom";
+  kind: "top" | "picker" | "custom" | "board";
   title: string;
   subtitle?: string;
   poster?: string;
@@ -292,7 +392,7 @@ export interface VideoDocument {
   segments?: VideoSegment[];
   id: string;
   title: string;
-  kind: "top" | "picker";
+  kind: "top" | "picker" | "board";
   seed: number;
   output: { format: VideoFormat; fps: number };
   source: Source;
@@ -308,7 +408,7 @@ export interface VideoPreset {
   id: string;
   version: number;
   name: string;
-  kind: "top" | "picker";
+  kind: "top" | "picker" | "board";
   output: VideoDocument["output"];
   settings: Settings;
   formatSettings?: VideoDocument["formatSettings"];
@@ -387,7 +487,8 @@ export interface CompiledScene {
   segmentId?: string;
   segmentTitle?: string;
   id: string;
-  kind: "custom" | "top" | "picker" | "answer";
+  kind: "custom" | "top" | "picker" | "answer" | "board";
+  boardEvents?: BoardEvent[];
   from: number;
   durationInFrames: number;
   background: string;
@@ -449,7 +550,11 @@ export type PatchTarget =
         | "group"
         | "scene"
         | "node"
-        | "segment";
+        | "segment"
+        | "boardSlot"
+        | "boardRound"
+        | "boardCard"
+        | "boardAction";
       id: string;
     };
 export type PatchOperation =

@@ -323,10 +323,44 @@ export const videoNodeSchema: z.ZodType<VideoNode> = z.lazy(() =>
       .strict(),
   ]),
 );
+export const boardSlotSchema = z.object({
+  id, label: str, capacity: opt(positive.int()), color: opt(color), background: opt(color),
+  image: opt(id), backgroundAsset: opt(id), sound: opt(id), rect: opt(rectSchema), style: opt(cardStyleSchema),
+}).strict();
+const boardCardSchema = z.object({ id, participantId: id, cost: opt(nonnegative) }).strict();
+const actionBase = { id, comment: opt(str), sound: opt(id), cardId: id };
+export const boardActionSchema = z.discriminatedUnion("type", [
+  z.object({ ...actionBase, type: z.literal("place"), slotId: id }).strict(),
+  z.object({ ...actionBase, type: z.literal("move"), slotId: id }).strict(),
+  z.object({ ...actionBase, type: z.literal("replace"), slotId: id, replaceCardId: id }).strict(),
+  z.object({ ...actionBase, type: z.literal("swap"), otherCardId: id }).strict(),
+  z.object({ ...actionBase, type: z.literal("remove") }).strict(),
+  z.object({ ...actionBase, type: z.literal("lock") }).strict(),
+  z.object({ ...actionBase, type: z.literal("unlock") }).strict(),
+]);
+export const boardRoundSchema = z.object({
+  id, prompt: opt(str), cards: z.array(boardCardSchema), actions: z.array(boardActionSchema), clearSlotIds: opt(z.array(id)),
+}).strict();
+export const boardDefinitionSchema = z.object({
+  version: z.literal(1), mode: z.enum(["accumulate", "rounds"]),
+  slots: z.array(boardSlotSchema).min(1), rounds: z.array(boardRoundSchema),
+  carry: opt(z.boolean()), budget: opt(nonnegative), allowMoves: opt(z.boolean()),
+  allowReplacements: opt(z.boolean()), lockOnPlace: opt(z.boolean()),
+  allowRepeatParticipants: opt(z.boolean()), requireAllAssigned: opt(z.boolean()),
+  layout: opt(z.enum(["rows", "grid", "free"])), columns: opt(positive.int()), xLabel: opt(str), yLabel: opt(str),
+  presentation: opt(z.object({
+    reveal: opt(z.enum(["together", "sequential"])), answerReveal: opt(z.enum(["round", "end"])),
+    hideLabelsUntilPlaced: opt(z.boolean()), hideVisualsUntilPlaced: opt(z.boolean()),
+    shuffleCandidates: opt(z.boolean()), focusActive: opt(z.boolean()),
+    leadSec: opt(nonnegative), revealSec: opt(positive), thinkSec: opt(nonnegative),
+    moveSec: opt(positive), holdSec: opt(nonnegative), finalSec: opt(positive), rowFocusSec: opt(nonnegative),
+  }).strict()),
+}).strict();
 export const sceneSchema = z
   .object({
     id,
-    block: z.enum(["custom", "top", "picker"]),
+    block: z.enum(["custom", "top", "picker", "board"]),
+    board: opt(boardDefinitionSchema),
     repeat: opt(z.enum(["participants", "rounds"])),
     participantId: opt(id),
     roundId: opt(id),
@@ -391,11 +425,13 @@ export const audioCueSchema = z
             "timer.start",
             "answer.start",
             "transition.start",
+            "board.reveal", "board.place", "board.move", "board.replace", "board.swap", "board.remove", "board.lock", "board.unlock", "board.summary",
           ]),
           sceneId: opt(id),
           participantId: opt(id),
           roundId: opt(id),
           cardId: opt(id),
+          slotId: opt(id), actionId: opt(id),
         })
         .strict(),
     ),
@@ -443,7 +479,7 @@ const videoAudioSchema = z
 export const videoSegmentSchema = z
   .object({
     id,
-    kind: z.enum(["top", "picker", "custom"]),
+    kind: z.enum(["top", "picker", "custom", "board"]),
     title: str,
     subtitle: opt(str),
     poster: opt(id),
@@ -471,7 +507,7 @@ const documentObject = z
     segments: opt(z.array(videoSegmentSchema)),
     id,
     title: str,
-    kind: z.enum(["top", "picker"]),
+    kind: z.enum(["top", "picker", "board"]),
     seed: nonnegative.int(),
     output,
     source: z
@@ -605,6 +641,17 @@ export const videoDocumentSchema: z.ZodType<VideoDocument> = z
             path: ["segments", i, "sourceSegmentId"],
           });
       }
+      const boards = scenes.flatMap((scene) => scene.board ? [scene.board] : []);
+      unique(boards.flatMap((b) => b.slots.map((v) => v.id)), ["board", "slots"]);
+      unique(boards.flatMap((b) => b.rounds.map((v) => v.id)), ["board", "rounds"]);
+      unique(boards.flatMap((b) => b.rounds.flatMap((r) => r.cards.map((v) => v.id))), ["board", "cards"]);
+      unique(boards.flatMap((b) => b.rounds.flatMap((r) => r.actions.map((v) => v.id))), ["board", "actions"]);
+      scenes.forEach((scene) => {
+        if ((scene.block === "board") !== Boolean(scene.board) || (scene.block === "board" && (scene.repeat || scene.participantId || scene.roundId)))
+          ctx.addIssue({ code: "custom", message: "Board block requires board data and cannot repeat a source collection", path: ["scenes", scene.id] });
+        if (scene.board?.layout === "free" && scene.board.slots.some((s) => !s.rect))
+          ctx.addIssue({ code: "custom", message: "Free board layout requires each slot rect", path: ["scenes", scene.id, "board"] });
+      });
       unique(
         scenes.map((s) => s.id),
         ["scenes"],
@@ -675,7 +722,7 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
     id,
     version: positive.int(),
     name: str,
-    kind: z.enum(["top", "picker"]),
+    kind: z.enum(["top", "picker", "board"]),
     output,
     settings: settingsSchema,
     formatSettings: opt(formatSettings),
@@ -747,6 +794,13 @@ export const videoPresetSchema: z.ZodType<VideoPreset> = z
     );
     p.scenes.forEach((s, i) => {
       if (s.participantId || s.roundId || s.background) issue(["scenes", i]);
+      if (s.board) {
+        if (s.board.rounds.length) issue(["scenes", i, "board", "rounds"]);
+        s.board.slots.forEach((slot, j) => {
+          for (const field of ["image", "backgroundAsset", "sound"] as const)
+            if (slot[field] && !/^slot:[a-z]+:[0-9]+$/.test(slot[field]!)) issue(["scenes", i, "board", "slots", j, field]);
+        });
+      }
       settings(s.settings, ["scenes", i, "settings"]);
       walk(s.nodes, ["scenes", i, "nodes"]);
     });
@@ -774,7 +828,7 @@ const patchTargetSchema = z.union([
         "group",
         "scene",
         "node",
-        "segment",
+        "segment", "boardSlot", "boardRound", "boardCard", "boardAction",
       ]),
       id: z.string().min(1),
     })
