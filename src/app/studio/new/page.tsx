@@ -20,8 +20,21 @@ export default async function NewStudioPage({
       </p>
       <p>
         <a href="/studio/motion">Посмотреть моушен-кит →</a>
-          <a href="/studio/typography">Шрифты и типографика →</a>
+        <a href="/studio/typography">Шрифты и типографика →</a>
       </p>
+      <section className="panel">
+        <h2>Начать с готового рецепта</h2>
+        <p className="muted">
+          Топы, пикеры и доски с живыми примерами, формой заполнения и
+          оформлением для трёх форматов.
+        </p>
+        <a
+          className="btn"
+          href={`/studio/recipes${searchParams.sourceId ? `?sourceId=${encodeURIComponent(searchParams.sourceId)}` : ""}`}
+        >
+          Выбрать рецепт →
+        </a>
+      </section>
       <NewStudioProject sourceId={searchParams.sourceId} />
       <StudioSetup email={user.email} />
     </main>

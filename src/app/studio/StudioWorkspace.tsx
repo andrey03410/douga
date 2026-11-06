@@ -365,6 +365,30 @@ export function StudioWorkspace({
         Проект <code>{id}</code>. Код, ответы, медиа и звук скрыты до вашего
         действия.
       </p>
+      <div className="studio-toolbar">
+        <a
+          className="btn secondary"
+          href={`/studio/${encodeURIComponent(id)}/storyboard`}
+          target="_blank"
+          rel="noopener"
+        >
+          Раскадровка и замечания ↗
+        </a>
+        <a
+          className="btn ghost"
+          href={`/studio/recipes?project=${encodeURIComponent(id)}`}
+          target="_blank"
+          rel="noopener"
+        >
+          Выбрать рецепт ↗
+        </a>
+        {buffer?.dirty && (
+          <span className="muted">
+            Эти страницы используют сохранённый документ. Локальный текст
+            останется в этой вкладке.
+          </span>
+        )}
+      </div>
       <section className="panel" aria-label="Статус проекта">
         <div className="studio-status">
           <div>
