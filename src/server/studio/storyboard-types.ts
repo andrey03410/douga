@@ -12,6 +12,7 @@ export interface InspectionOrigin {
 export interface InspectionSummary {
   origin: InspectionOrigin;
   selection: StoryboardSelection;
+  scope?: { mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string; pageSize: number };
   compareOrigin?: InspectionOrigin;
   diagnostic?: { ready: false; codes: string[] };
 }

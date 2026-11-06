@@ -29,11 +29,12 @@ export const storyboardSchema = z.object({
   pageSize: z.number().int().min(1).max(24).default(12),
   compareRevision: z.number().int().positive().optional(),
   compareJobId: key.optional(),
+  sourceJobId: key.optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
 }).strict().superRefine((v, ctx) => {
-  if (v.mode === "scene" && !v.sceneId) ctx.addIssue({ code: "custom", message: "sceneId required", path: ["sceneId"] });
-  if (v.mode === "compare" ? Number(!!v.compareRevision) + Number(!!v.compareJobId) !== 1 : !!v.compareRevision || !!v.compareJobId)
-    ctx.addIssue({ code: "custom", message: "Compare mode requires exactly one comparison origin" });
+  if (v.mode === "scene" && !v.sceneId && !v.sourceJobId) ctx.addIssue({ code: "custom", message: "sceneId required", path: ["sceneId"] });
+  if (v.sourceJobId ? !!v.compareRevision || !!v.compareJobId : v.mode === "compare" ? Number(!!v.compareRevision) + Number(!!v.compareJobId) !== 1 : !!v.compareRevision || !!v.compareJobId)
+    ctx.addIssue({ code: "custom", message: "Compare requires one origin; continuation uses the source job's pinned origins" });
 });
 export type StoryboardInput = z.input<typeof storyboardSchema>;
 const originInput = z.object({ expectedVersion: z.number().int().positive().optional(), revision: z.number().int().positive().optional() }).strict();
@@ -89,7 +90,7 @@ export async function loadInspectionProject(userId: string, projectId: string,
     const content = { projectId, revisionId: revision.id, revision: revision.revision,
       sourceVersion: revision.sourceVersion, document: parsed.data, ...assets, plan, validation };
     const frozen: StudioFrozenRevision = { ...content, snapshotId: randomUUID(), hash: hash(canonical(content)) };
-    return { ...assets, fontFiles: assets.fontFiles ?? {}, validation, plan, document: parsed.data, origin, frozen, projectVersion: current.version };
+    return { ...assets, fontFiles: assets.fontFiles ?? {}, validation, plan, document: parsed.data, origin, frozen, projectVersion: current.version, pinned: false };
   }
   const parsed = videoDocumentSchema.safeParse(value);
   if (!parsed.success) throw new StudioError("VALIDATION_FAILED", [{ severity: "error", code: "SCHEMA_INVALID", path: "document", message: "Текущий документ не проходит схему. Исправьте JSON; старое превью не используется." }]);
@@ -112,7 +113,7 @@ export async function loadInspectionProject(userId: string, projectId: string,
     files: evaluated.files, fontFiles: evaluated.fontFiles, plan: evaluated.plan,
     validation: evaluated.validation, runtime };
   const frozen: StudioFrozenRevision = { ...content, snapshotId: randomUUID(), hash: hash(canonical(content)) };
-  return { ...evaluated, plan: evaluated.plan, document: parsed.data, origin, frozen, projectVersion: current.version };
+  return { ...evaluated, plan: evaluated.plan, document: parsed.data, origin, frozen, projectVersion: current.version, pinned: false };
 }
 
 function summaryOf(input: InspectionJobInput): InspectionSummary { return input.summary; }
@@ -149,15 +150,56 @@ async function copyFrozen(frozen: StudioFrozenRevision, directory: string) {
 
 /** One durable operation for an entire page; cached retries return current job status. */
 export async function startStudioStoryboard(userId: string, projectId: string, raw: StoryboardInput = {}): Promise<StudioJobView> {
-  const input = storyboardSchema.parse(raw);
-  await owned(userId, projectId);
+  let input = storyboardSchema.parse(raw);
+  const current = await owned(userId, projectId);
   const request = requestHash(`storyboard:${projectId}`, input);
   const previous = await replay<{ jobId: string }>(prisma, userId, input.idempotencyKey, request);
-  if (previous) return jobView(await ownedJob(userId, previous.jobId));
-  const prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
-  const engineId = await prepareStudioEngine();
-  const options = { mode: input.sceneId ? "scene" as const : "overview" as const, sceneId: input.sceneId, segmentId: input.segmentId, page: input.page, pageSize: input.pageSize };
+  if (previous && !input.sourceJobId) return jobView(await ownedJob(userId, previous.jobId));
+  let prepared: Awaited<ReturnType<typeof loadInspectionProject>>, engineId: string;
   let comparison: { frozen: StudioFrozenRevision; origin: InspectionOrigin } | undefined;
+  if (input.sourceJobId) {
+    const source = await ownedJob(userId, input.sourceJobId);
+    let saved: InspectionJobInput | undefined;
+    try { saved = inspectionInput(source.inputJson); } catch { /* Explicit refusal below. */ }
+    if (source.projectId !== projectId || source.kind !== "storyboard" || !saved || saved.render.kind !== "storyboard")
+      throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
+    const verifyPinned = async (frozen: StudioFrozenRevision, origin: InspectionOrigin) => {
+      if (!frozen || !origin || frozen.projectId !== projectId || origin.projectId !== projectId) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      const { snapshotId: _, hash: expected, ...content } = frozen;
+      if (hash(canonical(content)) !== expected || origin.documentHash !== hash(canonical(frozen.document)) ||
+        origin.contentHash !== hash(canonical({ document: frozen.document,
+          assets: Object.entries(frozen.manifest).map(([key, asset]) => [key, asset.hash]), fonts: frozen.plan.fonts?.map(font => font.hash) ?? [] })))
+        throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      for (const file of Object.values(frozen.files)) {
+        if (await fileHash(await safeFile(file.path)) !== file.hash ||
+          file.posterPath && await fileHash(await safeFile(file.posterPath)) !== file.posterHash) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      }
+      await verifyTypographyFonts(frozen.plan.fonts, frozen.fontFiles);
+    };
+    await verifyPinned(saved.frozen, saved.origin);
+    if (canonical(saved.summary.origin) !== canonical(saved.origin)) throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+    if (input.expectedVersion !== undefined && input.expectedVersion !== saved.origin.version ||
+      input.revision !== undefined && input.revision !== saved.origin.revision) throw new StudioError("VERSION_CONFLICT");
+    const scope = saved.summary.scope;
+    input = { ...input, mode: raw.mode ?? scope?.mode ?? (saved.compareFrozen ? "compare" : "overview"),
+      sceneId: raw.sceneId ?? scope?.sceneId, segmentId: raw.segmentId ?? scope?.segmentId, pageSize: raw.pageSize ?? scope?.pageSize ?? input.pageSize };
+    if (input.mode === "scene" && !input.sceneId) throw new StudioError("INSPECTION_SCOPE_INVALID");
+    if (input.mode === "compare") {
+      if (!saved.compareFrozen || !saved.summary.compareOrigin) throw new StudioError("COMPARISON_NOT_FOUND");
+      await verifyPinned(saved.compareFrozen, saved.summary.compareOrigin);
+      comparison = { frozen: saved.compareFrozen, origin: saved.summary.compareOrigin };
+    }
+    const frozen = saved.frozen;
+    prepared = { document: frozen.document, resolvedDocument: frozen.resolvedDocument, plan: frozen.plan,
+      manifest: frozen.manifest, files: frozen.files, fontFiles: frozen.fontFiles ?? {}, validation: frozen.validation,
+      origin: saved.origin, frozen, projectVersion: current.version, pinned: true };
+    engineId = source.engineId;
+    if (previous) return jobView(await ownedJob(userId, previous.jobId));
+  } else {
+    prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
+    engineId = await prepareStudioEngine();
+  }
+  const options = { mode: input.sceneId ? "scene" as const : "overview" as const, sceneId: input.sceneId, segmentId: input.segmentId, page: input.page, pageSize: input.pageSize };
   if (input.compareJobId) {
     const other = await ownedJob(userId, input.compareJobId);
     const previousInput = inspectionInput(other.inputJson);
@@ -179,17 +221,20 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
       scenesCovered: matches.scenesCovered, remainingScenes: matches.remainingScenes };
   }
   if (!tiles.length) throw new StudioError("STORYBOARD_EMPTY");
-  const summary: InspectionSummary = { origin: prepared.origin, selection, ...(comparison ? { compareOrigin: comparison.origin } : {}),
+  const summary: InspectionSummary = { origin: prepared.origin, selection,
+    scope: { mode: comparison ? "compare" : input.sceneId ? "scene" : "overview", pageSize: input.pageSize,
+      ...(input.sceneId ? { sceneId: input.sceneId } : {}), ...(input.segmentId ? { segmentId: input.segmentId } : {}) },
+    ...(comparison ? { compareOrigin: comparison.origin } : {}),
     ...(!prepared.validation.ready ? { diagnostic: { ready: false as const, codes: [...new Set(prepared.validation.diagnostics.filter(d => d.severity === "error").map(d => d.code))] } } : {}) };
   const render: StoryboardRenderInput = { kind: "storyboard", tiles, summary };
   return enqueueInspection(userId, projectId, prepared, engineId, render, summary,
-    { key: input.idempotencyKey, request, comparison });
+    { key: input.idempotencyKey, request, comparison, sourceJobId: input.sourceJobId });
 }
 
 export async function enqueueInspection(userId: string, projectId: string,
   prepared: Awaited<ReturnType<typeof loadInspectionProject>>, engineId: string,
   render: InspectionJobInput["render"], summary: InspectionSummary,
-  options: { key?: string; request?: string; comparison?: { frozen: StudioFrozenRevision; origin: InspectionOrigin } } = {}) {
+  options: { key?: string; request?: string; comparison?: { frozen: StudioFrozenRevision; origin: InspectionOrigin }; sourceJobId?: string } = {}) {
   const cacheKey = requestHash("inspection-cache", { projectId, origin: prepared.origin,
     engineId, render, comparison: options.comparison?.origin });
   const key = `inspect:${cacheKey}`;
@@ -215,7 +260,9 @@ export async function enqueueInspection(userId: string, projectId: string,
     if ([...Object.values(frozen.files), ...Object.values(frozen.fontFiles ?? {}), ...Object.values(compareFrozen?.files ?? {}), ...Object.values(compareFrozen?.fontFiles ?? {})].reduce((n, f) => n + f.bytes + (f.posterBytes ?? 0), 0) > studioJobLimits.maxInputBytes) throw new StudioError("INPUT_BUDGET_EXCEEDED");
     return await prisma.$transaction(async db => {
       const current = await owned(userId, projectId, db);
-      if (prepared.origin.revision === null && current.version !== prepared.projectVersion) throw new StudioError("VERSION_CONFLICT");
+      if (options.sourceJobId && (await ownedJob(userId, options.sourceJobId, db)).projectId !== projectId)
+        throw new StudioError("INSPECTION_SOURCE_NOT_FOUND");
+      if (!prepared.pinned && prepared.origin.revision === null && current.version !== prepared.projectVersion) throw new StudioError("VERSION_CONFLICT");
       if (options.key && options.request) {
         const replayed = await replay<{ jobId: string }>(db, userId, options.key, options.request);
         if (replayed) return jobView(await ownedJob(userId, replayed.jobId, db), db);

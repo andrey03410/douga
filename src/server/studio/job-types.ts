@@ -110,6 +110,7 @@ export interface StudioJobView {
   snapshotId: string | null;
   kind: StartStudioJobInput["kind"] | "import" | "storyboard";
   inspection?: import("./storyboard-types").InspectionSummary;
+  nextPageAction?: { tool: "video_storyboard"; arguments: { projectId: string; sourceJobId: string; page: number; pageSize: number; mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string } };
   status: StudioJobStatus;
   progress: number;
   attempts: number;

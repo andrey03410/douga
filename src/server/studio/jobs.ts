@@ -74,14 +74,21 @@ export async function jobView(
           },
         }
       : result;
+  const inspection = JSON.parse(row.inputJson)?.inspectionVersion === 1
+    ? JSON.parse(row.inputJson).summary as StudioJobView["inspection"] : undefined;
+  const scope = inspection?.scope;
+  const nextPageAction: StudioJobView["nextPageAction"] = row.status === "done" && row.kind === "storyboard" && row.projectId &&
+    inspection && scope && inspection.selection.page + 1 < inspection.selection.totalPages
+    ? { tool: "video_storyboard", arguments: { projectId: row.projectId, sourceJobId: row.id,
+      page: inspection.selection.page + 1, pageSize: scope.pageSize, mode: scope.mode,
+      ...(scope.sceneId ? { sceneId: scope.sceneId } : {}), ...(scope.segmentId ? { segmentId: scope.segmentId } : {}) } } : undefined;
   return {
     id: row.id,
     projectId: row.projectId,
     snapshotId: row.snapshotId,
     kind: row.kind as StudioJobView["kind"],
-    ...(JSON.parse(row.inputJson)?.inspectionVersion === 1
-      ? { inspection: JSON.parse(row.inputJson).summary as StudioJobView["inspection"] }
-      : {}),
+    ...(inspection ? { inspection } : {}),
+    ...(nextPageAction ? { nextPageAction } : {}),
     status: row.status as StudioJobView["status"],
     progress: row.progress,
     attempts: row.attempts,
