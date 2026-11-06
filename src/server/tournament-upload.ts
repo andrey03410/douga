@@ -15,9 +15,14 @@ import type { SkippedItem } from "./shikimori";
  * and segment layout. Archives keep their task 27 behaviour.
  */
 
-export const formSourceSchema = z.array(
-  z.intersection(itemSourceSchema, z.object({ segment: z.string().trim().max(300).optional() })),
-);
+/** A draft entry: any item source plus the segment it goes to ("каждый тайтл — свой сегмент"). */
+export function parseFormSources(raw: unknown) {
+  return z
+    .array(z.object({ segment: z.string().trim().max(300).optional() }).passthrough())
+    .max(2000)
+    .parse(raw)
+    .map(({ segment, ...rest }) => ({ segment, source: itemSourceSchema.parse(rest) }));
+}
 
 export interface ParsedParticipants {
   tracks: ExtractedTrack[];
@@ -39,7 +44,7 @@ export async function participantsFromForm(
   if (!Array.isArray(titlesRaw) || titlesRaw.some((t) => typeof t !== "string"))
     throw new Error("INVALID_SEGMENTS");
   segmentTitles = titlesRaw;
-  const sources = formSourceSchema.parse(JSON.parse(String(form.get("sources") ?? "[]")));
+  const sources = parseFormSources(JSON.parse(String(form.get("sources") ?? "[]")));
 
   const tracks: ExtractedTrack[] = [];
   const segments: { title: string; trackIndexes: number[] }[] = [];
@@ -71,7 +76,7 @@ export async function participantsFromForm(
 
   const resolved = await resolveItemSources(
     userId,
-    sources.map(({ segment: _segment, ...s }) => s),
+    sources.map((s) => s.source),
     maxBytes,
   );
   sources.forEach((s, i) => {

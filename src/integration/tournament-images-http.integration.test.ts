@@ -9,6 +9,7 @@ import AdmZip from "adm-zip";
 import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { removePath } from "@/lib/storage";
+import { createArt } from "@/server/arts";
 import { POST as upload } from "@/app/api/tournaments/route";
 import { POST as inspect } from "@/app/api/tournaments/inspect/route";
 import { GET as next } from "@/app/api/tournaments/[id]/next/route";
@@ -68,6 +69,8 @@ async function clear() {
   for (const t of await prisma.tournament.findMany({ where: { userId } }))
     await removePath(`tournaments/${t.id}`);
   await prisma.tournament.deleteMany({ where: { userId } });
+  for (const a of await prisma.art.findMany({ where: { userId } })) await removePath(a.filePath);
+  await prisma.art.deleteMany({ where: { userId } });
 }
 beforeEach(clear);
 afterAll(async () => {
@@ -107,6 +110,39 @@ it("a picture archive becomes picture participants, split by folders, without a 
   expect(step.question).toBeNull();
   expect(step.kinds).toEqual(["image"]);
   expect(step.segmentCount).toBe(2);
+});
+
+it("creates from a draft of pool pictures split into segments", async () => {
+  const arts = [];
+  for (const label of ["Беатриче", "Батлер", "Рика"])
+    arts.push(await createArt(userId, { fileName: `${label}.png`, data: PNG, label }));
+  const f = form([]);
+  f.set(
+    "sources",
+    JSON.stringify([
+      { assetId: arts[0].id, segment: "Umineko", note: "главная" },
+      { assetId: arts[1].id, segment: "Umineko" },
+      { assetId: arts[2].id, segment: "Higurashi", subtitle: "2006" },
+    ]),
+  );
+  const res = await upload(req("/api/tournaments", "POST", f));
+  expect(res.status).toBe(200);
+  const { id, skipped } = await res.json();
+  expect(skipped).toEqual([]);
+  const segments = await prisma.tournamentSegment.findMany({
+    where: { tournamentId: id },
+    orderBy: { order: "asc" },
+    include: { tracks: { orderBy: { order: "asc" } } },
+  });
+  expect(segments.map((s) => [s.title, s.tracks.map((t) => t.title)])).toEqual([
+    ["Umineko", ["Беатриче", "Батлер"]],
+    ["Higurashi", ["Рика"]],
+  ]);
+  expect(segments[0].tracks[0].note).toBe("главная");
+  expect(segments[1].tracks[0].subtitle).toBe("2006");
+  const bad = form([]);
+  bad.set("sources", JSON.stringify([{ assetId: arts[0].id, extra: 1 }]));
+  expect((await upload(req("/api/tournaments", "POST", bad))).status).toBe(400);
 });
 
 it("an OST archive with covers stays a track archive", async () => {

@@ -16,6 +16,8 @@ export interface EditableTrack {
   coverArtId?: string | null;
   coverPath?: string | null;
   durationSec?: number | null;
+  subtitle?: string | null;
+  excluded?: boolean;
 }
 export function pauseOtherMedia(event: React.SyntheticEvent<HTMLMediaElement>) {
   document.querySelectorAll<HTMLMediaElement>("audio,video").forEach((m) => {
@@ -44,6 +46,8 @@ export function TrackControls({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [coverVersion, setCoverVersion] = useState(0);
+  // Task 33: a picture participant has nothing to listen to and no best moment.
+  const picture = track.kind === "image";
   async function save() {
     setBusy(true);
     setError("");
@@ -74,17 +78,19 @@ export function TrackControls({
   return (
     <div className={`track-controls${compact ? " compact" : ""}`}>
       <div className="row track-listen">
-        <MediaPlayer
-          key={track.id}
-          src={`/api/tracks/${track.id}/audio`}
-          title={track.title}
-          durationSec={track.durationSec}
-          kind={track.kind === "video" ? "video" : "audio"}
-          mediaRef={(el) => {
-            media.current = el;
-          }}
-          onPlay={pauseOtherMedia}
-        />
+        {picture ? null : (
+          <MediaPlayer
+            key={track.id}
+            src={`/api/tracks/${track.id}/audio`}
+            title={track.title}
+            durationSec={track.durationSec}
+            kind={track.kind === "video" ? "video" : "audio"}
+            mediaRef={(el) => {
+              media.current = el;
+            }}
+            onPlay={pauseOtherMedia}
+          />
+        )}
 
         <button
           type="button"
@@ -95,7 +101,7 @@ export function TrackControls({
           }}
           aria-expanded={expanded}
         >
-          {expanded ? "Скрыть настройки" : "Изменить трек"}
+          {expanded ? "Скрыть настройки" : picture ? "Изменить участника" : "Изменить трек"}
         </button>
       </div>
       {expanded ? (
@@ -128,39 +134,43 @@ export function TrackControls({
                 }
               />
             </label>
-            <label>
-              Лучший момент, секунды
-              <input
-                type="number"
-                min={0}
-                max={track.durationSec ?? undefined}
-                step={0.1}
-                value={draft.bestMomentSec}
-                onChange={(e) =>
-                  setDraft({ ...draft, bestMomentSec: e.target.value })
-                }
-                placeholder="Автоматически"
-              />
-            </label>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => {
-                setDraft({
-                  ...draft,
-                  bestMomentSec: String(
-                    Math.round((media.current?.currentTime ?? 0) * 10) / 10,
-                  ),
-                });
-                setNotice("Момент выбран — сохраните изменения");
-              }}
-            >
-              Отметить текущее время
-            </button>
-            <p className="muted">
-              С этой секунды начнётся фрагмент в ролике. Пустое поле —
-              автоматический выбор.
-            </p>
+            {picture ? null : (
+              <>
+                <label>
+                  Лучший момент, секунды
+                  <input
+                    type="number"
+                    min={0}
+                    max={track.durationSec ?? undefined}
+                    step={0.1}
+                    value={draft.bestMomentSec}
+                    onChange={(e) =>
+                      setDraft({ ...draft, bestMomentSec: e.target.value })
+                    }
+                    placeholder="Автоматически"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => {
+                    setDraft({
+                      ...draft,
+                      bestMomentSec: String(
+                        Math.round((media.current?.currentTime ?? 0) * 10) / 10,
+                      ),
+                    });
+                    setNotice("Момент выбран — сохраните изменения");
+                  }}
+                >
+                  Отметить текущее время
+                </button>
+                <p className="muted">
+                  С этой секунды начнётся фрагмент в ролике. Пустое поле —
+                  автоматический выбор.
+                </p>
+              </>
+            )}
           </div>
           <div>
             {draft.coverArtId || track.coverPath ? (
@@ -184,7 +194,7 @@ export function TrackControls({
                 className="btn ghost"
                 onClick={() => setDraft({ ...draft, coverArtId: null })}
               >
-                Вернуть из тегов
+                {picture ? "Вернуть свою картинку" : "Вернуть из тегов"}
               </button>
             ) : null}
             {track.album ? (
@@ -201,7 +211,7 @@ export function TrackControls({
               disabled={busy || !draft.title.trim()}
               onClick={() => void save()}
             >
-              {busy ? "Сохранение…" : "Сохранить трек"}
+              {busy ? "Сохранение…" : picture ? "Сохранить" : "Сохранить трек"}
             </button>
             <span role="status">{notice}</span>
           </div>

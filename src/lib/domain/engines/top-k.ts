@@ -86,9 +86,11 @@ export function topKPlannedScreens(n: number, groupSize: number, K: number): num
   const fill = insertionPlan(0, size, k);
   if (n <= size) return fill;
   const filter = Math.ceil((n - size) / (k - 1));
-  // Expected entries into the top from a random order: K·ln(n/K).
+  // Expected entries into the top from a random order: K·ln(n/K). The screen
+  // where a newcomer beats the K-th is already one of the filter screens; each
+  // entry adds only its insertion.
   const entries = Math.ceil(size * Math.log(n / size));
-  return fill + filter + entries * (1 + insertScreens(Math.max(0, size - 1), k));
+  return fill + filter + entries * insertScreens(Math.max(0, size - 1), k);
 }
 
 export const topKEngine: Engine = {

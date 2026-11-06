@@ -353,12 +353,23 @@ export function SegmentEditor({
                         >
                           ⠿
                         </button>
+                        {t.coverArtId || t.coverPath ? (
+                          // Task 33: pictures are what identifies a participant.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            className="rank-cover"
+                            src={`/api/tracks/${t.id}/cover?art=${encodeURIComponent(t.coverArtId ?? "own")}&size=thumb`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : null}
                         <span className="track-name">
                           <b>{t.title}</b>
-                          {t.artist ? <small>{t.artist}</small> : null}
+                          {t.subtitle || t.artist ? <small>{t.subtitle ?? t.artist}</small> : null}
+                          {t.excluded ? <small>исключён</small> : null}
                         </span>
                       </div>
-                      {t.album || t.sourceFolder ? (
+                      {t.kind !== "image" && (t.album || t.sourceFolder) ? (
                         <p className="track-origin muted">
                           {[t.album, t.sourceFolder]
                             .filter(Boolean)

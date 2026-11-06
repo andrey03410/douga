@@ -11,6 +11,16 @@ export interface RankRow {
   artist: string | null;
   score: number;
   track?: EditableTrack;
+  /** Task 33: picture of the participant (image or cover), small. */
+  thumbUrl?: string | null;
+  subtitle?: string | null;
+}
+/** Task 33 (P22): a participant without a place, and why. */
+export interface UnplacedRow {
+  trackId: string;
+  title: string;
+  thumbUrl: string | null;
+  reason: string;
 }
 export function ResultsPanel({
   tournamentId,
@@ -19,6 +29,8 @@ export function ResultsPanel({
   total,
   initialTopSize,
   completed,
+  unplaced = [],
+  tierList = false,
 }: {
   tournamentId: string;
   segmentId?: string;
@@ -26,6 +38,9 @@ export function ResultsPanel({
   total: number;
   initialTopSize: number;
   completed: boolean;
+  unplaced?: UnplacedRow[];
+  /** The result is the tier board itself: no strict places to size. */
+  tierList?: boolean;
 }) {
   const router = useRouter();
   const [topSize, setTopSize] = useState(initialTopSize);
@@ -37,7 +52,7 @@ export function ResultsPanel({
   useEffect(() => setRows(ranking), [ranking]);
   useEffect(() => setTopSize(initialTopSize), [initialTopSize]);
   async function save(destination: "stay" | "studio") {
-    if (!Number.isInteger(topSize) || topSize < 1 || topSize > total) {
+    if (!tierList && (!Number.isInteger(topSize) || topSize < 1 || topSize > total)) {
       setError(`Укажите размер топа от 1 до ${total}`);
       return;
     }
@@ -46,14 +61,14 @@ export function ResultsPanel({
     try {
       await finalizeResultsBeforeNavigation(
         tournamentId,
-        topSize,
+        tierList ? 1 : topSize,
         () => {
           if (destination === "studio")
             router.push(
               `/studio/new?sourceId=${encodeURIComponent(tournamentId)}`,
             );
           else {
-            setNotice("Размер топа сохранён");
+            setNotice(tierList ? "Итог сохранён" : "Размер топа сохранён");
             router.refresh();
           }
         },
@@ -96,34 +111,45 @@ export function ResultsPanel({
   return (
     <section className="panel">
       <h2>
-        {completed ? "Итоговый топ" : "Сравнения завершены — сохраните топ"}
+        {tierList
+          ? completed
+            ? "Итог — тир-лист"
+            : "Корзины разложены — сохраните итог"
+          : completed
+            ? "Итоговый топ"
+            : "Сравнения завершены — сохраните топ"}
       </h2>
-      <label>Размер топа (из {total} треков)</label>
-      <div className="row">
-        <input
-          type="number"
-          aria-label="Размер топа"
-          min={1}
-          max={total}
-          value={topSize}
-          onChange={(e) => setTopSize(Number(e.target.value))}
-          style={{ maxWidth: 120 }}
-        />
-        <button
-          className="btn secondary"
-          onClick={() => void save("stay")}
-          disabled={busy}
-        >
-          Сохранить топ
-        </button>
-        <button
-          className="btn"
-          onClick={() => void save("studio")}
-          disabled={busy}
-        >
-          Создать видео через SDK →
-        </button>
-      </div>
+      {tierList ? (
+        <div className="row">
+          <button className="btn secondary" onClick={() => void save("stay")} disabled={busy}>
+            Сохранить итог
+          </button>
+          <button className="btn" onClick={() => void save("studio")} disabled={busy}>
+            Создать видео через SDK →
+          </button>
+        </div>
+      ) : (
+        <>
+          <label>Размер топа (из {total})</label>
+          <div className="row">
+            <input
+              type="number"
+              aria-label="Размер топа"
+              min={1}
+              max={total}
+              value={topSize}
+              onChange={(e) => setTopSize(Number(e.target.value))}
+              style={{ maxWidth: 120 }}
+            />
+            <button className="btn secondary" onClick={() => void save("stay")} disabled={busy}>
+              Сохранить топ
+            </button>
+            <button className="btn" onClick={() => void save("studio")} disabled={busy}>
+              Создать видео через SDK →
+            </button>
+          </div>
+        </>
+      )}
       <p className="muted">
         Видео оформляет агент. Можно начать монтаж по готовым сегментам —
         остальные появятся в проекте после завершения.
@@ -174,16 +200,13 @@ export function ResultsPanel({
                 </button>
               ) : null}
               <span className="rank-num">{r.rank}</span>
-              {r.track?.coverArtId || r.track?.coverPath ? (
-                <img
-                  className="rank-cover"
-                  src={`/api/tracks/${r.trackId}/cover?art=${encodeURIComponent(r.track.coverArtId ?? "embedded")}`}
-                  alt=""
-                />
+              {r.thumbUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="rank-cover" src={r.thumbUrl} alt="" loading="lazy" />
               ) : null}
               <div className="track-name">
                 <b>{r.title}</b>
-                {r.artist ? <small>{r.artist}</small> : null}
+                {r.subtitle || r.artist ? <small>{r.subtitle ?? r.artist}</small> : null}
                 {r.track?.comment ? (
                   <small className="track-comment">{r.track.comment}</small>
                 ) : null}
@@ -220,6 +243,24 @@ export function ResultsPanel({
           </div>
         ))}
       </div>
+      {unplaced.length ? (
+        <details className="unplaced-list">
+          <summary>Без мест ({unplaced.length})</summary>
+          <p className="muted">В ролик идут только места. Причина — рядом с именем.</p>
+          {unplaced.map((u) => (
+            <div className="rank-row" key={u.trackId}>
+              {u.thumbUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="rank-cover" src={u.thumbUrl} alt="" loading="lazy" />
+              ) : null}
+              <div className="track-name">
+                <b>{u.title}</b>
+                <small>{u.reason}</small>
+              </div>
+            </div>
+          ))}
+        </details>
+      ) : null}
     </section>
   );
 }

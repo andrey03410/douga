@@ -216,7 +216,7 @@ export async function listTournaments(userId: string) {
   return prisma.tournament.findMany({
     where: { userId },
     orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { tracks: true, comparisons: true } } },
+    include: { _count: { select: { tracks: true, comparisons: true, batches: true } } },
   });
 }
 

@@ -4,12 +4,9 @@ import { formatBytes, quotasFor } from "@/lib/domain/permissions";
 import { listTournaments } from "@/server/tournaments";
 import { CreateTournamentForm } from "./CreateTournamentForm";
 import { DeleteTournamentButton } from "./DeleteTournamentButton";
-
-const SCHEME_LABEL: Record<string, string> = {
-  merge: "Сравнительная сортировка",
-  swiss: "Швейцарка",
-  round_robin: "Круговая",
-};
+import { SCHEME_INFO } from "@/lib/domain/scheme-settings";
+import { isScheme } from "@/lib/domain/types";
+import { pluralRu } from "@/lib/domain/art-usage";
 const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
   in_progress: "В процессе",
@@ -52,8 +49,17 @@ export default async function TournamentsPage() {
                   {t.title}
                 </a>
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                  {SCHEME_LABEL[t.scheme] ?? t.scheme} · {t._count.tracks} OST ·{" "}
-                  {t._count.comparisons} сравнений
+                  {t.schemePending
+                    ? "Алгоритм не выбран"
+                    : isScheme(t.scheme)
+                      ? SCHEME_INFO[t.scheme].label
+                      : t.scheme}{" "}
+                  · {t._count.tracks} {pluralRu(t._count.tracks, ["участник", "участника", "участников"])} ·{" "}
+                  {(() => {
+                    // Old pair-only tournaments have answers without batches.
+                    const answers = t._count.batches || t._count.comparisons;
+                    return `${answers} ${pluralRu(answers, ["ответ", "ответа", "ответов"])}`;
+                  })()}
                 </div>
               </div>
               <div className="row" style={{ gap: 12 }}>
