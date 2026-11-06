@@ -25,12 +25,15 @@ const channels: MotionChannel[] = ["enter", "exit", "loop", "emphasis"];
 const multiplier = (v: MotionSettings["intensity"]) =>
   v === "subtle" ? 0.5 : v === "bold" ? 1.5 : 1;
 const authoredMotion = new WeakMap<CompiledNode, MotionSettings>();
+const ownMotion = new WeakMap<CompiledNode, MotionSettings>();
 /** Keeps authored overrides out of serialized IR, including repeated custom nodes. */
 export function setNodeMotion(
   node: CompiledNode,
   motion: MotionSettings | undefined,
+  own: MotionSettings | undefined,
 ): void {
   if (motion) authoredMotion.set(node, motion);
+  if (own) ownMotion.set(node, own);
 }
 export function normalizeTimer(
   settings: TimerSettings,
@@ -161,10 +164,12 @@ function recipeFor(
         : {};
     case "rank-reveal":
       return card
-        ? { enter: "wipe-reveal" }
-        : node.type === "text" || node.type === "badge"
-          ? { enter: { name: "text-slam", delay: { sec: 0.12 } } }
-          : {};
+        ? { enter: { name: "wipe-reveal", delay: { sec: 0.15 } } }
+        : node.type === "badge"
+          ? { enter: "text-slam" }
+          : node.type === "text"
+            ? { enter: { name: "text-slam", delay: { sec: 0.3 } } }
+            : {};
     case "podium-finale":
       return card && node.rank !== undefined && node.rank <= 3
         ? { enter: "elastic", emphasis: { name: "glow", delay: { sec: 0.4 } } }
@@ -503,7 +508,7 @@ function compileBackdrop(
       media,
     });
   };
-  if (b.asset) push(b.asset, 0, scene.durationInFrames, true);
+  if (source === "asset") push(b.asset, 0, scene.durationInFrames, true);
   else if (source === "round")
     push(round?.background ?? template.background, 0, scene.durationInFrames);
   else if (source === "current-card") {
@@ -617,7 +622,16 @@ export function applySceneMotion(
     vs.versus = normalizeVersus(settings.versus ?? { variant: "impact" });
     scene.nodes.push(vs);
   }
-  if (recipe && compatible && ["rank-reveal", "round-intro"].includes(recipe)) {
+  const roundIndex = template.board
+    ? template.board.rounds.findIndex((r) => r.id === scene.roundId)
+    : round
+      ? ctx.document.source.rounds.findIndex((r) => r.id === round.id)
+      : -1;
+  if (
+    recipe &&
+    compatible &&
+    (recipe === "rank-reveal" || (recipe === "round-intro" && roundIndex >= 0))
+  ) {
     const badge = baseNode(
       `${scene.id}/motion/badge`,
       "badge",
@@ -637,17 +651,34 @@ export function applySceneMotion(
     badge.text =
       recipe === "rank-reveal"
         ? String(scene.nodes.find((n) => n.rank !== undefined)?.rank ?? "")
-        : String((round ? ctx.document.source.rounds.indexOf(round) : 0) + 1);
+        : String(roundIndex + 1);
     scene.nodes.push(badge);
   }
   const candidates = scene.nodes.filter(
-    (n) => n.layer > -100 && (n.type !== "container" || authoredMotion.has(n)),
+    (n) =>
+      (n.layer > -100 || authoredMotion.has(n)) &&
+      (n.type !== "container" || authoredMotion.has(n)),
   );
   const ranks = cascadeRanks(candidates);
   const budget: MotionBudget = { fragments: 0, perNode: new Map() };
+  const prepared = new Map<CompiledNode, MotionSettings>();
+  const selectedRecipes = new Map<CompiledNode, ChoreographyName>();
   for (const [index, node] of candidates.entries()) {
     const local = localSettings(ctx, settings, node, round);
     const inherited = { ...local.motion, ...authoredMotion.get(node) };
+    if (node.type === "container") {
+      // Containers own only their explicit channels. Their stagger config is
+      // orchestration metadata for children, never a transform for the parent.
+      for (const channel of channels)
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            ownMotion.get(node) ?? {},
+            channel,
+          )
+        )
+          delete inherited[channel];
+      delete inherited.stagger;
+    }
     const localRecipe = inherited.choreography;
     let selected =
       localRecipe === null
@@ -683,11 +714,46 @@ export function applySceneMotion(
       m.stagger = { interval: { sec: 0.08 }, order: "forward" };
     if (m.stagger === undefined && selected === "podium-finale")
       m.stagger = { interval: { sec: 0.12 }, order: "reverse" };
-    const rank = ranks[m.stagger?.order ?? "forward"].get(node)!;
-    const maxRank =
-      m.stagger?.order === "center"
-        ? (candidates.length - 1) / 2
-        : candidates.length - 1;
+    prepared.set(node, m);
+    if (selected) selectedRecipes.set(node, selected);
+    if (node.type === "timer" && local.timer)
+      node.timer = normalizeTimer({ ...local.timer, ...node.timer });
+    if (node.type === "versus")
+      node.versus = normalizeVersus({ ...local.versus, ...node.versus });
+  }
+  const byId = new Map(scene.nodes.map((node) => [node.id, node]));
+  const cascadeGroups = new Map<CompiledNode, CompiledNode[]>();
+  const cascadeOwners = new Map<CompiledNode, CompiledNode>();
+  for (const [node, m] of prepared) {
+    if (!channels.some((channel) => !!m[channel])) continue;
+    let parent = node.parentId ? byId.get(node.parentId) : undefined;
+    while (parent) {
+      const stagger = ownMotion.get(parent)?.stagger;
+      if (stagger !== undefined) {
+        // Local child overrides, including null, take precedence over the group.
+        if (ownMotion.get(node)?.stagger === undefined) m.stagger = stagger;
+        if (stagger !== null) {
+          if (!cascadeGroups.has(parent)) cascadeGroups.set(parent, []);
+          cascadeGroups.get(parent)!.push(node);
+          cascadeOwners.set(node, parent);
+        }
+        break;
+      }
+      parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+    }
+  }
+  const groupRanks = new Map(
+    [...cascadeGroups].map(([parent, children]) => [
+      parent,
+      cascadeRanks(children),
+    ]),
+  );
+  for (const [node, m] of prepared) {
+    const owner = cascadeOwners.get(node);
+    const count = owner ? cascadeGroups.get(owner)!.length : candidates.length;
+    const order = m.stagger?.order ?? "forward";
+    const rank = (owner ? groupRanks.get(owner)! : ranks)[order].get(node)!;
+    const maxRank = order === "center" ? (count - 1) / 2 : count - 1;
     for (const channel of channels) {
       const spec = m[channel];
       if (spec)
@@ -703,10 +769,42 @@ export function applySceneMotion(
           budget,
         );
     }
-    if (node.type === "timer" && local.timer)
-      node.timer = normalizeTimer({ ...local.timer, ...node.timer });
-    if (node.type === "versus")
-      node.versus = normalizeVersus({ ...local.versus, ...node.versus });
+  }
+  // A choreography coordinates the already-normalized visual clips, so short
+  // reveals and authored card overrides cannot make VS precede the cards.
+  const lastCardEnter = Math.max(
+    0,
+    ...scene.nodes
+      .filter((node) => node.type === "card")
+      .flatMap((node) =>
+        (node.motion ?? [])
+          .filter((clip) => clip.channel === "enter")
+          .map((clip) => clip.from + clip.durationInFrames),
+      ),
+  );
+  for (const node of candidates) {
+    if (
+      node.type !== "versus" ||
+      selectedRecipes.get(node) !== "versus-impact" ||
+      ownMotion.get(node)?.enter !== undefined
+    )
+      continue;
+    const enter = node.motion?.find((clip) => clip.channel === "enter");
+    if (!enter) continue;
+    const boundary = scene.phases.timerStartFrame ?? scene.durationInFrames;
+    enter.from = Math.min(
+      Math.max(enter.from, lastCardEnter),
+      boundary,
+      scene.durationInFrames - 1,
+    );
+    enter.durationInFrames = Math.max(
+      1,
+      Math.min(
+        enter.durationInFrames,
+        boundary - enter.from,
+        scene.durationInFrames - enter.from,
+      ),
+    );
   }
   compileBackdrop(ctx, scene, settings, template, round);
 }

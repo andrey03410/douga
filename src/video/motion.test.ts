@@ -691,3 +691,350 @@ it("removes authored event identities from reusable presets and rejects unsaniti
   };
   expect(sdk.videoPresetSchema.safeParse(p).success).toBe(false);
 });
+
+describe("Task 1 review regressions R1–R5", () => {
+  const backdrop = (asset: string) => ({
+    preset: "art-blur" as const,
+    source: "asset" as const,
+    asset,
+  });
+  const bindAssets = (d: VideoDocument) => {
+    for (const asset of ["a", "b", "round"])
+      d.bindings[asset] = { kind: "pool", assetId: asset };
+  };
+  it("R1 preserves independent document, format and scene backdrop assignments despite a shared preset slot", () => {
+    const source = custom();
+    source.settings.backdrop = backdrop("a");
+    source.formatSettings = { wide: { backdrop: backdrop("a") } };
+    source.scenes[0].settings = { backdrop: backdrop("a") };
+    bindAssets(source);
+    const p = sdk.extractVideoPreset(source, {
+      id: "shared-bg",
+      name: "Background",
+    });
+    const d = structuredClone(source);
+    d.formatSettings!.wide!.backdrop = backdrop("b");
+    d.scenes[0].settings!.backdrop = backdrop("round");
+    const result = sdk.applyVideoPreset(d, p),
+      assigned = (asset: string | undefined) => result.bindings[asset!];
+    expect(assigned(result.settings.backdrop?.asset)).toEqual(d.bindings.a);
+    expect(assigned(result.formatSettings?.wide?.backdrop?.asset)).toEqual(
+      d.bindings.b,
+    );
+    expect(assigned(result.scenes[0].settings?.backdrop?.asset)).toEqual(
+      d.bindings.round,
+    );
+  });
+  it("R1 preserves independent v2 common, format, segment and scene backgrounds", () => {
+    const source = picker();
+    bindAssets(source);
+    source.settings.backdrop = backdrop("a");
+    source.formatSettings = { wide: { backdrop: backdrop("a") } };
+    source.scenes[0].settings = { backdrop: backdrop("a") };
+    const p = sdk.extractVideoPreset(source, {
+      id: "v2-shared-bg",
+      name: "V2 background",
+    });
+    const d = structuredClone(source);
+    d.schemaVersion = 2;
+    d.formatSettings!.wide!.backdrop = backdrop("round");
+    d.segments = ["one", "two"].map((id, index) => ({
+      id,
+      title: id,
+      kind: "picker" as const,
+      settings: { backdrop: backdrop(index ? "round" : "b") },
+      scenes: [
+        {
+          ...structuredClone(d.scenes[0]),
+          id: `scene-${id}`,
+          settings: { backdrop: backdrop(index ? "b" : "round") },
+        },
+      ],
+    }));
+    d.scenes = [];
+    const r = sdk.applyVideoPreset(d, p),
+      binding = (asset: string | undefined) => r.bindings[asset!];
+    expect(binding(r.settings.backdrop?.asset)).toEqual(d.bindings.a);
+    expect(binding(r.formatSettings?.wide?.backdrop?.asset)).toEqual(
+      d.bindings.round,
+    );
+    r.segments!.forEach((s, i) => {
+      expect(binding(s.settings?.backdrop?.asset)).toEqual(
+        d.bindings[i ? "round" : "b"],
+      );
+      expect(binding(s.scenes[0].settings?.backdrop?.asset)).toEqual(
+        d.bindings[i ? "b" : "round"],
+      );
+    });
+  });
+  it.each(["round", "current-card"] as const)(
+    "R2 switches away from an inherited asset to %s without resolving the old asset",
+    (source) => {
+      const d = picker();
+      d.settings.backdrop = backdrop("missing-old");
+      d.scenes[0].settings = { backdrop: { preset: "art-blur", source } };
+      const r = compile(d, arts);
+      expect(r.ready).toBe(true);
+      expect(r.plan.scenes[0].backdrop?.source).toBe(source);
+      expect(
+        r.plan.scenes[0].backdrop?.layers.every(
+          (l) => l.media.asset.id !== "missing-old",
+        ),
+      ).toBe(true);
+      if (source === "round")
+        expect(r.plan.scenes[0].backdrop?.layers[0].media.asset.id).toBe(
+          "round",
+        );
+    },
+  );
+  it("R2 treats a local asset without source as an asset override of inherited round", () => {
+    const d = picker();
+    d.settings.backdrop = { preset: "art-blur", source: "round" };
+    d.scenes[0].settings = { backdrop: { preset: "art-blur", asset: "a" } };
+    const r = compile(d, arts);
+    expect(r.ready).toBe(true);
+    expect(r.plan.scenes[0].backdrop).toMatchObject({
+      source: "asset",
+      layers: [{ media: { asset: { id: "a" } } }],
+    });
+  });
+  it("R3 numbers board rounds from board definitions and never invents a number outside a round", () => {
+    const d = board(),
+      definition = d.scenes[0].board!;
+    definition.rounds = [
+      {
+        id: "r1",
+        cards: [definition.rounds[0].cards[0]],
+        actions: [definition.rounds[0].actions[0]],
+      },
+      {
+        id: "r2",
+        cards: [definition.rounds[0].cards[1]],
+        actions: [definition.rounds[0].actions[1]],
+      },
+    ];
+    d.settings.motion = { choreography: "round-intro" };
+    const r = compile(d);
+    expect(r.ready).toBe(true);
+    for (const s of r.plan.scenes) {
+      const badge = s.nodes.find((n) => n.id.endsWith("/motion/badge"));
+      if (s.roundId) expect(badge?.text).toBe(s.roundId === "r1" ? "1" : "2");
+      else expect(badge).toBeUndefined();
+    }
+  });
+  it.each([-100, -101, -1000])(
+    "R4 compiles authored motion on layer %s",
+    (layer) => {
+      const d = custom();
+      d.scenes[0].nodes = [
+        {
+          id: "background",
+          type: "shape",
+          shape: "rect",
+          layer,
+          motion: { enter: "fade" },
+        },
+      ];
+      const r = compile(d);
+      expect(r.ready).toBe(true);
+      expect(r.plan.scenes[0].nodes[0].motion?.[0].name).toBe("fade");
+    },
+  );
+  it("R4 keeps generated backdrop media free of inherited node motion", () => {
+    const d = motion(custom(), { enter: "fade" });
+    d.scenes[0].background = "a";
+    const s = compile(d, arts).plan.scenes[0];
+    expect(
+      s.nodes.find((n) => n.id.endsWith("/background"))?.motion,
+    ).toBeUndefined();
+  });
+  it.each(["forward", "reverse", "center", "rows"] as const)(
+    "R5 cascades only a container's animated children in local %s order",
+    (order) => {
+      const d = custom();
+      d.scenes[0].nodes = [
+        {
+          id: "outside",
+          type: "text",
+          text: "Outside",
+          motion: { enter: "pop" },
+        },
+        {
+          id: "group",
+          type: "container",
+          motion: { stagger: { interval: { frame: 3 }, order } },
+          children: [
+            { id: "static", type: "text", text: "Static" },
+            ...[0, 1, 2].map((i) => ({
+              id: `child-${i}`,
+              type: "text" as const,
+              text: `${i}`,
+              rect: { x: (2 - i) * 0.3, y: 0, width: 0.3, height: 1 },
+              motion: { enter: "pop" as const },
+            })),
+          ],
+        },
+      ];
+      const r = compile(d);
+      expect(r.ready).toBe(true);
+      const s = r.plan.scenes[0],
+        froms = [0, 1, 2].map(
+          (i) =>
+            s.nodes.find((n) => n.id.endsWith(`child-${i}`))!.motion![0].from,
+        );
+      expect(
+        s.nodes.find((n) => n.type === "container")?.motion,
+      ).toBeUndefined();
+      expect(
+        s.nodes.find((n) => n.id.endsWith("static"))?.motion,
+      ).toBeUndefined();
+      expect(
+        s.nodes.find((n) => n.id.endsWith("outside"))?.motion?.[0].from,
+      ).toBe(0);
+      expect(froms).toEqual(
+        order === "forward"
+          ? [0, 3, 6]
+          : order === "center"
+            ? [3, 0, 3]
+            : [6, 3, 0],
+      );
+    },
+  );
+  it("R5 cascades inherited leaf channels without adding a transform to the container", () => {
+    const d = motion(custom(), { enter: "pop" });
+    d.scenes[0].nodes = [
+      {
+        id: "group",
+        type: "container",
+        motion: { stagger: { interval: { frame: 3 } } },
+        children: [0, 1].map((i) => ({
+          id: `child-${i}`,
+          type: "text" as const,
+          text: `${i}`,
+        })),
+      },
+    ];
+    const s = compile(d).plan.scenes[0];
+    expect(s.nodes.find((n) => n.type === "container")?.motion).toBeUndefined();
+    expect(
+      s.nodes.filter((n) => n.type === "text").map((n) => n.motion?.[0].from),
+    ).toEqual([0, 3]);
+  });
+  it("R5 never creates animation from a container stagger alone", () => {
+    const d = custom();
+    d.scenes[0].nodes = [
+      {
+        id: "group",
+        type: "container",
+        motion: { stagger: { interval: { frame: 3 } } },
+        children: [0, 1].map((i) => ({
+          id: `child-${i}`,
+          type: "text" as const,
+          text: `${i}`,
+        })),
+      },
+    ];
+    expect(
+      compile(d).plan.scenes[0].nodes.every((n) => n.motion === undefined),
+    ).toBe(true);
+  });
+  it("R5 keeps an explicit container transform separate from child orchestration", () => {
+    const d = custom();
+    d.scenes[0].nodes = [
+      {
+        id: "group",
+        type: "container",
+        motion: { enter: "fade", stagger: { interval: { frame: 3 } } },
+        children: [0, 1].map((i) => ({
+          id: `child-${i}`,
+          type: "text" as const,
+          text: `${i}`,
+          motion: { enter: "pop" as const },
+        })),
+      },
+    ];
+    const s = compile(d).plan.scenes[0];
+    expect(s.nodes.find((n) => n.type === "container")?.motion?.[0].name).toBe(
+      "fade",
+    );
+    expect(
+      s.nodes
+        .filter((n) => n.type === "text")
+        .map((n) => [n.motion?.[0].name, n.motion?.[0].from]),
+    ).toEqual([
+      ["pop", 0],
+      ["pop", 3],
+    ]);
+  });
+});
+
+describe("R6 choreography sequencing", () => {
+  it.each([false, true])(
+    "starts versus after all card entrances and at or before timer (short=%s)",
+    (short) => {
+      const d = picker();
+      d.settings.motion = { choreography: "versus-impact" };
+      if (short)
+        d.settings.picker = {
+          ...d.settings.picker,
+          leadSec: 0,
+          revealSec: 0.05,
+          timerSec: 1,
+          answerSec: 0.05,
+        };
+      const plain = structuredClone(d);
+      delete plain.settings.motion;
+      const baseline = compile(plain, arts).plan,
+        r = compile(d, arts);
+      expect(r.ready).toBe(true);
+      for (const s of r.plan.scenes) {
+        const lastEntry = Math.max(
+            ...s.nodes
+              .filter((n) => n.type === "card")
+              .flatMap((n) =>
+                (n.motion ?? [])
+                  .filter((c) => c.channel === "enter")
+                  .map((c) => c.from + c.durationInFrames),
+              ),
+          ),
+          vs = s.nodes
+            .find((n) => n.type === "versus")!
+            .motion!.find((c) => c.channel === "enter")!;
+        expect(vs.from).toBeGreaterThanOrEqual(lastEntry);
+        expect(vs.from).toBeLessThanOrEqual(
+          s.phases.timerStartFrame ?? s.durationInFrames - 1,
+        );
+        expect(vs.from + vs.durationInFrames).toBeLessThanOrEqual(
+          s.durationInFrames,
+        );
+      }
+      expect(r.plan.scenes.map((s) => s.phases)).toEqual(
+        baseline.scenes.map((s) => s.phases),
+      );
+      expect(r.plan.audio).toEqual(baseline.audio);
+      expect(r.plan.durationInFrames).toBe(baseline.durationInFrames);
+    },
+  );
+  it.each([2, 3, 30])(
+    "starts rank before the art while fitting a %s-frame scene",
+    (duration) => {
+      const d = sdk.createVideoDocument({
+        kind: "top",
+        participants: [
+          { id: "a", label: "A", rank: 1, media: { visual: "a" } },
+        ],
+      });
+      d.scenes[0].duration = { frame: duration };
+      d.settings.motion = { choreography: "rank-reveal" };
+      const r = compile(d, arts);
+      expect(r.ready).toBe(true);
+      const s = r.plan.scenes[0],
+        badge = s.nodes.find((n) => n.type === "badge")!.motion![0],
+        card = s.nodes.find((n) => n.type === "card")!.motion![0];
+      expect(badge.from).toBe(0);
+      expect(card.from).toBeGreaterThan(badge.from);
+      for (const c of [badge, card])
+        expect(c.from + c.durationInFrames).toBeLessThanOrEqual(duration);
+    },
+  );
+});

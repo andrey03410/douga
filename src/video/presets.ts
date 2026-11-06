@@ -556,17 +556,28 @@ export function applyVideoPreset(
       bindings[slot] = structuredClone(doc.bindings[current]);
   };
   bind(p.settings.picker?.tick, doc.settings.picker?.tick);
-  bind(p.settings.backdrop?.asset, doc.settings.backdrop?.asset);
+  // Settings levels are independent assignments even when an extracted preset
+  // intentionally shares the same abstract slot. Keep the destination key on
+  // conflict instead of silently reusing the first level's binding.
+  const bindBackdrop = (
+    target: Settings | undefined,
+    current: Settings | undefined,
+  ) => {
+    const slot = target?.backdrop?.asset,
+      asset = current?.backdrop?.asset;
+    if (!slot || !asset || !doc.bindings[asset]) return;
+    if (
+      bindings[slot] &&
+      JSON.stringify(bindings[slot]) !== JSON.stringify(doc.bindings[asset])
+    )
+      target!.backdrop!.asset = asset;
+    else bind(slot, asset);
+  };
+  bindBackdrop(p.settings, doc.settings);
   for (const format of ["wide", "vertical", "square"] as const)
-    bind(
-      p.formatSettings?.[format]?.backdrop?.asset,
-      doc.formatSettings?.[format]?.backdrop?.asset,
-    );
+    bindBackdrop(p.formatSettings?.[format], doc.formatSettings?.[format]);
   p.scenes.forEach((scene, i) =>
-    bind(
-      scene.settings?.backdrop?.asset,
-      doc.scenes[i]?.settings?.backdrop?.asset,
-    ),
+    bindBackdrop(scene.settings, doc.scenes[i]?.settings),
   );
   for (const format of ["wide", "vertical", "square"] as const)
     bind(

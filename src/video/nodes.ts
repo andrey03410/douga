@@ -258,6 +258,7 @@ export function compileCustomNodes(
       node.type === "container"
         ? node.motion
         : { ...settings.motion, ...node.motion },
+      node.motion,
     );
     for (const animation of compiled.animation) {
       if (
@@ -422,7 +423,11 @@ export function compileCustomNodes(
         const local = effectiveSettings(ctx, settings, p.settings, {
           card: node.style,
         });
-        setNodeMotion(compiled, { ...local.motion, ...node.motion });
+        setNodeMotion(
+          compiled,
+          { ...local.motion, ...node.motion },
+          node.motion,
+        );
         compiled.style = {
           ...local.card,
           ...(p.bestMomentSec !== undefined
