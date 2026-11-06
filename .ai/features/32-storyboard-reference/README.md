@@ -2,7 +2,7 @@
 id: 32
 title: Раскадровка, визуальные рецепты и эталонные кадры
 track: product
-stage: tech
+stage: plan
 branch: feat/32-storyboard-reference
 pr:
 started: 2026-11-06
@@ -18,7 +18,7 @@ merged:
 
 - [x] Бриф — [brief.md](brief.md)
 - [x] Продукт — [product.md](product.md), полный вариант принят 2026-11-06
-- [ ] Техника
+- [x] Техника — [tech.md](tech.md), решения агента в автономном режиме
 - [ ] План
 - [ ] Реализация и QG
 - [ ] Проверка владельцем
