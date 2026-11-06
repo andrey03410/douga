@@ -351,3 +351,71 @@ it.each([0, 3, 32, 40])(
     );
   },
 );
+
+it.each(["text-words", "text-letters"] as const)(
+  "%s keeps explicit line separators in the shared pre-wrap flow",
+  (name) => {
+    const text = "  М 👨‍👩‍👧‍👦\r\n\r\nЖ 世界  \n";
+    for (const channel of ["enter", "exit"] as const)
+      for (const frame of [0, 10, 20, 30, 100]) {
+        const html = renderToStaticMarkup(
+          React.createElement(MotionText, {
+            text,
+            motions: [clip(name, { channel, from: 0 })],
+            frame,
+            fps: 30,
+          }),
+        );
+        const ancestors: boolean[] = [];
+        let lineSeparators = 0;
+        for (const token of html.match(/<[^>]+>|[^<]+/g) ?? []) {
+          if (token.startsWith("</")) ancestors.pop();
+          else if (token.startsWith("<"))
+            ancestors.push(token.includes("display:inline-block"));
+          else
+            for (const separator of token.match(/\r\n|\r|\n/g) ?? []) {
+              // A preserved newline inside an atomic inline box cannot break its siblings.
+              expect(ancestors.includes(true)).toBe(false);
+              lineSeparators++;
+            }
+        }
+        expect(lineSeparators).toBe(3);
+      }
+  },
+);
+it.each(["text-words", "text-letters"] as const)(
+  "%s restores raw shaping in neutral and completed poses",
+  (name) => {
+    const text = "AV М\nЖ VA",
+      raw = renderToStaticMarkup(React.createElement(React.Fragment, {}, text));
+    for (const [channel, frame] of [
+      ["enter", 20],
+      ["enter", 30],
+      ["exit", 0],
+    ] as const) {
+      const html = renderToStaticMarkup(
+        React.createElement(MotionText, {
+          text,
+          motions: [clip(name, { channel, from: 0 })],
+          frame,
+          fps: 30,
+        }),
+      );
+      // Atomic glyph boxes disable kerning (e.g. AV); completed poses must shape as raw text.
+      expect(html).toBe(raw);
+    }
+    const hidden = renderToStaticMarkup(
+      React.createElement(MotionText, {
+        text,
+        motions: [clip(name, { channel: "exit", from: 0 })],
+        frame: 20,
+        fps: 30,
+      }),
+    );
+    expect(hidden).toBe(
+      renderToStaticMarkup(
+        React.createElement("span", { style: { opacity: 0 } }, text),
+      ),
+    );
+  },
+);

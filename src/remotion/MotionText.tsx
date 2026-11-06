@@ -54,12 +54,29 @@ export const MotionText: React.FC<{
   const contentText = counter
     ? counterText(text, motionProgress(counter, frame))
     : text;
+  const flowWhitespace =
+    fragmentsClip?.name === "text-words" ||
+    fragmentsClip?.name === "text-letters";
+  if (flowWhitespace) {
+    const amounts = clips.map((m) => motionProgress(m, frame));
+    // Restore the font's native shaping/kerning when all visual clips are neutral.
+    if (amounts.every((p) => p === 1)) return <>{contentText}</>;
+    if (amounts.every((p) => p === 0))
+      return <span style={{ opacity: 0 }}>{contentText}</span>;
+  }
   const fragments = fragmentsClip
     ? textFragments(contentText, fragmentsClip.name)
     : [contentText];
   return (
     <span style={{ whiteSpace: "pre-wrap" }}>
       {fragments.map((part, index) => {
+        // Whitespace belongs to the shared inline flow. A newline inside an
+        // atomic inline-block only breaks that box, leaving its siblings beside it.
+        const whitespace = flowWhitespace
+          ? part.match(/^(\s*)([\s\S]*?\S)?(\s*)$/u)
+          : null;
+        if (whitespace && !whitespace[2])
+          return <React.Fragment key={index}>{part}</React.Fragment>;
         let opacity = 1,
           scale = 1,
           y = 0,
@@ -93,7 +110,7 @@ export const MotionText: React.FC<{
               whiteSpace: "pre-wrap",
             }}
           >
-            {part}
+            {whitespace?.[2] ?? part}
           </span>
         );
         for (const mask of masks)
@@ -113,7 +130,11 @@ export const MotionText: React.FC<{
             {content}
           </span>
         ) : (
-          <React.Fragment key={index}>{content}</React.Fragment>
+          <React.Fragment key={index}>
+            {whitespace?.[1]}
+            {content}
+            {whitespace?.[3]}
+          </React.Fragment>
         );
       })}
     </span>
