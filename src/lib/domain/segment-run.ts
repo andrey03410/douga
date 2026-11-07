@@ -74,8 +74,8 @@ export function tierMap(batches: readonly BatchRow[]): Map<string, number> {
 export interface Overlay {
   base: string[];
   pending: string[];
-  /** Screens the segment had when it reopened: they stay out of undo and the new plan. */
-  since?: number;
+  /** When newcomers reopened the finished top (ms): earlier answers stay out of undo and the new plan. */
+  reopenedAt?: number;
 }
 
 export function parseOverlay(json: string | null | undefined): Overlay | null {
@@ -86,7 +86,7 @@ export function parseOverlay(json: string | null | undefined): Overlay | null {
     return {
       base: v.base.filter((x): x is string => typeof x === "string"),
       pending: v.pending.filter((x): x is string => typeof x === "string"),
-      ...(typeof v.since === "number" && v.since >= 0 ? { since: v.since } : {}),
+      ...(typeof v.reopenedAt === "number" && v.reopenedAt > 0 ? { reopenedAt: v.reopenedAt } : {}),
     };
   } catch {
     return null;
@@ -118,7 +118,7 @@ export interface SegmentRun {
   overlay: Overlay | null;
   question: Question | null;
   result: EngineResult;
-  /** Screens the plan is expected to take in total (with an overlay: since it reopened). */
+  /** Screens the plan is expected to take in total (with an overlay: after it reopened). */
   planned: number;
   input: EngineInput | null;
 }
@@ -156,7 +156,17 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
     settings: s.settings,
     tiers,
   };
-  const overlay = OVERLAY_SCHEMES.includes(s.scheme) ? parseOverlay(s.overlay) : null;
+  let overlay = OVERLAY_SCHEMES.includes(s.scheme) ? parseOverlay(s.overlay) : null;
+  if (overlay && s.scheme === "top_k") {
+    // A top-K that holds fewer than K active places while old participants wait
+    // outside it (someone was excluded) has an open K-th place: inserting the
+    // newcomers would hand it to them. Replay the log instead; a field smaller
+    // than K keeps the insertion and the manual order.
+    const kept = overlay.base.filter((id) => active.has(id));
+    const pending = new Set(overlay.pending);
+    const outside = items.some((id) => !kept.includes(id) && !pending.has(id));
+    if (kept.length < (s.settings.k ?? Infinity) && outside) overlay = null;
+  }
   if (overlay) {
     const base = overlay.base.filter((id) => active.has(id));
     const inBase = new Set(base);
@@ -173,7 +183,7 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
       items,
       log,
       tiers,
-      overlay: { base, pending, ...(overlay.since !== undefined ? { since: overlay.since } : {}) },
+      overlay: { base, pending, ...(overlay.reopenedAt !== undefined ? { reopenedAt: overlay.reopenedAt } : {}) },
       question: s.completed || !step.question ? null : { kind: "rank", items: step.question },
       result: {
         placed: toRanked(order, log),
@@ -214,9 +224,24 @@ export function canExtend(run: SegmentRun, completed: boolean): boolean {
 /**
  * Screens a segment is expected to take in total: the plan, but never less than
  * what is done plus the screen on screen. An overlay's plan starts where the
- * finished run ended.
+ * finished run ended (`doneBeforeReopen`).
  */
-export function estimatedScreens(run: SegmentRun, done: number, onScreen: boolean): number {
-  const planned = run.overlay ? (run.overlay.since ?? done) + run.planned : run.planned;
+export function estimatedScreens(
+  run: SegmentRun,
+  done: number,
+  onScreen: boolean,
+  doneBeforeReopen = done,
+): number {
+  const planned = run.overlay ? doneBeforeReopen + run.planned : run.planned;
   return Math.max(done + (onScreen ? 1 : 0), planned);
+}
+
+/** Answered screens from before the reopen: batches up to that moment plus every pre-batch pair. */
+export function screensBefore(
+  overlay: Overlay | null,
+  batches: readonly { createdAt: Date }[],
+  legacyScreens: number,
+): number | undefined {
+  if (overlay?.reopenedAt === undefined) return undefined;
+  return batches.filter((b) => b.createdAt.getTime() <= overlay.reopenedAt!).length + legacyScreens;
 }

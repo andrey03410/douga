@@ -213,11 +213,11 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
         if (!t) throw new Error("NOT_FOUND");
         const target = segmentId ? t.segments.find((s) => s.id === segmentId) : segmentTitle ? undefined : t.segments[0];
         if (segmentId && !target) throw new Error("NOT_FOUND");
-        if (target?.status === "completed" && !confirmReset)
-          return {
-            requiresConfirmation: true,
-            segmentsToReopen: [{ segmentId: target.id, title: target.title }],
-          };
+        const ask = {
+          requiresConfirmation: true,
+          segmentsToReopen: target ? [{ segmentId: target.id, title: target.title }] : [],
+        };
+        if (target?.status === "completed" && target.activeCount > 1 && !confirmReset) return ask;
         const resolved = await resolveItemSources(actor.userId, items, quotasFor(role).maxArchiveBytes);
         const skipped = locate(
           resolved.skipped,
@@ -225,8 +225,16 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
         ).map(({ segmentIndex: _s, ...rest }) => rest);
         const tracks = resolved.tracks.filter((t): t is ExtractedTrack => Boolean(t));
         if (!tracks.length) throw new ToolError("ALL_ITEMS_SKIPPED", { skipped });
-        const result = await addParticipants(actor.userId, id, { segmentId, segmentTitle }, tracks);
-        return { ...result, skipped };
+        try {
+          // re-checked inside the write: the person may have saved the top while pictures downloaded
+          const result = await addParticipants(actor.userId, id, { segmentId, segmentTitle }, tracks, {
+            reopenFinished: confirmReset,
+          });
+          return { ...result, skipped };
+        } catch (e) {
+          if ((e as Error).message === "REOPEN_NEEDS_CONFIRMATION") return ask;
+          throw e;
+        }
       }),
   );
   server.registerTool(
@@ -267,7 +275,9 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
         const finished = new Map<string, string>();
         for (const item of items) {
           const t = byId.get(item.trackId)!;
-          if (item.excluded !== undefined && item.excluded !== t.excluded && t.segment?.status === "completed")
+          if (item.excluded === undefined || item.excluded === t.excluded || t.segment?.status !== "completed") continue;
+          // a lone participant is "finished" automatically: nothing of the person's to lose
+          if ((await prisma.track.count({ where: { segmentId: t.segment.id, excluded: false } })) > 1)
             finished.set(t.segment.id, t.segment.title);
         }
         if (finished.size && !confirmReset)
@@ -302,7 +312,7 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
     "tournament_segments_update",
     {
       description:
-        "Полный состав сегментов: каждый трек ровно один раз. Не принимает rank/topSize/ответы. При requiresConfirmation:true покажите человеку answersToReset; повторите с confirmReset:true только при явном согласии на снятие ответов.",
+        "Полный состав сегментов: каждый трек ровно один раз. Не принимает rank/topSize/ответы. При requiresConfirmation:true покажите человеку answersToReset и segmentsToReopen (готовые топы, которые откроются); повторите с confirmReset:true только при явном согласии.",
       inputSchema: { id: z.string(), ...segmentsUpdateSchema.shape },
     },
     ({ id, ...input }) =>

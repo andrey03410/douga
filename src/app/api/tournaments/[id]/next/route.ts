@@ -38,6 +38,7 @@ export async function GET(
     kinds: [...new Set(active.map((tr) => tr.kind))],
     isComplete: step.isComplete,
     canExtend: step.canExtend,
+    canUndo: step.canUndo,
     groupSize: step.groupSize,
     // Upper bound the picker offers: the engine's own cap, the global cap and
     // the field size, whichever is smallest.

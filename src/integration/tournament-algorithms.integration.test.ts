@@ -16,6 +16,7 @@ import {
   type LoadedTournament,
 } from "@/server/tournaments";
 import { addParticipants, deleteParticipants, setExcluded } from "@/server/tournament-items";
+import { updateTournamentSegments } from "@/server/tournament-segments";
 
 // Task 33 service against the real schema: algorithm per segment, pick and
 // tier screens, switching without losing answers, exclusion and newcomers
@@ -312,6 +313,7 @@ describe("newcomers after review (task 33 QG)", () => {
     let t = await load(id);
     expect(t.status).toBe("in_progress");
     expect(t.topSize).toBe(15);
+    expect(nextComparison(t).canUndo).toBe(false);
     await expect(undoLastAnswer(t)).rejects.toThrow("UNDO_BEFORE_REOPEN");
 
     const estimates: number[] = [];
@@ -323,6 +325,7 @@ describe("newcomers after review (task 33 QG)", () => {
       estimates.push(step.screens.estimatedTotal);
       if (answered === 1) {
         // this run's own answer can be taken back, the finished run's cannot
+        expect(step.canUndo).toBe(true);
         expect((await undoLastAnswer(t)).removed).toBeGreaterThan(0);
         t = await load(id);
         const again = nextComparison(t);
@@ -350,8 +353,7 @@ describe("newcomers after review (task 33 QG)", () => {
     const byTitle = (title: string) => t.tracks.find((tr) => tr.title === title)!.id;
     await setExcluded(userId, byTitle("c02"), true);
     await addParticipants(userId, id, {}, [image("c99", "new:worst")]);
-    const segment = await prisma.tournamentSegment.findFirstOrThrow({ where: { tournamentId: id } });
-    expect([segment.status, segment.insertBase]).toEqual(["in_progress", null]);
+    expect((await load(id)).status).toBe("in_progress");
     await playOut(id);
     await finalize(await load(id), 5);
     t = await load(id);
@@ -366,5 +368,107 @@ describe("newcomers after review (task 33 QG)", () => {
     const before = await prisma.comparisonBatch.count({ where: { tournamentId: id } });
     await setTier(await load(id), target, -1);
     expect(await prisma.comparisonBatch.count({ where: { tournamentId: id } })).toBe(before);
+  });
+});
+
+describe("second review (task 33 QG)", () => {
+  const titles = (t: LoadedTournament) => t.rankings.map((r) => t.tracks.find((tr) => tr.id === r.trackId)!.title);
+
+  it("a top-K smaller than K keeps the insertion and the person's manual order", async () => {
+    const id = await make(6);
+    await setSegmentScheme(userId, id, { scheme: "top_k", settings: { k: 10 } });
+    await playOut(id);
+    await finalize(await load(id), 6);
+    let t = await load(id);
+    const ids = t.rankings.map((r) => r.trackId);
+    await reorderRanking(userId, id, [ids[1], ids[0], ...ids.slice(2)]);
+    await addParticipants(userId, id, {}, [image("c50", "new:50")]);
+    await playOut(id);
+    await finalize(await load(id), 7);
+    t = await load(id);
+    expect(titles(t)).toEqual(["c01", "c00", "c02", "c03", "c04", "c05", "c50"]);
+  });
+
+  it("an exclusion while newcomers are inserted into a top-K opens the K-th place to everyone", async () => {
+    const id = await make(6);
+    await setSegmentScheme(userId, id, { scheme: "top_k", settings: { k: 3 } });
+    await playOut(id);
+    await finalize(await load(id), 3);
+    let t = await load(id);
+    expect(titles(t)).toEqual(["c00", "c01", "c02"]);
+    await addParticipants(userId, id, {}, [image("c99", "new:99")]);
+    t = await load(id);
+    await setExcluded(userId, t.tracks.find((tr) => tr.title === "c01")!.id, true);
+    await playOut(id);
+    await finalize(await load(id), 3);
+    t = await load(id);
+    expect(titles(t)).toEqual(["c00", "c02", "c03"]);
+  });
+
+  it("a lone participant's top size does not survive the segment growing", async () => {
+    const id = await make(1, "insertion");
+    let t = await load(id);
+    expect([t.status, t.topSize]).toEqual(["completed", 1]);
+    await addParticipants(userId, id, {}, [image("c07", "new:7"), image("c08", "new:8")]);
+    t = await load(id);
+    expect([t.status, t.topSize]).toEqual(["in_progress", null]);
+  });
+
+  it("deleting an old participant does not lock the newcomers' own answers out of undo", async () => {
+    const id = await make(6, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 6);
+    await addParticipants(userId, id, {}, [image("c60", "new:60")]);
+    let t = await load(id);
+    const step = nextComparison(t);
+    await recordAnswer(t, { kind: "rank", ranked: [...step.question!].sort((a, b) => value(t, a) - value(t, b)), rest: [] });
+    t = await load(id);
+    const old = t.tracks.find((tr) => tr.title === "c05")!.id;
+    expect((await deleteParticipants(userId, id, [old], true)).requiresConfirmation).toBe(false);
+    t = await load(id);
+    expect(nextComparison(t).canUndo).toBe(true);
+    expect((await undoLastAnswer(t)).removed).toBeGreaterThan(0);
+  });
+
+  it("the person's finished top reopens through the segment editor only with consent", async () => {
+    const id = await make(3, "insertion", 2);
+    const first = await load(id);
+    await playOut(id, first.segments[0].id);
+    await finalize(await load(id, first.segments[0].id), 3);
+    const t = await load(id);
+    const [a, b] = t.segments;
+    const segments = [
+      { id: a.id, title: a.title, trackIds: [...a.tracks.map((tr) => tr.id), b.tracks[0].id] },
+      { id: b.id, title: b.title, trackIds: b.tracks.slice(1).map((tr) => tr.id) },
+    ];
+    expect(await updateTournamentSegments(userId, id, { segments })).toMatchObject({
+      requiresConfirmation: true,
+      answersToReset: 0,
+      segmentsToReopen: [{ segmentId: a.id, title: a.title }],
+    });
+    expect((await load(id, a.id)).status).toBe("completed");
+    expect(await updateTournamentSegments(userId, id, { segments, confirmReset: true })).toMatchObject({
+      requiresConfirmation: false,
+    });
+    expect((await load(id, a.id)).status).toBe("in_progress");
+  });
+
+  it("an agent without consent cannot reopen a finished top; a tier answer counts when deleting", async () => {
+    const id = await make(3, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 3);
+    await expect(
+      addParticipants(userId, id, {}, [image("c70", "new:70")], { reopenFinished: false }),
+    ).rejects.toThrow("REOPEN_NEEDS_CONFIRMATION");
+    expect((await load(id)).status).toBe("completed");
+
+    const tiers = await make(3, "tiers");
+    const tt = await load(tiers);
+    const step = nextComparison(tt);
+    await recordAnswer(tt, { kind: "tier", itemId: step.question![0], tier: 0 });
+    expect(await deleteParticipants(userId, tiers, [step.question![0]])).toMatchObject({
+      requiresConfirmation: true,
+      answersToReset: 1,
+    });
   });
 });

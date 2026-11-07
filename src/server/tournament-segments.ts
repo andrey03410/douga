@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { effectiveScheme, effectiveSettings, estimatedScreens, runSegment } from "@/lib/domain/segment-run";
+import { effectiveScheme, effectiveSettings, estimatedScreens, runSegment, screensBefore } from "@/lib/domain/segment-run";
 
 type Db = Prisma.TransactionClient;
 export const segmentsUpdateSchema = z
@@ -194,8 +194,13 @@ export async function updateTournamentSegments(
       (c) => moved.has(c.trackAId) || moved.has(c.trackBId),
     );
     const answersToReset = removedBatches.length + removedLegacy.length;
-    if (answersToReset && !parsed.data.confirmReset)
-      return { requiresConfirmation: true as const, answersToReset };
+    // P24: a finished top that changes reopens; its places are saved again by the person.
+    const segmentsToReopen = old
+      // a lone participant is "finished" automatically: nothing of the person's to lose
+      .filter((p) => p.status === "completed" && changedSegments.has(p.id) && p.tracks.filter((t) => !t.excluded).length > 1)
+      .map((p) => ({ segmentId: p.id, title: p.title }));
+    if ((answersToReset || segmentsToReopen.length) && !parsed.data.confirmReset)
+      return { requiresConfirmation: true as const, answersToReset, segmentsToReopen };
     if (removedBatchIds.length)
       await db.comparisonBatch.deleteMany({
         where: { id: { in: removedBatchIds } },
@@ -240,7 +245,7 @@ export async function updateTournamentSegments(
     });
     for (const id of retained) await completeSingleton(db, id);
     await aggregateTournamentStatus(db, tournamentId);
-    return { requiresConfirmation: false as const, answersToReset };
+    return { requiresConfirmation: false as const, answersToReset, segmentsToReopen };
   });
 }
 
@@ -316,7 +321,12 @@ export function segmentProgress(
       // Screens, like the compare page (task 33: engines no longer count pairs).
       progress: {
         completed: answeredScreens,
-        estimatedTotal: estimatedScreens(run, answeredScreens, false),
+        estimatedTotal: estimatedScreens(
+          run,
+          answeredScreens,
+          false,
+          screensBefore(run.overlay, batches, comparisons.filter((c) => !c.batchId).length),
+        ),
       },
     };
   });

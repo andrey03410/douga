@@ -92,8 +92,7 @@ function ranked(items: string[], comparisons: Comparison[]): RankedItem[] {
 
 const SIMULATE_UP_TO = 24;
 
-/** Screens of a run where upload order is the truth. */
-/** The dry run depends only on (n, k, accuracy): pages and progress ask it on every load. */
+/** Screens of a run where upload order is the truth. Depends only on (n, k, accuracy): memoized. */
 const dryRunCache = new Map<string, number>();
 function dryRun(n: number, k: number, settings?: SchemeSettings): number {
   const key = `${n}:${k}:${settings?.accuracy ?? ""}`;
@@ -104,6 +103,7 @@ function dryRun(n: number, k: number, settings?: SchemeSettings): number {
   return screens;
 }
 
+/** Plays the engine against upload order until it has nothing to ask. */
 function simulate(n: number, k: number, settings?: SchemeSettings): number {
   const items = Array.from({ length: n }, (_, i) => `p${i}`);
   const order = new Map(items.map((id, i) => [id, i]));

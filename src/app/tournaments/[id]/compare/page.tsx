@@ -39,6 +39,7 @@ interface NextResponse {
   itemCount: number;
   isComplete: boolean;
   canExtend: boolean;
+  canUndo?: boolean;
   groupSize: number;
   maxGroupSize: number;
   screens: { completed: number; estimatedTotal: number };
@@ -177,7 +178,7 @@ export default function ComparePage({
       if (e.key === "Backspace") {
         e.preventDefault();
         if (picks.length) setPicks((p) => p.slice(0, -1));
-        else if (!busy && data.screens.completed > 0) void act("/undo");
+        else if (!busy && (data.canUndo ?? data.screens.completed > 0)) void act("/undo");
         return;
       }
       if (data.questionKind === "tier") {
@@ -372,7 +373,7 @@ export default function ComparePage({
             ) : null}
             <button
               className="btn ghost"
-              disabled={busy || data.screens.completed === 0}
+              disabled={busy || !(data.canUndo ?? data.screens.completed > 0)}
               onClick={() => void act("/undo")}
             >
               ← Отменить последний ответ
@@ -492,7 +493,7 @@ export default function ComparePage({
         ) : null}
         <button
           className="btn ghost"
-          disabled={busy || data.screens.completed === 0}
+          disabled={busy || !(data.canUndo ?? data.screens.completed > 0)}
           onClick={() => void act("/undo")}
         >
           ← Отменить последний ответ

@@ -105,12 +105,16 @@ export function SegmentEditor({
       const data = await res.json();
       if (!res.ok) throw Error(data.error ?? "Не удалось сохранить разбивку");
       if (data.requiresConfirmation) {
-        if (
-          window.confirm(
-            `Будет снято ${data.answersToReset} ${pluralRu(data.answersToReset, ["ответ", "ответа", "ответов"])} на сравнения в изменённых сегментах. Их результаты нужно будет определить заново. Сохранить разбивку?`,
-          )
-        )
-          await save(true);
+        const reopen: { title: string }[] = data.segmentsToReopen ?? [];
+        const parts = [
+          data.answersToReset
+            ? `Будет снято ${data.answersToReset} ${pluralRu(data.answersToReset, ["ответ", "ответа", "ответов"])} на сравнения в изменённых сегментах. Их результаты нужно будет определить заново.`
+            : "",
+          reopen.length
+            ? `Готовый топ ${reopen.map((s) => `«${s.title}»`).join(", ")} снова откроется: места нужно будет сохранить заново.`
+            : "",
+        ].filter(Boolean);
+        if (window.confirm(`${parts.join(" ")} Сохранить разбивку?`)) await save(true);
         return;
       }
       setDirty(false);

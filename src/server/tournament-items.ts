@@ -141,6 +141,8 @@ export async function addParticipants(
   tournamentId: string,
   target: AddTarget,
   tracks: ExtractedTrack[],
+  /** false: a finished top of the person's (more than one place) is not reopened (MCP without consent). */
+  options: { reopenFinished?: boolean } = {},
 ) {
   if (!tracks.length) throw new Error("NOTHING_TO_ADD");
   const written: string[] = [];
@@ -169,6 +171,12 @@ export async function addParticipants(
             ? undefined
             : tournament.segments[0];
         if (target.segmentId && !segment) throw new Error("NOT_FOUND");
+        if (
+          options.reopenFinished === false &&
+          segment?.status === "completed" &&
+          existing.filter((t) => t.segmentId === segment!.id && !t.excluded).length > 1
+        )
+          throw new Error("REOPEN_NEEDS_CONFIRMATION");
         if (!segment)
           segment = await tx.tournamentSegment.create({
             data: {
@@ -239,7 +247,8 @@ export async function deleteParticipants(
     const legacy = (
       await tx.comparison.findMany({ where: { tournamentId, batchId: null } })
     ).filter((c) => gone.has(c.trackAId) || gone.has(c.trackBId));
-    const answersToReset = batches.filter((b) => b.kind !== "tier").length + legacy.length;
+    // Any answer with the participant counts, a tier one too (P13).
+    const answersToReset = batches.length + legacy.length;
     if (answersToReset && !confirmReset)
       return { requiresConfirmation: true as const, answersToReset, files: [] as string[] };
     if (batches.length)

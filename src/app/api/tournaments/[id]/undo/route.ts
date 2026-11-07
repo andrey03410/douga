@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { userOr401, notFound, badRequest } from "@/lib/api";
 import { getTournament, undoLastAnswer } from "@/server/tournaments";
+import { tournamentErrorMessage } from "@/lib/tournament-errors";
 
 const MESSAGES: Record<string, string> = {
-  NOTHING_TO_UNDO: "Отменять нечего",
   ALREADY_FINALIZED: "Турнир уже завершён",
 };
 
@@ -30,6 +30,6 @@ export async function POST(
     return NextResponse.json({ ok: true, removed });
   } catch (e) {
     const code = String((e as Error).message);
-    return badRequest(MESSAGES[code] ?? code);
+    return badRequest(MESSAGES[code] ?? tournamentErrorMessage(code));
   }
 }
