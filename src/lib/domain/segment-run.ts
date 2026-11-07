@@ -167,13 +167,15 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
     // outside (they beat the old K-th). If that member now stands above the
     // K-th place (someone was excluded), the places below it are open to the
     // old participants waiting outside too: replay the log instead of handing
-    // them to newcomers. A field smaller than K has nobody outside.
+    // them to newcomers. A field smaller than K has nobody outside. Decided only
+    // once the newcomers are placed, so the result does not depend on whether
+    // the exclusion came before or after their screens.
     let lastOld = -1;
     step.list.forEach((id, i) => {
       if (inBase.has(id)) lastOld = i;
     });
     const outside = items.some((id) => !inBase.has(id) && !waiting.has(id));
-    const open = s.scheme === "top_k" && outside && lastOld + 1 < (s.settings.k ?? Infinity);
+    const open = !step.question && s.scheme === "top_k" && outside && lastOld + 1 < (s.settings.k ?? Infinity);
     if (!open) return overlayRun(s, engine, k, items, log, tiers, input, overlay, base, pending, step);
   }
   return {

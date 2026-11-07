@@ -11,6 +11,7 @@ import {
   recordAnswer,
   reorderRanking,
   setSegmentScheme,
+  setGroupSize,
   setTier,
   undoLastAnswer,
   type LoadedTournament,
@@ -514,17 +515,76 @@ describe("third review (task 33 QG)", () => {
     expect(titles(t)).toEqual(["c01", "c02", "c03"]);
   });
 
+  it("an exclusion before the newcomer is placed ends like one after it: manual order kept", async () => {
+    const id = await topThree();
+    let t = await load(id);
+    const ids = t.rankings.map((r) => r.trackId);
+    await reorderRanking(userId, id, [ids[1], ids[0], ids[2]]);
+    await addParticipants(userId, id, {}, [image("c-1", "new:best")]);
+    t = await load(id);
+    await setExcluded(userId, byTitle(t, "c02"), true);
+    await playOut(id);
+    await finalize(await load(id), 3);
+    t = await load(id);
+    expect(titles(t)).toEqual(["c-1", "c01", "c00"]);
+  });
+
+  it("pairs: a person who changed their mind gets the same top whichever comes first, exclusion or screens", async () => {
+    // The person reordered the saved top to c01 > c00 and now answers by that view.
+    const view: Record<string, number> = { c01: 0, cn: 0.5, c00: 1 };
+    const rank = (t: LoadedTournament, ids: string[]) =>
+      [...ids].sort((a, b) => {
+        const va = (title: string) => view[title] ?? Number(title.slice(1));
+        const title = (x: string) => t.tracks.find((tr) => tr.id === x)!.title;
+        return va(title(a)) - va(title(b));
+      });
+    const answerAll = async (id: string) => {
+      for (;;) {
+        const t = await load(id);
+        const step = nextComparison(t);
+        if (!step.question) return;
+        if (step.questionKind === "pick") await recordAnswer(t, { kind: "pick", winner: rank(t, step.question)[0] });
+        else await recordAnswer(t, { kind: "rank", ranked: rank(t, step.question), rest: [] });
+      }
+    };
+    const results: string[][] = [];
+    for (const excludeFirst of [true, false]) {
+      await clear();
+      const id = await topThree();
+      await setGroupSize(userId, id, 2);
+      let t = await load(id);
+      const ids = t.rankings.map((r) => r.trackId);
+      await reorderRanking(userId, id, [ids[1], ids[0], ids[2]]);
+      await addParticipants(userId, id, {}, [image("cn", "new:n")]);
+      t = await load(id);
+      if (excludeFirst) await setExcluded(userId, byTitle(t, "c02"), true);
+      await answerAll(id);
+      if (!excludeFirst) await setExcluded(userId, byTitle(await load(id), "c02"), true);
+      await answerAll(id);
+      await finalize(await load(id), 3);
+      results.push(titles(await load(id)));
+    }
+    expect(results[0]).toEqual(["c01", "cn", "c00"]);
+    expect(results[1]).toEqual(results[0]);
+  });
+
   it("a replayed top-K still keeps the finished run's answers out of undo", async () => {
     const id = await topThree();
-    await addParticipants(userId, id, {}, [image("c99", "new:worst")]);
     let t = await load(id);
     await setExcluded(userId, byTitle(t, "c01"), true);
+    await setExcluded(userId, byTitle(t, "c02"), true);
+    // c02 returns at once (its answers place it), the third place is open to everyone
+    await setExcluded(userId, byTitle(t, "c02"), false);
     t = await load(id);
     const step = nextComparison(t);
     expect(step.question).not.toBeNull();
+    expect(step.question!.some((q) => !["c00", "c02"].includes(t.tracks.find((tr) => tr.id === q)!.title))).toBe(true);
     // the replay ignores the overlay, undo still reads the reopen from it
     expect(step.canUndo).toBe(false);
     await expect(undoLastAnswer(t)).rejects.toThrow("UNDO_BEFORE_REOPEN");
+    await playOut(id);
+    await finalize(await load(id), 3);
+    expect(titles(await load(id))).toEqual(["c00", "c02", "c03"]);
   });
 
   it("a segment left with one participant forgets the newcomers' overlay", async () => {
@@ -553,14 +613,15 @@ describe("third review (task 33 QG)", () => {
     expect(after.tracks.every((tr) => !tr.excluded)).toBe(true);
   });
 
-  it("a top size that only meant the one active participant does not survive newcomers", async () => {
-    const id = await make(2, "insertion");
+  it("the person's top size survives newcomers even when few old participants stay active", async () => {
+    const id = await make(5, "insertion");
     await playOut(id);
-    await finalize(await load(id), 2);
+    await finalize(await load(id), 3);
+    await addParticipants(userId, id, {}, [image("c07", "new:7")]);
     let t = await load(id);
-    await setExcluded(userId, byTitle(t, "c01"), true);
-    await addParticipants(userId, id, {}, [image("c07", "new:7"), image("c08", "new:8")]);
+    for (const title of ["c01", "c02", "c03", "c04"]) await setExcluded(userId, byTitle(t, title), true);
+    await addParticipants(userId, id, {}, [image("c08", "new:8")]);
     t = await load(id);
-    expect([t.status, t.topSize]).toEqual(["in_progress", null]);
+    expect([t.status, t.topSize]).toEqual(["in_progress", 3]);
   });
 });

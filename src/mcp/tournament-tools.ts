@@ -265,38 +265,34 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
     ({ id, items, confirmReset }) =>
       guard(async () => {
         const ids = items.map((i) => i.trackId);
-        const tracks = await prisma.track.findMany({
-          where: { id: { in: ids }, tournamentId: id, tournament: { userId: actor.userId } },
-          include: { segment: true },
-        });
-        if (tracks.length !== new Set(ids).size) throw new Error("NOT_FOUND");
         // P24: excluding from or returning into a finished top changes the person's result.
-        const byId = new Map(tracks.map((t) => [t.id, t]));
-        const finished = new Map<string, string>();
-        const changing = items.filter((item) => {
-          const t = byId.get(item.trackId)!;
-          return item.excluded !== undefined && item.excluded !== t.excluded && t.segment?.status === "completed";
-        });
-        const segmentIds = [...new Set(changing.map((item) => byId.get(item.trackId)!.segmentId!))];
-        const active = new Map(
-          (
-            await prisma.track.groupBy({
-              by: ["segmentId"],
-              where: { segmentId: { in: segmentIds }, excluded: false },
-              _count: { _all: true },
-            })
-          ).map((g) => [g.segmentId, g._count._all]),
-        );
-        for (const item of changing) {
-          const segment = byId.get(item.trackId)!.segment!;
+        const readFinished = async () => {
+          const tracks = await prisma.track.findMany({
+            where: { id: { in: ids }, tournamentId: id, tournament: { userId: actor.userId } },
+            include: { segment: true },
+          });
+          if (tracks.length !== new Set(ids).size) throw new Error("NOT_FOUND");
+          const byId = new Map(tracks.map((t) => [t.id, t]));
+          const changing = items
+            .filter((item) => item.excluded !== undefined && item.excluded !== byId.get(item.trackId)!.excluded)
+            .map((item) => byId.get(item.trackId)!)
+            .filter((t) => t.segment?.status === "completed");
+          const active = new Map(
+            (
+              await prisma.track.groupBy({
+                by: ["segmentId"],
+                where: { segmentId: { in: [...new Set(changing.map((t) => t.segmentId!))] }, excluded: false },
+                _count: { _all: true },
+              })
+            ).map((g) => [g.segmentId, g._count._all]),
+          );
+          const finished = new Map<string, string>();
           // a lone participant is "finished" automatically: nothing of the person's to lose
-          if ((active.get(segment.id) ?? 0) > 1) finished.set(segment.id, segment.title);
-        }
-        const ask = {
-          requiresConfirmation: true,
-          segmentsToReopen: [...finished].map(([segmentId, title]) => ({ segmentId, title })),
+          for (const t of changing) if ((active.get(t.segmentId) ?? 0) > 1) finished.set(t.segment!.id, t.segment!.title);
+          return [...finished].map(([segmentId, title]) => ({ segmentId, title }));
         };
-        if (finished.size && !confirmReset) return ask;
+        const segmentsToReopen = await readFinished();
+        if (segmentsToReopen.length && !confirmReset) return { requiresConfirmation: true, segmentsToReopen };
         // Validate everything first so a bad cover does not leave half the batch applied.
         for (const item of items) await assertOwnedImage(prisma, actor.userId, item.coverArtId);
         for (const { trackId, excluded: _excluded, ...fields } of items)
@@ -307,8 +303,9 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
             if (excluded !== undefined)
               await setExcluded(actor.userId, trackId, excluded, { reopenFinished: confirmReset });
         } catch (e) {
-          if ((e as Error).message === "REOPEN_NEEDS_CONFIRMATION") return ask;
-          throw e;
+          if ((e as Error).message !== "REOPEN_NEEDS_CONFIRMATION") throw e;
+          // what is left to change, read again: the person saved a top meanwhile
+          return { requiresConfirmation: true, segmentsToReopen: await readFinished(), partiallyApplied: true };
         }
         return { updated: items.length };
       }),

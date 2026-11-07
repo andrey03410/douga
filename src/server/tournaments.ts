@@ -761,10 +761,7 @@ export async function reopenForNewcomers(
     ).map((r) => r.trackId);
   // The person's top size stays (finalize clamps it to the places there will be),
   // unless it only meant "the one participant there was".
-  const activeIds = new Set(
-    (await tx.track.findMany({ where: { segmentId: segment.id, excluded: false }, select: { id: true } })).map((t) => t.id),
-  );
-  const topSize = base.filter((id) => activeIds.has(id)).length <= 1 ? { topSize: null } : {};
+  const topSize = segment.topSize === 1 && base.length <= 1 ? { topSize: null } : {};
   if (scheme && OVERLAY_SCHEMES.includes(scheme)) {
     const pending = [...new Set([...(overlay?.pending ?? []), ...newcomers])];
     const reopenedAt = overlay?.reopenedAt ?? Date.now();
