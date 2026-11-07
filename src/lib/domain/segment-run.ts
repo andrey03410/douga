@@ -156,42 +156,25 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
     settings: s.settings,
     tiers,
   };
-  let overlay = OVERLAY_SCHEMES.includes(s.scheme) ? parseOverlay(s.overlay) : null;
-  if (overlay && s.scheme === "top_k") {
-    // A top-K that holds fewer than K active places while old participants wait
-    // outside it (someone was excluded) has an open K-th place: inserting the
-    // newcomers would hand it to them. Replay the log instead; a field smaller
-    // than K keeps the insertion and the manual order.
-    const kept = overlay.base.filter((id) => active.has(id));
-    const pending = new Set(overlay.pending);
-    const outside = items.some((id) => !kept.includes(id) && !pending.has(id));
-    if (kept.length < (s.settings.k ?? Infinity) && outside) overlay = null;
-  }
+  const overlay = OVERLAY_SCHEMES.includes(s.scheme) ? parseOverlay(s.overlay) : null;
   if (overlay) {
     const base = overlay.base.filter((id) => active.has(id));
     const inBase = new Set(base);
-    const pending = items.filter((id) => overlay.pending.includes(id) && !inBase.has(id));
+    const waiting = new Set(overlay.pending);
+    const pending = items.filter((id) => waiting.has(id) && !inBase.has(id));
     const step = insertionStep(base, pending, new PairIndex(log), k);
-    let order = step.list;
-    if (s.scheme === "top_k") order = order.slice(0, s.settings.k ?? order.length);
-    const placed = new Set(order);
-    return {
-      scheme: s.scheme,
-      engine,
-      settings: s.settings,
-      groupSize: k,
-      items,
-      log,
-      tiers,
-      overlay: { base, pending, ...(overlay.reopenedAt !== undefined ? { reopenedAt: overlay.reopenedAt } : {}) },
-      question: s.completed || !step.question ? null : { kind: "rank", items: step.question },
-      result: {
-        placed: toRanked(order, log),
-        unplaced: items.filter((id) => !placed.has(id)).map((id) => ({ id })),
-      },
-      planned: insertionPlan(base.length, pending.length, k),
-      input,
-    };
+    // Top-K: places down to the last old member are proven against everyone
+    // outside (they beat the old K-th). If that member now stands above the
+    // K-th place (someone was excluded), the places below it are open to the
+    // old participants waiting outside too: replay the log instead of handing
+    // them to newcomers. A field smaller than K has nobody outside.
+    let lastOld = -1;
+    step.list.forEach((id, i) => {
+      if (inBase.has(id)) lastOld = i;
+    });
+    const outside = items.some((id) => !inBase.has(id) && !waiting.has(id));
+    const open = s.scheme === "top_k" && outside && lastOld + 1 < (s.settings.k ?? Infinity);
+    if (!open) return overlayRun(s, engine, k, items, log, tiers, input, overlay, base, pending, step);
   }
   return {
     scheme: s.scheme,
@@ -205,6 +188,41 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
     question: s.completed ? null : engine.next(input),
     result: engine.result(input),
     planned: plannedScreens(s.scheme, items.length, k, s.settings),
+    input,
+  };
+}
+
+function overlayRun(
+  s: SegmentRunInput,
+  engine: Engine,
+  k: number,
+  items: string[],
+  log: Comparison[],
+  tiers: Map<string, number>,
+  input: EngineInput,
+  overlay: Overlay,
+  base: string[],
+  pending: string[],
+  step: { list: string[]; question: string[] | null },
+): SegmentRun {
+  let order = step.list;
+  if (s.scheme === "top_k") order = order.slice(0, s.settings.k ?? order.length);
+  const placed = new Set(order);
+  return {
+    scheme: s.scheme,
+    engine,
+    settings: s.settings,
+    groupSize: k,
+    items,
+    log,
+    tiers,
+    overlay: { base, pending, ...(overlay.reopenedAt !== undefined ? { reopenedAt: overlay.reopenedAt } : {}) },
+    question: s.completed || !step.question ? null : { kind: "rank", items: step.question },
+    result: {
+      placed: toRanked(order, log),
+      unplaced: items.filter((id) => !placed.has(id)).map((id) => ({ id })),
+    },
+    planned: insertionPlan(base.length, pending.length, k),
     input,
   };
 }

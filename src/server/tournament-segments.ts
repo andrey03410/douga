@@ -72,7 +72,7 @@ export async function completeSingleton(db: Db, segmentId: string) {
   const tr = tracks[0];
   await db.tournamentSegment.update({
     where: { id: segmentId },
-    data: { status: "completed", topSize: 1 },
+    data: { status: "completed", topSize: 1, insertBase: null },
   });
   await db.ranking.upsert({
     where: {

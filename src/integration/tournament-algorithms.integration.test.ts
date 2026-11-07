@@ -472,3 +472,95 @@ describe("second review (task 33 QG)", () => {
     });
   });
 });
+
+describe("third review (task 33 QG)", () => {
+  const titles = (t: LoadedTournament) => t.rankings.map((r) => t.tracks.find((tr) => tr.id === r.trackId)!.title);
+  const byTitle = (t: LoadedTournament, title: string) => t.tracks.find((tr) => tr.title === title)!.id;
+
+  async function topThree() {
+    const id = await make(6);
+    await setSegmentScheme(userId, id, { scheme: "top_k", settings: { k: 3 } });
+    await playOut(id);
+    await finalize(await load(id), 3);
+    expect(titles(await load(id))).toEqual(["c00", "c01", "c02"]);
+    return id;
+  }
+
+  it("a newcomer above the K-th place keeps the manual order through a later exclusion", async () => {
+    const id = await topThree();
+    let t = await load(id);
+    const ids = t.rankings.map((r) => r.trackId);
+    await reorderRanking(userId, id, [ids[1], ids[0], ids[2]]);
+    await addParticipants(userId, id, {}, [image("c-1", "new:best")]);
+    await playOut(id);
+    t = await load(id);
+    await setExcluded(userId, byTitle(t, "c02"), true);
+    expect(await playOut(id)).toBe(0);
+    await finalize(await load(id), 3);
+    t = await load(id);
+    expect(titles(t)).toEqual(["c-1", "c01", "c00"]);
+  });
+
+  it("an exclusion that opens the K-th place after the newcomer was placed replays the top-K", async () => {
+    const id = await topThree();
+    await addParticipants(userId, id, {}, [image("c99", "new:worst")]);
+    await playOut(id);
+    let t = await load(id);
+    await setExcluded(userId, byTitle(t, "c00"), true);
+    expect(nextComparison(await load(id)).question).not.toBeNull();
+    await playOut(id);
+    await finalize(await load(id), 3);
+    t = await load(id);
+    expect(titles(t)).toEqual(["c01", "c02", "c03"]);
+  });
+
+  it("a replayed top-K still keeps the finished run's answers out of undo", async () => {
+    const id = await topThree();
+    await addParticipants(userId, id, {}, [image("c99", "new:worst")]);
+    let t = await load(id);
+    await setExcluded(userId, byTitle(t, "c01"), true);
+    t = await load(id);
+    const step = nextComparison(t);
+    expect(step.question).not.toBeNull();
+    // the replay ignores the overlay, undo still reads the reopen from it
+    expect(step.canUndo).toBe(false);
+    await expect(undoLastAnswer(t)).rejects.toThrow("UNDO_BEFORE_REOPEN");
+  });
+
+  it("a segment left with one participant forgets the newcomers' overlay", async () => {
+    const id = await make(3, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 3);
+    await addParticipants(userId, id, {}, [image("c09", "new:9")]);
+    let t = await load(id);
+    expect((await prisma.tournamentSegment.findUnique({ where: { id: t.segments[0].id } }))!.insertBase).not.toBeNull();
+    for (const title of ["c00", "c01", "c02"]) await setExcluded(userId, byTitle(t, title), true);
+    t = await load(id);
+    expect([t.status, t.topSize]).toEqual(["completed", 1]);
+    expect((await prisma.tournamentSegment.findUnique({ where: { id: t.segments[0].id } }))!.insertBase).toBeNull();
+  });
+
+  it("an agent without consent cannot exclude from the person's finished top", async () => {
+    const id = await make(3, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 3);
+    const t = await load(id);
+    await expect(setExcluded(userId, byTitle(t, "c01"), true, { reopenFinished: false })).rejects.toThrow(
+      "REOPEN_NEEDS_CONFIRMATION",
+    );
+    const after = await load(id);
+    expect(after.status).toBe("completed");
+    expect(after.tracks.every((tr) => !tr.excluded)).toBe(true);
+  });
+
+  it("a top size that only meant the one active participant does not survive newcomers", async () => {
+    const id = await make(2, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 2);
+    let t = await load(id);
+    await setExcluded(userId, byTitle(t, "c01"), true);
+    await addParticipants(userId, id, {}, [image("c07", "new:7"), image("c08", "new:8")]);
+    t = await load(id);
+    expect([t.status, t.topSize]).toEqual(["in_progress", null]);
+  });
+});

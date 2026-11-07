@@ -363,11 +363,12 @@ export function nextComparison(t: LoadedTournament) {
     coverage: orderCoverage(run.items, run.log),
     canExtend: runCanExtend(run, completed),
     // Answers from before newcomers reopened a finished top are not undoable.
-    canUndo:
-      !completed &&
-      done > 0 &&
-      (run.overlay?.reopenedAt === undefined ||
-        t.batches.some((b) => b.createdAt.getTime() > run.overlay!.reopenedAt!)),
+    // (read from the stored overlay: a replayed top-K ignores it but undo does not)
+    canUndo: (() => {
+      if (completed || done === 0) return false;
+      const reopenedAt = parseOverlay(t.insertBase)?.reopenedAt;
+      return reopenedAt === undefined || t.batches.some((b) => b.createdAt.getTime() > reopenedAt);
+    })(),
     isComplete: run.scheme !== null && question === null,
     standings,
     result: run.result,
@@ -487,6 +488,7 @@ export async function undoLastAnswer(t: LoadedTournament) {
     const lastBatch = current.batches.at(-1) ?? null;
     const lastLegacy =
       current.comparisons.filter((c) => c.batchId === null).at(-1) ?? null;
+    if (!lastBatch && !lastLegacy) throw new Error("NOTHING_TO_UNDO");
     // Newcomers reopened a finished top: its answers are not this run's to undo.
     const reopenedAt = parseOverlay(current.insertBase)?.reopenedAt;
     if (reopenedAt !== undefined && !(lastBatch && lastBatch.createdAt.getTime() > reopenedAt))
@@ -759,7 +761,10 @@ export async function reopenForNewcomers(
     ).map((r) => r.trackId);
   // The person's top size stays (finalize clamps it to the places there will be),
   // unless it only meant "the one participant there was".
-  const topSize = base.length <= 1 ? { topSize: null } : {};
+  const activeIds = new Set(
+    (await tx.track.findMany({ where: { segmentId: segment.id, excluded: false }, select: { id: true } })).map((t) => t.id),
+  );
+  const topSize = base.filter((id) => activeIds.has(id)).length <= 1 ? { topSize: null } : {};
   if (scheme && OVERLAY_SCHEMES.includes(scheme)) {
     const pending = [...new Set([...(overlay?.pending ?? []), ...newcomers])];
     const reopenedAt = overlay?.reopenedAt ?? Date.now();

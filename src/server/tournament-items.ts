@@ -302,7 +302,13 @@ async function pruneOverlay(tx: Tx, segmentId: string, gone: Set<string>) {
  * finished segment an excluded participant leaves the places (the rest close
  * up, manual order kept); a returning one is inserted back (P14).
  */
-export async function setExcluded(userId: string, trackId: string, excluded: boolean) {
+export async function setExcluded(
+  userId: string,
+  trackId: string,
+  excluded: boolean,
+  /** false: the person's finished top (more than one place) is not changed (MCP without consent). */
+  options: { reopenFinished?: boolean } = {},
+) {
   return prisma.$transaction(async (tx) => {
     const track = await tx.track.findFirst({
       where: { id: trackId, tournament: { userId } },
@@ -310,6 +316,12 @@ export async function setExcluded(userId: string, trackId: string, excluded: boo
     });
     if (!track) throw new Error("NOT_FOUND");
     if (track.excluded === excluded) return { excluded };
+    if (
+      options.reopenFinished === false &&
+      track.segment?.status === "completed" &&
+      (await tx.track.count({ where: { segmentId: track.segment.id, excluded: false } })) > 1
+    )
+      throw new Error("REOPEN_NEEDS_CONFIRMATION");
     await tx.tournament.update({ where: { id: track.tournamentId }, data: { updatedAt: new Date() } });
     await tx.track.update({ where: { id: trackId }, data: { excluded } });
     const segment = track.segment;

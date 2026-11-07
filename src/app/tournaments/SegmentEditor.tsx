@@ -111,7 +111,7 @@ export function SegmentEditor({
             ? `Будет снято ${data.answersToReset} ${pluralRu(data.answersToReset, ["ответ", "ответа", "ответов"])} на сравнения в изменённых сегментах. Их результаты нужно будет определить заново.`
             : "",
           reopen.length
-            ? `Готовый топ ${reopen.map((s) => `«${s.title}»`).join(", ")} снова откроется: места нужно будет сохранить заново.`
+            ? `${reopen.length > 1 ? "Готовые топы" : "Готовый топ"} ${reopen.map((s) => `«${s.title}»`).join(", ")} ${reopen.length > 1 ? "изменятся" : "изменится"}: места нужно будет сохранить заново.`
             : "",
         ].filter(Boolean);
         if (window.confirm(`${parts.join(" ")} Сохранить разбивку?`)) await save(true);

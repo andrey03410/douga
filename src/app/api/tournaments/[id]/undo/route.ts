@@ -3,10 +3,6 @@ import { userOr401, notFound, badRequest } from "@/lib/api";
 import { getTournament, undoLastAnswer } from "@/server/tournaments";
 import { tournamentErrorMessage } from "@/lib/tournament-errors";
 
-const MESSAGES: Record<string, string> = {
-  ALREADY_FINALIZED: "Турнир уже завершён",
-};
-
 /** Undo the last comparison screen — the whole group, not one of its pairs. */
 export async function POST(
   req: Request,
@@ -30,6 +26,6 @@ export async function POST(
     return NextResponse.json({ ok: true, removed });
   } catch (e) {
     const code = String((e as Error).message);
-    return badRequest(MESSAGES[code] ?? tournamentErrorMessage(code));
+    return badRequest(tournamentErrorMessage(code));
   }
 }

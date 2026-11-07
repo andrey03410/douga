@@ -273,24 +273,43 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
         // P24: excluding from or returning into a finished top changes the person's result.
         const byId = new Map(tracks.map((t) => [t.id, t]));
         const finished = new Map<string, string>();
-        for (const item of items) {
+        const changing = items.filter((item) => {
           const t = byId.get(item.trackId)!;
-          if (item.excluded === undefined || item.excluded === t.excluded || t.segment?.status !== "completed") continue;
+          return item.excluded !== undefined && item.excluded !== t.excluded && t.segment?.status === "completed";
+        });
+        const segmentIds = [...new Set(changing.map((item) => byId.get(item.trackId)!.segmentId!))];
+        const active = new Map(
+          (
+            await prisma.track.groupBy({
+              by: ["segmentId"],
+              where: { segmentId: { in: segmentIds }, excluded: false },
+              _count: { _all: true },
+            })
+          ).map((g) => [g.segmentId, g._count._all]),
+        );
+        for (const item of changing) {
+          const segment = byId.get(item.trackId)!.segment!;
           // a lone participant is "finished" automatically: nothing of the person's to lose
-          if ((await prisma.track.count({ where: { segmentId: t.segment.id, excluded: false } })) > 1)
-            finished.set(t.segment.id, t.segment.title);
+          if ((active.get(segment.id) ?? 0) > 1) finished.set(segment.id, segment.title);
         }
-        if (finished.size && !confirmReset)
-          return {
-            requiresConfirmation: true,
-            segmentsToReopen: [...finished].map(([segmentId, title]) => ({ segmentId, title })),
-          };
+        const ask = {
+          requiresConfirmation: true,
+          segmentsToReopen: [...finished].map(([segmentId, title]) => ({ segmentId, title })),
+        };
+        if (finished.size && !confirmReset) return ask;
         // Validate everything first so a bad cover does not leave half the batch applied.
         for (const item of items) await assertOwnedImage(prisma, actor.userId, item.coverArtId);
         for (const { trackId, excluded: _excluded, ...fields } of items)
           if (Object.keys(fields).length) await updateTrackMetadata(actor.userId, trackId, fields);
-        for (const { trackId, excluded } of items)
-          if (excluded !== undefined) await setExcluded(actor.userId, trackId, excluded);
+        try {
+          // re-checked inside each write: the person may have saved the top meanwhile
+          for (const { trackId, excluded } of items)
+            if (excluded !== undefined)
+              await setExcluded(actor.userId, trackId, excluded, { reopenFinished: confirmReset });
+        } catch (e) {
+          if ((e as Error).message === "REOPEN_NEEDS_CONFIRMATION") return ask;
+          throw e;
+        }
         return { updated: items.length };
       }),
   );
