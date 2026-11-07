@@ -93,7 +93,18 @@ function ranked(items: string[], comparisons: Comparison[]): RankedItem[] {
 const SIMULATE_UP_TO = 24;
 
 /** Screens of a run where upload order is the truth. */
+/** The dry run depends only on (n, k, accuracy): pages and progress ask it on every load. */
+const dryRunCache = new Map<string, number>();
 function dryRun(n: number, k: number, settings?: SchemeSettings): number {
+  const key = `${n}:${k}:${settings?.accuracy ?? ""}`;
+  const hit = dryRunCache.get(key);
+  if (hit !== undefined) return hit;
+  const screens = simulate(n, k, settings);
+  dryRunCache.set(key, screens);
+  return screens;
+}
+
+function simulate(n: number, k: number, settings?: SchemeSettings): number {
   const items = Array.from({ length: n }, (_, i) => `p${i}`);
   const order = new Map(items.map((id, i) => [id, i]));
   const log: Comparison[] = [];

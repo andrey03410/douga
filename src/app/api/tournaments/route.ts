@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import {
   userOr401,
   permissionOr403,
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
   try {
     parsed = await participantsFromForm(auth.userId, form, maxArchiveBytes);
   } catch (e) {
+    if (e instanceof ZodError) return badRequest("Некорректный список участников");
     const code = String((e as Error).message);
     if (code === "ARCHIVE_QUOTA") return tooLarge(limitMsg);
     if (["IMAGE_TOO_LARGE", "BAD_EXT", "NOT_FOUND", "TOO_MANY_SHIKIMORI"].includes(code))

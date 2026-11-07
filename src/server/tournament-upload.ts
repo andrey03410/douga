@@ -6,7 +6,7 @@ import {
   groupArchiveTracks,
   type ExtractedTrack,
 } from "@/lib/upload";
-import { itemSourceSchema, resolveItemSources } from "./tournament-items";
+import { resolveItemSources, webItemSourceSchema } from "./tournament-items";
 import type { SkippedItem } from "./shikimori";
 
 /**
@@ -15,13 +15,13 @@ import type { SkippedItem } from "./shikimori";
  * and segment layout. Archives keep their task 27 behaviour.
  */
 
-/** A draft entry: any item source plus the segment it goes to ("каждый тайтл — свой сегмент"). */
+/** A draft entry: a pool or Shikimori source plus the segment it goes to ("каждый тайтл — свой сегмент"). */
 export function parseFormSources(raw: unknown) {
   return z
     .array(z.object({ segment: z.string().trim().max(300).optional() }).passthrough())
     .max(2000)
     .parse(raw)
-    .map(({ segment, ...rest }) => ({ segment, source: itemSourceSchema.parse(rest) }));
+    .map(({ segment, ...rest }) => ({ segment, source: webItemSourceSchema.parse(rest) }));
 }
 
 export interface ParsedParticipants {

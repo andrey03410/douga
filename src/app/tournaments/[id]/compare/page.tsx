@@ -14,7 +14,7 @@ interface Item {
   artist: string | null;
   kind: "audio" | "video" | "image";
   subtitle: string | null;
-  audioUrl: string;
+  audioUrl: string | null;
   imageUrl: string | null;
   thumbUrl: string | null;
   durationSec?: number | null;
@@ -284,7 +284,7 @@ export default function ComparePage({
     <div className="comparison-player">
       <MediaPlayer
         key={t.id}
-        src={t.audioUrl}
+        src={t.audioUrl ?? ""}
         title={showNames ? t.title : "Скрытый трек"}
         kind={t.kind === "video" && showNames ? "video" : "audio"}
         durationSec={t.durationSec}
@@ -427,6 +427,7 @@ export default function ComparePage({
       {kind === "tier" && question[0] ? (
         <TierScreen
           item={question[0]}
+          name={showNames ? question[0].title : "участник"}
           tierNames={data.tierNames ?? []}
           caption={caption(question[0])}
           media={question[0].kind === "image" ? null : player(question[0], 260)}
@@ -442,6 +443,7 @@ export default function ComparePage({
               <ParticipantCard
                 key={t.id}
                 item={t}
+                name={showNames ? t.title : `участник ${i + 1}`}
                 index={i}
                 caption={caption(t)}
                 place={place >= 0 ? place + 1 : null}
@@ -509,7 +511,7 @@ export default function ComparePage({
       <p className="muted keys-hint">
         {kind === "tier"
           ? `Клавиши: 1–${data.tierNames?.length ?? 0} — корзина, 0 — не участвует, Backspace — назад.`
-          : "Клавиши: цифры — выбор, Backspace — назад, 🔍 или долгое нажатие — увеличить."}
+          : `Клавиши: цифры — выбор, Backspace — назад${question.some((t) => t.kind === "image") ? ", 🔍 или долгое нажатие — увеличить" : ""}.`}
       </p>
 
       {zoomed ? (
@@ -635,8 +637,11 @@ function ParticipantCard({
   actionLabel,
   onChoose,
   onZoom,
+  name,
 }: {
   item: Item;
+  /** What assistive tech hears: the title, or a neutral label in blind mode. */
+  name: string;
   index: number;
   caption: React.ReactNode;
   place: number | null;
@@ -655,7 +660,7 @@ function ParticipantCard({
           type="button"
           className="pic-choose"
           disabled={busy || place !== null}
-          aria-label={`${actionLabel}: ${item.title}`}
+          aria-label={`${actionLabel}: ${name}`}
           onClick={() => {
             if (press.fired.current) {
               press.fired.current = false;
@@ -671,7 +676,7 @@ function ParticipantCard({
           </span>
           <span className="pic-caption">{caption}</span>
         </button>
-        <button type="button" className="pic-zoom" aria-label={`Увеличить: ${item.title}`} onClick={onZoom}>
+        <button type="button" className="pic-zoom" aria-label={`Увеличить: ${name}`} onClick={onZoom}>
           🔍
         </button>
       </div>
@@ -690,6 +695,7 @@ function ParticipantCard({
 
 function TierScreen({
   item,
+  name,
   tierNames,
   caption,
   media,
@@ -698,6 +704,7 @@ function TierScreen({
   onZoom,
 }: {
   item: Item;
+  name: string;
   tierNames: string[];
   caption: React.ReactNode;
   media: React.ReactNode;
@@ -709,7 +716,7 @@ function TierScreen({
     <div className="tier-screen">
       <div className="tier-subject">
         {item.kind === "image" ? (
-          <button type="button" className="tier-picture" onClick={onZoom} aria-label={`Увеличить: ${item.title}`}>
+          <button type="button" className="tier-picture" onClick={onZoom} aria-label={`Увеличить: ${name}`}>
             {item.thumbUrl ? <img src={item.thumbUrl} alt="" /> : <span className="pic-none">?</span>}
           </button>
         ) : null}

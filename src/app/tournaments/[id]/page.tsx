@@ -154,7 +154,7 @@ export default async function TournamentOverview({
         <div className="panel">
           <p>В этом сегменте пока нет участников. Добавьте их в «Составе» или в редакторе разбивки ниже.</p>
         </div>
-      ) : !scheme ? null : !isComplete ? (
+      ) : !completed && !scheme ? null : !completed && !isComplete ? (
         <section className="panel">
           <h2>Сравнения</h2>
           <div className="progressbar">
@@ -176,7 +176,7 @@ export default async function TournamentOverview({
           segmentId={t.activeSegmentId}
           ranking={ranking}
           total={Math.max(1, ranking.length)}
-          initialTopSize={t.topSize ?? Math.min(10, Math.max(1, ranking.length))}
+          initialTopSize={Math.min(t.topSize ?? 10, Math.max(1, ranking.length))}
           completed={completed}
           unplaced={unplaced}
           tierList={tierList}

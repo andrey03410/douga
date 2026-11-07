@@ -1,4 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { userOr401, notFound, mediaResponse } from "@/lib/api";
 import { prisma } from "@/lib/db";
@@ -15,6 +16,44 @@ const MIME: Record<string, string> = {
 
 /** Small files and GIFs (which keep moving) are served as they are. */
 const THUMB_MIN_BYTES = 400 * 1024;
+
+/**
+ * One ffmpeg per thumbnail even when the grid asks for it twice at once, and
+ * at most two at a time: preloading a big field must not starve the answers.
+ */
+const making = new Map<string, Promise<void>>();
+let running = 0;
+const waiting: (() => void)[] = [];
+async function withSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (running >= 2) await new Promise<void>((resolve) => waiting.push(resolve));
+  running++;
+  try {
+    return await job();
+  } finally {
+    running--;
+    waiting.shift()?.();
+  }
+}
+/** Written next to the target and renamed: a broken run never leaves a cached half-JPEG. */
+function ensureThumbnail(source: string, target: string): Promise<void> {
+  let pending = making.get(target);
+  if (!pending) {
+    pending = withSlot(async () => {
+      await mkdir(path.dirname(target), { recursive: true });
+      const temp = `${target}.${randomUUID()}.tmp.jpg`;
+      try {
+        await makeThumbnail(source, temp);
+        if (((await stat(temp).catch(() => null))?.size ?? 0) > 0) await rename(temp, target);
+      } finally {
+        await rm(temp, { force: true });
+      }
+    })
+      .catch(() => {})
+      .finally(() => making.delete(target));
+    making.set(target, pending);
+  }
+  return pending;
+}
 
 /**
  * Cover of a track, or the picture of an image participant (task 33).
@@ -48,11 +87,7 @@ export async function GET(
         `${track.id}-${track.coverArt ? track.coverArt.id : "own"}.jpg`,
       );
       const ready = ((await stat(absPath(thumb)).catch(() => null))?.size ?? 0) > 0;
-      if (!ready) {
-        const { mkdir } = await import("node:fs/promises");
-        await mkdir(path.dirname(absPath(thumb)), { recursive: true });
-        await makeThumbnail(absPath(filePath), absPath(thumb)).catch(() => {});
-      }
+      if (!ready) await ensureThumbnail(absPath(filePath), absPath(thumb));
       if (((await stat(absPath(thumb)).catch(() => null))?.size ?? 0) > 0) served = thumb;
     }
   }

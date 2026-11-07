@@ -22,6 +22,7 @@ import {
   canExtend as runCanExtend,
   effectiveScheme,
   effectiveSettings,
+  estimatedScreens,
   parseOverlay,
   runSegment,
   type SegmentRun,
@@ -117,6 +118,10 @@ export function assertNoDuplicates(
   }
 }
 
+/** Pictures are quick to judge: four on a screen; tracks keep pairs (task 33). */
+export const defaultGroupSize = (tracks: { kind: string }[]) =>
+  tracks.length > 0 && tracks.every((t) => t.kind === "image") ? 4 : 2;
+
 export async function createTournament(
   userId: string,
   input: CreateInput,
@@ -167,7 +172,7 @@ export async function createTournament(
             schemePending: !input.scheme,
             schemeSettings: settings ? JSON.stringify(settings) : null,
             blindMode: input.blindMode,
-            groupSize: Math.min(clampGroupSize(input.groupSize ?? 2, tracks.length), cap),
+            groupSize: Math.min(clampGroupSize(input.groupSize ?? defaultGroupSize(tracks), tracks.length), cap),
             status: "in_progress",
           },
         });
@@ -335,10 +340,7 @@ export function nextComparison(t: LoadedTournament) {
     // Growing the group shrinks the plan, so a run switched from pairs to fives
     // can already be past the new estimate. The screen on screen still has to be
     // inside it — "screen 3 of ~2" is nonsense.
-    estimatedTotal: Math.max(
-      done + (question ? 1 : 0),
-      run.overlay ? done + run.planned : run.planned,
-    ),
+    estimatedTotal: estimatedScreens(run, done, Boolean(question)),
   };
 
   return {
@@ -473,6 +475,10 @@ export async function undoLastAnswer(t: LoadedTournament) {
     const lastBatch = current.batches.at(-1) ?? null;
     const lastLegacy =
       current.comparisons.filter((c) => c.batchId === null).at(-1) ?? null;
+    // Newcomers reopened a finished top: its answers are not this run's to undo.
+    const since = parseOverlay(current.insertBase)?.since;
+    const done = current.batches.length + current.comparisons.filter((c) => c.batchId === null).length;
+    if (since !== undefined && done <= since) throw new Error("UNDO_BEFORE_REOPEN");
     if (
       lastBatch &&
       (!lastLegacy || lastBatch.createdAt >= lastLegacy.createdAt)
@@ -691,6 +697,8 @@ export async function setTier(t: LoadedTournament, itemId: string, tier: number)
     const run = segmentRun(current);
     const old = run.tiers.get(itemId);
     const rankTop = current.schemeSettings.rankTop ?? 0;
+    // Already out (e.g. excluded in the composition view): nothing to record, nothing to undo later.
+    if (tier === -1 && current.tracks.find((tr) => tr.id === itemId)?.excluded) return { reopened: false };
     await writeTier(tx, t.id, current.activeSegmentId, itemId, tier);
     if (tier !== -1) await tx.track.update({ where: { id: itemId }, data: { excluded: false } });
     const touchesOrder = (old !== undefined && old < rankTop) || (tier >= 0 && tier < rankTop) || tier === -1;
@@ -698,7 +706,7 @@ export async function setTier(t: LoadedTournament, itemId: string, tier: number)
       await tx.ranking.deleteMany({ where: { tournamentId: t.id, segmentId: current.activeSegmentId } });
       await tx.tournamentSegment.update({
         where: { id: current.activeSegmentId },
-        data: { status: "in_progress", topSize: null },
+        data: { status: "in_progress" },
       });
       await aggregateTournamentStatus(tx, t.id);
       return { reopened: true };
@@ -714,36 +722,56 @@ export async function setTier(t: LoadedTournament, itemId: string, tier: number)
  */
 export async function reopenForNewcomers(
   tx: Tx,
-  tournament: { id: string; scheme: string; schemePending: boolean },
-  segment: { id: string; status: string; scheme: string | null; insertBase: string | null },
+  tournament: { id: string; scheme: string; schemePending: boolean; schemeSettings: string | null },
+  segment: {
+    id: string;
+    status: string;
+    scheme: string | null;
+    schemeSettings: string | null;
+    insertBase: string | null;
+  },
   newcomers: string[],
 ) {
   if (!newcomers.length) return;
   const overlay = parseOverlay(segment.insertBase);
   if (segment.status !== "completed" && !overlay) return;
   const scheme = effectiveScheme(tournament, segment);
-  if (scheme && OVERLAY_SCHEMES.includes(scheme)) {
-    const base =
-      overlay?.base ??
-      (
-        await tx.ranking.findMany({
-          where: { tournamentId: tournament.id, segmentId: segment.id },
-          orderBy: { rank: "asc" },
-        })
-      ).map((r) => r.trackId);
+  const base =
+    overlay?.base ??
+    (
+      await tx.ranking.findMany({
+        where: { tournamentId: tournament.id, segmentId: segment.id },
+        orderBy: { rank: "asc" },
+      })
+    ).map((r) => r.trackId);
+  // A top-K with fewer than K places (someone was excluded) has lost its K-th:
+  // inserting over it would hand the newcomer that place. Replaying the log is cheap.
+  const shortTopK =
+    scheme === "top_k" && !overlay && base.length < (effectiveSettings(scheme, tournament, segment).k ?? 0);
+  // The person's top size stays: finalize clamps it to the places there will be.
+  if (scheme && OVERLAY_SCHEMES.includes(scheme) && !shortTopK) {
     const pending = [...new Set([...(overlay?.pending ?? []), ...newcomers])];
+    const since = overlay?.since ?? (await segmentScreens(tx, segment.id));
     await tx.tournamentSegment.update({
       where: { id: segment.id },
-      data: { insertBase: JSON.stringify({ base, pending }), status: "in_progress", topSize: null },
+      data: { insertBase: JSON.stringify({ base, pending, since }), status: "in_progress" },
     });
   } else {
     await tx.tournamentSegment.update({
       where: { id: segment.id },
-      data: { status: "in_progress", topSize: null, insertBase: null },
+      data: { status: "in_progress", insertBase: null },
     });
   }
   await tx.ranking.deleteMany({ where: { tournamentId: tournament.id, segmentId: segment.id } });
   await aggregateTournamentStatus(tx, tournament.id);
+}
+
+/** Answered screens of a segment: batches plus pre-phase-18 single pairs. */
+async function segmentScreens(tx: Tx, segmentId: string): Promise<number> {
+  const ids = (await tx.track.findMany({ where: { segmentId }, select: { id: true } })).map((t) => t.id);
+  const batches = await tx.comparisonBatch.count({ where: { segmentId } });
+  const legacy = await tx.comparison.count({ where: { batchId: null, trackAId: { in: ids } } });
+  return batches + legacy;
 }
 
 /** Delete a tournament the user owns, including its stored media. */

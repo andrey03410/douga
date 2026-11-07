@@ -302,3 +302,69 @@ describe("composition", () => {
     }
   });
 });
+
+describe("newcomers after review (task 33 QG)", () => {
+  it("reopening keeps the top size, the plan does not grow with answers, undo stops at the reopen", async () => {
+    const id = await make(20, "insertion");
+    await playOut(id);
+    await finalize(await load(id), 15);
+    await addParticipants(userId, id, {}, ["c20", "c21", "c22", "c23"].map((n) => image(n, `new:${n}`)));
+    let t = await load(id);
+    expect(t.status).toBe("in_progress");
+    expect(t.topSize).toBe(15);
+    await expect(undoLastAnswer(t)).rejects.toThrow("UNDO_BEFORE_REOPEN");
+
+    const estimates: number[] = [];
+    let answered = 0;
+    for (;;) {
+      t = await load(id);
+      const step = nextComparison(t);
+      if (!step.question) break;
+      estimates.push(step.screens.estimatedTotal);
+      if (answered === 1) {
+        // this run's own answer can be taken back, the finished run's cannot
+        expect((await undoLastAnswer(t)).removed).toBeGreaterThan(0);
+        t = await load(id);
+        const again = nextComparison(t);
+        await recordAnswer(t, { kind: "rank", ranked: [...again.question!].sort((a, b) => value(t, a) - value(t, b)), rest: [] });
+        answered++;
+        continue;
+      }
+      await recordAnswer(t, { kind: "rank", ranked: [...step.question].sort((a, b) => value(t, a) - value(t, b)), rest: [] });
+      answered++;
+    }
+    expect(estimates.length).toBeGreaterThan(2);
+    expect(Math.max(...estimates)).toBe(estimates[0]);
+    await finalize(t, t.topSize ?? 10);
+    t = await load(id);
+    expect(t.topSize).toBe(15);
+    expect(t.rankings.slice(-4).map((r) => t.tracks.find((tr) => tr.id === r.trackId)!.title)).toEqual(["c20", "c21", "c22", "c23"]);
+  });
+
+  it("a top-K that lost a place to exclusion replays instead of handing the newcomer the K-th place", async () => {
+    const id = await make(12);
+    await setSegmentScheme(userId, id, { scheme: "top_k", settings: { k: 5 } });
+    await playOut(id);
+    await finalize(await load(id), 5);
+    let t = await load(id);
+    const byTitle = (title: string) => t.tracks.find((tr) => tr.title === title)!.id;
+    await setExcluded(userId, byTitle("c02"), true);
+    await addParticipants(userId, id, {}, [image("c99", "new:worst")]);
+    const segment = await prisma.tournamentSegment.findFirstOrThrow({ where: { tournamentId: id } });
+    expect([segment.status, segment.insertBase]).toEqual(["in_progress", null]);
+    await playOut(id);
+    await finalize(await load(id), 5);
+    t = await load(id);
+    expect(t.rankings.map((r) => t.tracks.find((tr) => tr.id === r.trackId)!.title)).toEqual(["c00", "c01", "c03", "c04", "c05"]);
+  });
+
+  it("moving an already excluded participant to 'не участвует' records nothing", async () => {
+    const id = await make(4, "tiers");
+    const t = await load(id);
+    const target = t.tracks[1].id;
+    await setExcluded(userId, target, true);
+    const before = await prisma.comparisonBatch.count({ where: { tournamentId: id } });
+    await setTier(await load(id), target, -1);
+    expect(await prisma.comparisonBatch.count({ where: { tournamentId: id } })).toBe(before);
+  });
+});

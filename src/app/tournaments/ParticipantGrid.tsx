@@ -137,7 +137,13 @@ export function ParticipantGrid({
     <details className="panel composition" open={defaultOpen}>
       <summary>
         <h2>
-          Состав · {activeCount} {pluralRu(activeCount, ["участник", "участника", "участников"])}
+          Состав · {activeCount}{" "}
+          {pluralRu(
+            activeCount,
+            participants.some((p) => p.kind === "image")
+              ? ["участник", "участника", "участников"]
+              : ["трек", "трека", "треков"],
+          )}
           {participants.length > activeCount ? ` · исключено ${participants.length - activeCount}` : ""}
         </h2>
       </summary>

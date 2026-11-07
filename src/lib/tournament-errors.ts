@@ -16,11 +16,11 @@ const MESSAGES: Record<string, string> = {
   STUDIO_ASSET_IN_USE: "Участник используется в проекте студии — сначала уберите его оттуда",
   IMAGE_TOO_LARGE: "Картинка больше 32 МБ",
   BAD_EXT: "Такой формат не поддерживается",
-  NOT_ALLOWED: "Путь вне разрешённых папок",
   NOT_COMPLETE: "Сегмент ещё не завершён",
   NOTHING_MORE_TO_ASK: "Все возможные сравнения уже сделаны",
   ALREADY_FINALIZED: "Топ уже сохранён",
   NOTHING_TO_UNDO: "Отменять нечего",
+  UNDO_BEFORE_REOPEN: "Ответы, данные до добавления новичков, не отменяются",
 };
 
 export function tournamentErrorMessage(code: string): string {

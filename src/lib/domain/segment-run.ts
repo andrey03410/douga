@@ -74,6 +74,8 @@ export function tierMap(batches: readonly BatchRow[]): Map<string, number> {
 export interface Overlay {
   base: string[];
   pending: string[];
+  /** Screens the segment had when it reopened: they stay out of undo and the new plan. */
+  since?: number;
 }
 
 export function parseOverlay(json: string | null | undefined): Overlay | null {
@@ -84,6 +86,7 @@ export function parseOverlay(json: string | null | undefined): Overlay | null {
     return {
       base: v.base.filter((x): x is string => typeof x === "string"),
       pending: v.pending.filter((x): x is string => typeof x === "string"),
+      ...(typeof v.since === "number" && v.since >= 0 ? { since: v.since } : {}),
     };
   } catch {
     return null;
@@ -115,7 +118,7 @@ export interface SegmentRun {
   overlay: Overlay | null;
   question: Question | null;
   result: EngineResult;
-  /** Screens the remaining plan is expected to take in total. */
+  /** Screens the plan is expected to take in total (with an overlay: since it reopened). */
   planned: number;
   input: EngineInput | null;
 }
@@ -170,7 +173,7 @@ export function runSegment(s: SegmentRunInput): SegmentRun {
       items,
       log,
       tiers,
-      overlay: { base, pending },
+      overlay: { base, pending, ...(overlay.since !== undefined ? { since: overlay.since } : {}) },
       question: s.completed || !step.question ? null : { kind: "rank", items: step.question },
       result: {
         placed: toRanked(order, log),
@@ -206,4 +209,14 @@ export function canExtend(run: SegmentRun, completed: boolean): boolean {
       bonusOpponents: (run.input.bonusOpponents ?? 0) + (run.groupSize - 1),
     }) !== null
   );
+}
+
+/**
+ * Screens a segment is expected to take in total: the plan, but never less than
+ * what is done plus the screen on screen. An overlay's plan starts where the
+ * finished run ended.
+ */
+export function estimatedScreens(run: SegmentRun, done: number, onScreen: boolean): number {
+  const planned = run.overlay ? (run.overlay.since ?? done) + run.planned : run.planned;
+  return Math.max(done + (onScreen ? 1 : 0), planned);
 }

@@ -38,7 +38,8 @@ const SCHEMAS: Record<Scheme, z.ZodType<SchemeSettings>> = {
       rankTop: z.number().int().min(0).max(MAX_TIERS),
     })
     .strict()
-    .refine((v) => v.rankTop <= v.tiers.length, "rankTop > tiers"),
+    .refine((v) => v.rankTop <= v.tiers.length, "rankTop > tiers")
+    .refine((v) => new Set(v.tiers.map((t) => t.toLowerCase())).size === v.tiers.length, "duplicate tier names"),
   rating: z.object({ accuracy: z.enum(["fast", "normal", "precise"]) }).strict(),
   bracket: z.object({ thirdPlace: z.boolean() }).strict(),
 };

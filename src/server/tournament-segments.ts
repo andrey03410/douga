@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { effectiveScheme, effectiveSettings, runSegment } from "@/lib/domain/segment-run";
+import { effectiveScheme, effectiveSettings, estimatedScreens, runSegment } from "@/lib/domain/segment-run";
 
 type Db = Prisma.TransactionClient;
 export const segmentsUpdateSchema = z
@@ -316,7 +316,7 @@ export function segmentProgress(
       // Screens, like the compare page (task 33: engines no longer count pairs).
       progress: {
         completed: answeredScreens,
-        estimatedTotal: Math.max(answeredScreens, run.overlay ? answeredScreens + run.planned : run.planned),
+        estimatedTotal: estimatedScreens(run, answeredScreens, false),
       },
     };
   });

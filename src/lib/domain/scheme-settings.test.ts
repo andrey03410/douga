@@ -40,6 +40,7 @@ describe("scheme settings", () => {
     ["tiers", { tiers: ["S"] }],
     ["tiers", { tiers: ["1", "2", "3", "4", "5", "6", "7", "8"] }],
     ["tiers", { tiers: ["S", "A"], rankTop: 3 }],
+    ["tiers", { tiers: ["Топ", "топ", "Мимо"], rankTop: 0 }],
     ["rating", { accuracy: "max" }],
     ["swiss", { k: 3 }],
     ["merge", { thirdPlace: true }],

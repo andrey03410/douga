@@ -14,7 +14,7 @@ import {
   listTournaments,
   updateTournamentSegments,
 } from "@/server/tournaments";
-import { segmentsUpdateSchema } from "@/server/tournament-segments";
+import { assertOwnedImage, segmentsUpdateSchema } from "@/server/tournament-segments";
 import {
   addParticipants,
   deleteParticipants,
@@ -46,7 +46,7 @@ const CREATE_DESCRIPTION = [
   "Участник в items (tracks — синоним): {shikimori:{type:\"character\"|\"anime\",id}} — картинка, имя и ссылка с Shikimori, до 300 за вызов; {assetId} картинки/аудио/видео своего пула; {path} в MCP_LOCAL_MEDIA_DIRS. У любого title?/subtitle?/note? (note — основание включения).",
   "Сбой отдельного Shikimori-участника уходит в skipped[], остальные создаются. Повтор в сегменте отклоняется (DUPLICATE_ITEM). Пути, чужой пул и квота отклоняют весь вызов.",
   "scheme не передавайте: алгоритм выбирает человек (schemeRequired:true). Только по его прямой просьбе: scheme и schemeSettings. estimates — экраны по алгоритмам для отчёта.",
-  "База по профилю Shikimori: shikimori_find_user → shikimori_user_anime_list (смотрел = completed, watching, rewatching; on_hold/dropped только по просьбе; planned никогда) → без kind music/pv/cm → фильтр тайтлов (студия: shikimori_anime.studios или shikimori_find_studio + shikimori_studio_animes) → shikimori_anime_characters role Main → склейте персонажей по id; subtitle — самый ранний просмотренный тайтл с ним.",
+  "База по профилю Shikimori: shikimori_find_user → shikimori_user_anime_list (смотрел = completed, watching, rewatching; on_hold/dropped только по просьбе; planned никогда) → без kind music/pv/cm → фильтр тайтлов (студия: shikimori_find_studio → id, затем shikimori_anime.studios каждого тайтла; shikimori_studio_animes отдаёт не больше 50 и для крупной студии неполон) → shikimori_anime_characters role Main → склейте персонажей по id; subtitle — самый ранний просмотренный тайтл с ним.",
   "Признаки, которых нет в Shikimori (пол, «злодей»), определите сами, основание — в note; сомнительных назовите в отчёте. Сегмент один; по тайтлам — если человек попросил.",
   "Отчёт человеку: сколько участников и из скольких тайтлов, кто пропущен и почему, сомнительные, ссылка url.",
 ].join(" ");
@@ -178,7 +178,7 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
           },
           tracks,
         );
-        const groupSize = input.groupSize ?? 2;
+        const groupSize = t.groupSize;
         return {
           id: t.id,
           url: `/tournaments/${t.id}`,
@@ -196,17 +196,28 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
     "tournament_items_add",
     {
       description:
-        "Добавить участников (формы items как в tournament_create) в сегмент segmentId, в новый сегмент segmentTitle или в первый. В готовом сегменте новички встанут в прежний порядок через сравнения человека. Сбои Shikimori → skipped[].",
+        "Добавить участников (формы items как в tournament_create) в сегмент segmentId, в новый сегмент segmentTitle или в первый. Готовый сегмент снова откроется: новички встанут в прежний порядок через сравнения человека, сохранённый топ снимется до их вставки — сначала requiresConfirmation, повтор с confirmReset:true только при явном согласии. Сбои Shikimori → skipped[].",
       inputSchema: {
         id: z.string(),
         segmentId: z.string().optional(),
         segmentTitle: z.string().trim().min(1).max(300).optional(),
         items: z.array(itemSourceSchema).min(1),
+        confirmReset: z.boolean().default(false),
       },
     },
-    ({ id, segmentId, segmentTitle, items }) =>
+    ({ id, segmentId, segmentTitle, items, confirmReset }) =>
       guard(async (role) => {
         if (segmentId && segmentTitle) throw new Error("SEGMENT_ID_OR_TITLE");
+        // P24: reopening a finished segment changes the person's result.
+        const t = await getTournament(actor.userId, id);
+        if (!t) throw new Error("NOT_FOUND");
+        const target = segmentId ? t.segments.find((s) => s.id === segmentId) : segmentTitle ? undefined : t.segments[0];
+        if (segmentId && !target) throw new Error("NOT_FOUND");
+        if (target?.status === "completed" && !confirmReset)
+          return {
+            requiresConfirmation: true,
+            segmentsToReopen: [{ segmentId: target.id, title: target.title }],
+          };
         const resolved = await resolveItemSources(actor.userId, items, quotasFor(role).maxArchiveBytes);
         const skipped = locate(
           resolved.skipped,
@@ -222,9 +233,10 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
     "tournament_items_update",
     {
       description:
-        "Подписи участников: title, subtitle, note (основание), coverArtId (картинка пула), excluded (исключить из сравнения без удаления; ответы сохраняются, возврат вставит обратно).",
+        "Подписи участников: title, subtitle, note (основание), coverArtId (картинка пула), excluded (исключить из сравнения без удаления; ответы сохраняются, возврат вставит обратно). Исключение или возврат в готовом сегменте меняет топ человека: сначала requiresConfirmation, повтор с confirmReset:true только при явном согласии.",
       inputSchema: {
         id: z.string(),
+        confirmReset: z.boolean().default(false),
         items: z
           .array(
             z
@@ -242,17 +254,33 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
           .max(2000),
       },
     },
-    ({ id, items }) =>
+    ({ id, items, confirmReset }) =>
       guard(async () => {
         const ids = items.map((i) => i.trackId);
-        const owned = await prisma.track.count({
+        const tracks = await prisma.track.findMany({
           where: { id: { in: ids }, tournamentId: id, tournament: { userId: actor.userId } },
+          include: { segment: true },
         });
-        if (owned !== new Set(ids).size) throw new Error("NOT_FOUND");
-        for (const { trackId, excluded, ...fields } of items) {
-          if (excluded !== undefined) await setExcluded(actor.userId, trackId, excluded);
-          if (Object.keys(fields).length) await updateTrackMetadata(actor.userId, trackId, fields);
+        if (tracks.length !== new Set(ids).size) throw new Error("NOT_FOUND");
+        // P24: excluding from or returning into a finished top changes the person's result.
+        const byId = new Map(tracks.map((t) => [t.id, t]));
+        const finished = new Map<string, string>();
+        for (const item of items) {
+          const t = byId.get(item.trackId)!;
+          if (item.excluded !== undefined && item.excluded !== t.excluded && t.segment?.status === "completed")
+            finished.set(t.segment.id, t.segment.title);
         }
+        if (finished.size && !confirmReset)
+          return {
+            requiresConfirmation: true,
+            segmentsToReopen: [...finished].map(([segmentId, title]) => ({ segmentId, title })),
+          };
+        // Validate everything first so a bad cover does not leave half the batch applied.
+        for (const item of items) await assertOwnedImage(prisma, actor.userId, item.coverArtId);
+        for (const { trackId, excluded: _excluded, ...fields } of items)
+          if (Object.keys(fields).length) await updateTrackMetadata(actor.userId, trackId, fields);
+        for (const { trackId, excluded } of items)
+          if (excluded !== undefined) await setExcluded(actor.userId, trackId, excluded);
         return { updated: items.length };
       }),
   );

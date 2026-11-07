@@ -33,7 +33,8 @@ export function participantDto(tr: ParticipantRow) {
     sourceUrl: tr.sourceUrl,
     note: tr.note,
     excluded: tr.excluded,
-    audioUrl: `/api/tracks/${tr.id}/audio`,
+    // a picture has nothing to listen to (the file route still serves it to the SDK)
+    audioUrl: tr.kind === "image" ? null : `/api/tracks/${tr.id}/audio`,
     imageUrl: hasPicture ? `/api/tracks/${tr.id}/cover?art=${version}` : null,
     thumbUrl: hasPicture ? `/api/tracks/${tr.id}/cover?art=${version}&size=thumb` : null,
   };

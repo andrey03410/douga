@@ -889,7 +889,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_source_list",
-    "Discover owned authorial tournament/top sources by title without knowing IDs. Bounded summaries with participant kinds; needsMusic:true means picture participants without sound — add audio.playlist (see video_examples top-images). source_get explicitly reads rankings.",
+    "Discover owned authorial tournament/top sources by title without knowing IDs. Bounded summaries with participant kinds; needsMusic:true means picture participants without sound — add audio.playlist (see video_examples top-images); character pictures are usually portrait: settings.card {orientation:'portrait', fit:'contain'} keeps faces whole, check with video_storyboard. source_get explicitly reads rankings.",
     studio.studioPageSchema,
     (input) => studio.listStudioSources(uid, input),
     true,

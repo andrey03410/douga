@@ -44,6 +44,11 @@ export const itemSourceSchema = z.union([
     .strict(),
 ]);
 export type ItemSource = z.infer<typeof itemSourceSchema>;
+/**
+ * What the site may send: the person's pool and Shikimori. Disk paths are an
+ * MCP-only source (MCP_LOCAL_MEDIA_DIRS of the machine owner), never HTTP.
+ */
+export const webItemSourceSchema = z.union([itemSourceSchema.options[1], itemSourceSchema.options[2]]);
 
 /** Shikimori participants one call may fetch (~75 s of pictures at 250 ms each). */
 export const MAX_SHIKIMORI_PER_CALL = 300;
@@ -275,6 +280,7 @@ async function pruneOverlay(tx: Tx, segmentId: string, gone: Set<string>) {
     where: { id: segmentId },
     data: {
       insertBase: JSON.stringify({
+        ...overlay,
         base: overlay.base.filter((id) => !gone.has(id)),
         pending: overlay.pending.filter((id) => !gone.has(id)),
       }),

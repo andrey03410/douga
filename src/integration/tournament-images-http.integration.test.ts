@@ -248,3 +248,27 @@ it("serves a thumbnail for a big picture and the original for a small one", asyn
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+it("the site never reads the disk: a path source is refused on create and add; a foreign id is refused before work", async () => {
+  const outside = path.join(process.cwd(), "package.json");
+  const created = await upload(
+    req("/api/tournaments", "POST", form([], { sources: JSON.stringify([{ path: outside }]) })),
+  );
+  expect(created.status).toBe(400);
+  expect((await created.json()).error).toBe("Некорректный список участников");
+  expect(await prisma.tournament.count({ where: { userId } })).toBe(0);
+
+  const ok = await upload(req("/api/tournaments", "POST", form([{ name: "a.png", data: PNG }, { name: "b.png", data: PNG }])));
+  const { id } = await ok.json();
+  const before = await prisma.track.count({ where: { tournamentId: id } });
+  const sources = new FormData();
+  sources.set("sources", JSON.stringify([{ path: outside }]));
+  const added = await addItems(req(`/api/tournaments/${id}/items`, "POST", sources), ctx(id));
+  expect(added.status).toBe(400);
+  expect(await prisma.track.count({ where: { tournamentId: id } })).toBe(before);
+
+  const foreign = new FormData();
+  foreign.set("sources", JSON.stringify([{ shikimori: { type: "character", id: 1 } }]));
+  const missing = await addItems(req("/api/tournaments/not-mine/items", "POST", foreign), ctx("not-mine"));
+  expect(missing.status).toBe(404);
+});

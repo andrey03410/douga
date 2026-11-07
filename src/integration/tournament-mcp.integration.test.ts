@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
+import { finalize, getTournament, nextComparison, recordAnswer, setSegmentScheme } from "@/server/tournaments";
 let client: Client, transport: StdioClientTransport, userId: string;
 const email = `tournament-mcp-${randomUUID()}@test.local`;
 let root: string, poolId: string, picturePoolId: string;
@@ -206,6 +207,8 @@ it("builds a picture base from Shikimori, the pool and the disk; the person choo
   expect(Object.keys(created.estimates)).toHaveLength(8);
   const tournament = await prisma.tournament.findUniqueOrThrow({ where: { id: created.id } });
   expect(tournament.schemePending).toBe(true);
+  // pictures default to four on a screen like the site form; three participants clamp it
+  expect(tournament.groupSize).toBe(3);
   const tracks = await prisma.track.findMany({ where: { tournamentId: created.id }, orderBy: { order: "asc" } });
   expect(tracks.map((t) => [t.title, t.kind, t.subtitle, t.note])).toEqual([
     ["Беатриче", "image", null, "главная героиня"],
@@ -251,4 +254,42 @@ it("builds a picture base from Shikimori, the pool and the disk; the person choo
   expect(await prisma.track.count({ where: { tournamentId: created.id } })).toBe(3);
   // the agent never answers: no comparisons exist after all of this
   expect(await prisma.comparisonBatch.count({ where: { tournamentId: created.id } })).toBe(0);
+}, 60_000);
+
+it("a finished top changes only with the person's consent: add and exclude ask first, captions do not", async () => {
+  const created = await call("tournament_create", {
+    title: "Готовый",
+    segments: [{ title: "Все", items: [{ shikimori: { type: "character", id: 1 } }, { shikimori: { type: "character", id: 2 } }] }],
+  });
+  // the person picks the algorithm, answers and saves the top
+  await setSegmentScheme(userId, created.id, { scheme: "round_robin" });
+  const t = (await getTournament(userId, created.id))!;
+  const step = nextComparison(t);
+  await recordAnswer(t, { kind: "rank", ranked: step.question!, rest: [] });
+  await finalize((await getTournament(userId, created.id))!, 2);
+  const segment = await prisma.tournamentSegment.findFirstOrThrow({ where: { tournamentId: created.id } });
+  expect(segment.status).toBe("completed");
+  const [first] = await prisma.track.findMany({ where: { tournamentId: created.id }, orderBy: { order: "asc" } });
+
+  const ask = await call("tournament_items_add", { id: created.id, items: [{ path: `${root}/Rika.png` }] });
+  expect(ask).toEqual({ requiresConfirmation: true, segmentsToReopen: [{ segmentId: segment.id, title: "Все" }] });
+  const exclude = await call("tournament_items_update", { id: created.id, items: [{ trackId: first.id, excluded: true }] });
+  expect(exclude).toMatchObject({ requiresConfirmation: true });
+  expect(await prisma.track.count({ where: { tournamentId: created.id } })).toBe(2);
+  expect(await prisma.ranking.count({ where: { tournamentId: created.id } })).toBe(2);
+  expect((await prisma.track.findUniqueOrThrow({ where: { id: first.id } })).excluded).toBe(false);
+
+  // captions never touch the result; a foreign cover fails the whole batch
+  await expect(
+    call("tournament_items_update", {
+      id: created.id,
+      items: [{ trackId: first.id, note: "не должна сохраниться" }, { trackId: first.id, coverArtId: "foreign" }],
+    }),
+  ).rejects.toThrow("INVALID_ART");
+  expect((await prisma.track.findUniqueOrThrow({ where: { id: first.id } })).note).toBeNull();
+  expect(await call("tournament_items_update", { id: created.id, items: [{ trackId: first.id, note: "основание" }] })).toEqual({ updated: 1 });
+
+  const added = await call("tournament_items_add", { id: created.id, items: [{ path: `${root}/Rika.png` }], confirmReset: true });
+  expect(added.added).toHaveLength(1);
+  expect((await prisma.tournamentSegment.findUniqueOrThrow({ where: { id: segment.id } })).status).toBe("in_progress");
 }, 60_000);
