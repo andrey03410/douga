@@ -2,9 +2,9 @@
 id: 33
 title: Турнир по картинкам и персонажам
 track: product        # product | tech
-stage: build          # brief → product → tech → plan → build → review → merged
+stage: review         # brief → product → tech → plan → build → review → merged
 branch: feat/33-image-tournament
-pr:
+pr: https://github.com/andrey03410/douga/pull/14
 started: 2026-11-07
 merged:
 ---
