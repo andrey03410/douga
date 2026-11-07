@@ -43,6 +43,7 @@
   - `personProfile`: работы с ролями;
   - `userHistory`: постранично, `nextPage: null` означает конец.
 - Если арта нет (заглушка `/assets/globals/missing_original.jpg` или любой нераспознанный путь), `posterPath` равен `null`.
+- Участники турнира (задача 33): `shikimoriParticipants` в [`src/server/shikimori.ts`](../../src/server/shikimori.ts) берёт имена, ссылки и свежие постеры пачками по 50 через GraphQL (`fetchShikimoriCards` в [`src/lib/shikimori.ts`](../../src/lib/shikimori.ts), один запрос на страницу), картинки качает через общую очередь, откат — `/system`-копия. Подпись персонажа без переданной `subtitle` — первое аниме из профиля, но только для пачек до 20 (`PROFILE_SUBTITLE_LIMIT`); у аниме — «год · студии». Сбой одного участника — `skipped[{index,type,id,reason: NOT_FOUND|NO_IMAGE|SHIKIMORI_UNAVAILABLE}]`, остальные создаются. За вызов — до 300 участников (около 75 с картинок). Сайт: [`/api/shikimori/characters?animeId&role=Main|all`](../../src/app/api/shikimori/characters/route.ts) для «+ главные/все персонажи».
 
 ## Грабли
 - Shikimori не отдаёт пол персонажа, в DTO этого поля нет: деление на «мужской/женский» размечается только вручную.
@@ -52,11 +53,12 @@
 - `userAnimeList`, `userFavourites` и `userHistory` сначала вызывают `findUser`, то есть каждый тратит два API-запроса. При обходе сотен аниме минутный бюджет кончается быстро, и вызовы ждут до минуты.
 - Без `label` подписью арта станет имя файла (`shikimori-anime-123`), поэтому передавайте `label`.
 - У записей с `kind` `music`/`pv`/`cm` персонажей нет: отсейте их до `shikimori_anime_characters`.
+- `shikimori_studio_animes` отдаёт не больше 50 тайтлов (`MAX_DISCOVERY`). Для фильтра «тайтлы студии» по списку пользователя проверяйте `shikimori_anime(id).studios` у каждого тайтла: у Madhouse сотни работ. 319 тайтлов профиля — около 4 минут из-за минутного лимита.
 - `description` персонажа — исходный BBCode Shikimori, может содержать спойлеры.
 
 ## Как проверить
 - Юнит-тесты: `npx vitest run src/lib/domain/shikimori.test.ts src/lib/domain/rate-limit.test.ts src/lib/shikimori-queue.test.ts`.
-- Интеграционные тесты: `npx vitest run src/integration/shikimori.integration.test.ts src/integration/mcp.e2e.test.ts`. Вместо Shikimori — локальный HTTP-стенд через `SHIKIMORI_BASE_URL`, база — реальная `prisma/dev.db`.
+- Интеграционные тесты: `npx vitest run src/integration/shikimori.integration.test.ts src/integration/mcp.e2e.test.ts src/integration/tournament-items.integration.test.ts`. Вместо Shikimori — локальный HTTP-стенд через `SHIKIMORI_BASE_URL`, база — реальная `prisma/dev.db`.
 - Вживую: в кабинете `/account` откройте блок пула → «Shikimori». Поиск должен показать превью, «⬇ В пул» — добавить картинку в пул. Через MCP то же проверяется вызовами `shikimori_search` → `import_shikimori_poster`.
 
 ## История
@@ -65,3 +67,4 @@
 - [спека 14](../specs/14-shikimori-robustness.md) — оба лимита со скользящим окном и `Retry-After`, свежий постер через GraphQL.
 - [спека 16](../specs/16-group-comparison.md) — `shikimori_character` (`debutYear`) и `shikimori_anime` (студии) для групповых раундов.
 - [спека 19](../specs/19-mcp-manual-top.md) — исполнители и сэйю в избранном, `shikimori_person`, `description`, `shikimori_user_history`.
+- [задача 33](../features/33-image-tournament/README.md) — пакетный GraphQL-импорт персонажей и аниме участниками турнира, персонажи тайтла на сайте.

@@ -103,15 +103,15 @@
 
 ## 9. QG и ревью
 
-- [ ] Тройка: `npm test` → `npm run build` → `npx tsc --noEmit`.
-- [ ] Живые проверки по `verify`:
+- [x] Тройка: `npm test` → `npm run build` → `npx tsc --noEmit`.
+- [x] Живые проверки по `verify`:
   - сайт — сценарии 1, 3–6 и 390px;
   - настоящий MCP — сценарий 1 на живом Shikimori с профилем владельца;
   - SDK — проект по турниру картинок, кадры и звук музыки.
-- [ ] Ревью свежим субагентом, исправления, «Что посмотреть руками» в `verify.md`.
+- [x] Ревью свежим субагентом, исправления, «Что посмотреть руками» в `verify.md`.
 
 ## 10. Знания
 
-- [ ] Карточки `.ai/map/`: `tournament.md`, `media.md`, `shikimori.md`, `mcp.md`,
+- [x] Карточки `.ai/map/`: `tournament.md`, `media.md`, `shikimori.md`, `mcp.md`,
   `studio-sdk.md`, `dev-env.md`. Гид агента [sdk-guide.md](sdk-guide.md).
   Строка в `.ai/history.md` при вливании.
