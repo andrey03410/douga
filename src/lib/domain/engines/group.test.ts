@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { createEngine, type Engine } from "./index";
-import { decodeGroupAnswer, plannedScreens, targetComparisonsPerItem } from "../group-answer";
+import { legacyEngine as createEngine, type LegacyEngine as Engine } from "@/test/engine-legacy";
+import { plannedScreens } from "./index";
+import { decodeGroupAnswer, targetComparisonsPerItem } from "../group-answer";
 import { orderCoverage } from "../order-coverage";
 import { lookup, pairKey } from "../comparisons";
 import type { Comparison, Scheme } from "../types";
@@ -73,11 +74,9 @@ describe.each(GROUPED)("%s with group ranking", (scheme) => {
     expect(orderCoverage(ITEMS, log).contradictory).toBe(0);
   });
 
-  it.each([2, 3, 4, 5])("never lets the progress bar pass 100% (k=%i)", (k) => {
-    const { log } = simulate(engine, ITEMS, VALUE, k);
-    const p = engine.progress(ITEMS, log, k);
-    expect(p.completed).toBeLessThanOrEqual(p.estimatedTotal);
-  });
+  // Task 33: engines report screens, not pairs; the service shows
+  // max(done + current, plan), so the bar cannot pass 100% by construction.
+  // Screen budgets are covered per engine in simulation.test.ts.
 
   it.each([2, 3, 4, 5])("produces a full strict ranking with groups of %i", (k) => {
     const { log } = simulate(engine, ITEMS, VALUE, k);

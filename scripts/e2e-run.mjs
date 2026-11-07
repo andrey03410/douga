@@ -61,35 +61,59 @@ async function createTournament() {
   return data.id;
 }
 
-// One screen = `question`, a group of 2..k tracks. The answer ranks them
-// best-first: `ranked` beats everything after it, `rest` would be "about equal".
-// Ranking the screen in the order shown is the old "left wins" for any k.
+// One screen = `question`, a group of 2..k participants. `questionKind` says
+// how to answer it: "rank" orders the screen best-first (`ranked` beats
+// everything after it, `rest` would be "about equal"), "pick" names one winner,
+// "tier" puts one participant into a tier (0 = the best). Answering in the order
+// shown is the old "left wins" for any k. A tournament created without an
+// algorithm asks for one first (`schemeRequired`).
+async function answer(id, body) {
+  const r = await jfetch(`/api/tournaments/${id}/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: r.status, body: await r.json() };
+}
+
 async function runComparisons(id) {
   let steps = 0;
   while (true) {
     const next = await (await jfetch(`/api/tournaments/${id}/next`)).json();
     if (next.isComplete) break;
-    const question = next.question ?? [];
-    assert(
-      question.length >= 2 && question.every((t) => t.audioUrl?.includes("/audio")),
-      `group of ${question.length} offered (step ${steps + 1})`,
-    );
-    // verify audio actually streams
-    if (steps === 0) {
-      const audio = await jfetch(question[0].audioUrl);
-      assert(audio.status === 200, "audio streams (200)");
+    if (next.schemeRequired) {
+      const r = await jfetch(`/api/tournaments/${id}/scheme`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheme: "merge", allSegments: true }),
+      });
+      assert(r.status === 200, "algorithm chosen for all segments");
+      continue;
     }
-    const r = await jfetch(`/api/tournaments/${id}/compare`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ranked: question.map((t) => t.id), rest: [] }),
-    });
-    const rj = await r.json();
-    assert(r.status === 200 && rj.ok, `comparison ${steps + 1} recorded`);
+    const question = next.question ?? [];
+    const kind = next.questionKind ?? "rank";
+    assert(
+      question.length >= (kind === "tier" ? 1 : 2) &&
+        question.every((t) => (t.kind === "image" ? t.imageUrl : t.audioUrl?.includes("/audio"))),
+      `${kind} screen of ${question.length} offered (step ${steps + 1})`,
+    );
+    // verify the media actually streams
+    if (steps === 0) {
+      const media = await jfetch(question[0].kind === "image" ? question[0].imageUrl : question[0].audioUrl);
+      assert(media.status === 200, `${question[0].kind === "image" ? "picture" : "audio"} streams (200)`);
+    }
+    const body =
+      kind === "pick"
+        ? { pick: question[0].id }
+        : kind === "tier"
+          ? { itemId: question[0].id, tier: 0 }
+          : { ranked: question.map((t) => t.id), rest: [] };
+    const r = await answer(id, body);
+    assert(r.status === 200 && r.body.ok, `${kind} answer ${steps + 1} recorded`);
     steps++;
-    if (steps > 100) throw new Error("too many comparisons");
+    if (steps > 200) throw new Error("too many comparisons");
   }
-  console.log(`  → completed in ${steps} comparisons`);
+  console.log(`  → completed in ${steps} screens`);
 }
 
 async function finalize(id) {

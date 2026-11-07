@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import path from "node:path";
 import { createPrismaClient } from "@/lib/db";
-import { createEngine } from "@/lib/domain/engines";
+import { legacyEngine as createEngine } from "@/test/engine-legacy";
 import { toDomainComparisonsRaw } from "./helpers";
 // Integration test: drives the real Prisma schema (SQLite) through a full
 // tournament. Uses an isolated connection to the dev database and cleans up

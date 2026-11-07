@@ -103,6 +103,12 @@ export function boundText(
     case "participant.score":
       result = p?.score;
       break;
+    case "participant.subtitle":
+      result = p?.subtitle;
+      break;
+    case "participant.tier":
+      result = p?.tier;
+      break;
     case "segment.title":
       result = ctx.segment?.title;
       break;

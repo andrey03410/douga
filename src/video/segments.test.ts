@@ -28,6 +28,8 @@ function mixed(): VideoDocument {
         album: "Episode 1",
         score: 9.5,
         bestMomentSec: 12,
+        subtitle: "Umineko",
+        tier: "S",
         media: { visual: "picture", audio: "song" },
       },
       { id: "b", label: "B", rank: 1 },
@@ -155,6 +157,8 @@ describe("segmented SDK", () => {
             "participant.comment",
             "participant.album",
             "participant.score",
+            "participant.subtitle",
+            "participant.tier",
           ].map((bind, i) => ({
             id: `text${i}`,
             type: "text",
@@ -190,6 +194,8 @@ describe("segmented SDK", () => {
       "Quiet",
       "Episode 1",
       "9.5",
+      "Umineko",
+      "S",
     ]);
     expect(
       r.plan.scenes[0].nodes.find((n) => n.type === "image")?.style.blur,

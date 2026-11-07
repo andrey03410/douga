@@ -186,6 +186,15 @@
 - Четыре рецепта `video_examples`: rank-reveal, segment-intro, participant-summary, staircase.
 - Пул защищает cover/poster через FK и human 409 TOURNAMENT_ASSET_IN_USE; binding track cover замораживает файл как image.
 
+## Турнир картинок (задача 33)
+
+- Участник SDK получил `subtitle?`, `tier?`, `link?` и `kind?: "audio"|"video"|"image"` ([`types.ts`](../../src/video/types.ts), [`schema.ts`](../../src/video/schema.ts)); текстовые bindings `participant.subtitle` и `participant.tier` ([`nodes.ts`](../../src/video/nodes.ts)).
+- [`sources.ts`](../../src/server/studio/sources.ts): участник-картинка называется по имени (без «artist —»), аниме идёт в `subtitle`, ссылка Shikimori — в `link`, `tier` — название корзины, пока сегмент — тир-лист. Звуковой привязки `source:<id>` у картинки нет, только `source:<id>:cover`; `hasAudio` ложно.
+- `listStudioSources` ([`queries.ts`](../../src/server/studio/queries.ts)) отдаёт `kinds` (виды участников) у источника и сегментов и `needsMusic` (все участники — картинки). Тогда агент добавляет `audio.playlist` с треком пула, иначе ролик немой. Громкость плейлиста по умолчанию 0,35.
+- `video_examples` `top-images`: три участника-картинки с subtitle и link, музыка плейлистом, сцена reveal с карточкой, местом, именем и подписью.
+- Портретные постеры персонажей `top.classic.wide` режет под 16:9 во весь кадр. Схема уже даёт `settings.card {orientation:"portrait", fit:"contain"}`: проверено реальным клипом, лица целы. Подпись пресета лежит поверх карточки, на светлом постере её не видно — это свойство пресета, а не новой фичи.
+- Тесты: `src/video/segments.test.ts` (binds), `src/integration/studio-images.integration.test.ts` (тир-лист → источник без звука, evaluate ready). Живой маршрут — [гид агента](../features/33-image-tournament/sdk-guide.md), приёмка — [verify.md](../features/33-image-tournament/verify.md).
+
 ## Типографика (задача 31)
 
 - `src/video/typography-{types,schema,catalog,compiler,layout,examples}.ts` —

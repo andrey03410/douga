@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
 import { resolve } from "node:path";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -9,9 +10,55 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
+import { finalize, getTournament, nextComparison, recordAnswer, setSegmentScheme } from "@/server/tournaments";
 let client: Client, transport: StdioClientTransport, userId: string;
 const email = `tournament-mcp-${randomUUID()}@test.local`;
-let root: string, poolId: string;
+let root: string, poolId: string, picturePoolId: string;
+let shikimori: Server;
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+/** Local Shikimori: characters 1 and 2 exist with a poster, 404 has no picture. */
+function startShikimori() {
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, "http://localhost");
+    const host = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    if (url.pathname === "/api/graphql") {
+      const chunks: string[] = [];
+      req.on("data", (c) => chunks.push(String(c)));
+      req.on("end", () => {
+        const query = JSON.parse(chunks.join("")).query as string;
+        const ids = (/ids: "([\d,]*)"/.exec(query)?.[1] ?? "").split(",").filter(Boolean);
+        const names: Record<string, string> = { "1": "Беатриче", "2": "Батлер", "404": "Без картинки" };
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({
+            data: {
+              characters: ids
+                .filter((id) => names[id])
+                .map((id) => ({
+                  id,
+                  name: names[id],
+                  russian: names[id],
+                  url: `${host}/characters/${id}`,
+                  poster: id === "404" ? null : { originalUrl: `${host}/uploads/poster/characters/${id}/p.png` },
+                })),
+            },
+          }),
+        );
+      });
+      return;
+    }
+    if (url.pathname.startsWith("/uploads/poster/")) {
+      res.setHeader("content-type", "image/png");
+      return res.end(PNG);
+    }
+    res.statusCode = 404;
+    res.end("no");
+  });
+  return new Promise<Server>((r) => server.listen(0, () => r(server)));
+}
 async function call(name: string, args: Record<string, unknown> = {}) {
   const result = await client.callTool({ name, arguments: args });
   const data = JSON.parse(
@@ -31,6 +78,15 @@ beforeAll(async () => {
   root = absPath(`verification/27-segments/mcp-${userId}`);
   await mkdir(root, { recursive: true });
   await writeFile(`${root}/track.mp3`, "fixture");
+  await writeFile(`${root}/Rika.png`, PNG);
+  const pictureRel = `verification/27-segments/mcp-${userId}/pool.png`;
+  await writeFile(absPath(pictureRel), PNG);
+  picturePoolId = (
+    await prisma.art.create({
+      data: { userId, kind: "image", label: "Мион", filePath: pictureRel },
+    })
+  ).id;
+  shikimori = await startShikimori();
   const rel = `verification/27-segments/mcp-${userId}/pool.mp3`;
   await writeFile(absPath(rel), "pool fixture");
   poolId = (
@@ -48,12 +104,14 @@ beforeAll(async () => {
       DATABASE_URL: process.env.DATABASE_URL!,
       MCP_ACTOR_EMAIL: email,
       MCP_LOCAL_MEDIA_DIRS: root,
+      SHIKIMORI_BASE_URL: `http://127.0.0.1:${(shikimori.address() as { port: number }).port}`,
     },
   });
   await client.connect(transport);
 }, 20000);
 afterAll(async () => {
   await client?.close();
+  await new Promise<void>((r) => (shikimori ? shikimori.close(() => r()) : r()));
   const tournaments = await prisma.tournament.findMany({ where: { userId } });
   for (const t of tournaments) await removePath(`tournaments/${t.id}`);
   await prisma.user.deleteMany({ where: { id: userId } });
@@ -119,3 +177,119 @@ it("prepares owned segments from allowed disk files and pool without exposing hu
     }),
   ).rejects.toThrow("NOT_FOUND");
 });
+
+it("builds a picture base from Shikimori, the pool and the disk; the person chooses the algorithm", async () => {
+  const names = (await client.listTools()).tools.map((t) => t.name);
+  expect(names).toEqual(
+    expect.arrayContaining(["tournament_items_add", "tournament_items_update", "tournament_items_remove"]),
+  );
+  expect(names.filter((n) => /tournament_.*(answer|rank|finalize|compare|tier|scheme)/.test(n))).toEqual([]);
+  const created = await call("tournament_create", {
+    title: "Umineko",
+    segments: [
+      {
+        title: "Все",
+        items: [
+          { shikimori: { type: "character", id: 1 }, note: "главная героиня" },
+          { shikimori: { type: "character", id: 404 } },
+          { assetId: picturePoolId },
+          { path: `${root}/Rika.png`, subtitle: "Higurashi" },
+        ],
+      },
+    ],
+  });
+  expect(created).toMatchObject({
+    itemCount: 3,
+    schemeRequired: true,
+    skipped: [{ segmentIndex: 0, itemIndex: 1, type: "character", id: 404, reason: "NO_IMAGE" }],
+  });
+  expect(created.estimates.merge).toBeGreaterThan(0);
+  expect(Object.keys(created.estimates)).toHaveLength(8);
+  const tournament = await prisma.tournament.findUniqueOrThrow({ where: { id: created.id } });
+  expect(tournament.schemePending).toBe(true);
+  // pictures default to four on a screen like the site form; three participants clamp it
+  expect(tournament.groupSize).toBe(3);
+  const tracks = await prisma.track.findMany({ where: { tournamentId: created.id }, orderBy: { order: "asc" } });
+  expect(tracks.map((t) => [t.title, t.kind, t.subtitle, t.note])).toEqual([
+    ["Беатриче", "image", null, "главная героиня"],
+    ["Мион", "image", null, null],
+    ["Rika", "image", "Higurashi", null],
+  ]);
+
+  // the same character twice in one segment is refused, by name
+  await expect(
+    call("tournament_items_add", { id: created.id, items: [{ shikimori: { type: "character", id: 1 } }] }),
+  ).rejects.toThrow("DUPLICATE_ITEM:Беатриче");
+  const added = await call("tournament_items_add", {
+    id: created.id,
+    items: [{ shikimori: { type: "character", id: 2 } }],
+  });
+  expect(added.added).toHaveLength(1);
+  await expect(
+    call("tournament_items_add", { id: created.id, items: [{ shikimori: { type: "character", id: 404 } }] }),
+  ).rejects.toThrow("ALL_ITEMS_SKIPPED");
+
+  await call("tournament_items_update", {
+    id: created.id,
+    items: [
+      { trackId: tracks[1].id, subtitle: "Higurashi", note: "из пула" },
+      { trackId: tracks[2].id, excluded: true },
+    ],
+  });
+  const updated = await prisma.track.findMany({ where: { tournamentId: created.id }, orderBy: { order: "asc" } });
+  expect(updated.map((t) => [t.subtitle, t.excluded])).toEqual([
+    [null, false],
+    ["Higurashi", false],
+    ["Higurashi", true],
+    [null, false],
+  ]);
+  await expect(
+    call("tournament_items_update", { id: created.id, items: [{ trackId: "foreign", note: "x" }] }),
+  ).rejects.toThrow("NOT_FOUND");
+
+  expect(await call("tournament_items_remove", { id: created.id, trackIds: added.added })).toEqual({
+    requiresConfirmation: false,
+    answersToReset: 0,
+  });
+  expect(await prisma.track.count({ where: { tournamentId: created.id } })).toBe(3);
+  // the agent never answers: no comparisons exist after all of this
+  expect(await prisma.comparisonBatch.count({ where: { tournamentId: created.id } })).toBe(0);
+}, 60_000);
+
+it("a finished top changes only with the person's consent: add and exclude ask first, captions do not", async () => {
+  const created = await call("tournament_create", {
+    title: "Готовый",
+    segments: [{ title: "Все", items: [{ shikimori: { type: "character", id: 1 } }, { shikimori: { type: "character", id: 2 } }] }],
+  });
+  // the person picks the algorithm, answers and saves the top
+  await setSegmentScheme(userId, created.id, { scheme: "round_robin" });
+  const t = (await getTournament(userId, created.id))!;
+  const step = nextComparison(t);
+  await recordAnswer(t, { kind: "rank", ranked: step.question!, rest: [] });
+  await finalize((await getTournament(userId, created.id))!, 2);
+  const segment = await prisma.tournamentSegment.findFirstOrThrow({ where: { tournamentId: created.id } });
+  expect(segment.status).toBe("completed");
+  const [first] = await prisma.track.findMany({ where: { tournamentId: created.id }, orderBy: { order: "asc" } });
+
+  const ask = await call("tournament_items_add", { id: created.id, items: [{ path: `${root}/Rika.png` }] });
+  expect(ask).toEqual({ requiresConfirmation: true, segmentsToReopen: [{ segmentId: segment.id, title: "Все" }] });
+  const exclude = await call("tournament_items_update", { id: created.id, items: [{ trackId: first.id, excluded: true }] });
+  expect(exclude).toMatchObject({ requiresConfirmation: true });
+  expect(await prisma.track.count({ where: { tournamentId: created.id } })).toBe(2);
+  expect(await prisma.ranking.count({ where: { tournamentId: created.id } })).toBe(2);
+  expect((await prisma.track.findUniqueOrThrow({ where: { id: first.id } })).excluded).toBe(false);
+
+  // captions never touch the result; a foreign cover fails the whole batch
+  await expect(
+    call("tournament_items_update", {
+      id: created.id,
+      items: [{ trackId: first.id, note: "не должна сохраниться" }, { trackId: first.id, coverArtId: "foreign" }],
+    }),
+  ).rejects.toThrow("INVALID_ART");
+  expect((await prisma.track.findUniqueOrThrow({ where: { id: first.id } })).note).toBeNull();
+  expect(await call("tournament_items_update", { id: created.id, items: [{ trackId: first.id, note: "основание" }] })).toEqual({ updated: 1 });
+
+  const added = await call("tournament_items_add", { id: created.id, items: [{ path: `${root}/Rika.png` }], confirmReset: true });
+  expect(added.added).toHaveLength(1);
+  expect((await prisma.tournamentSegment.findUniqueOrThrow({ where: { id: segment.id } })).status).toBe("in_progress");
+}, 60_000);

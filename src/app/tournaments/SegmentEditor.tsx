@@ -105,12 +105,16 @@ export function SegmentEditor({
       const data = await res.json();
       if (!res.ok) throw Error(data.error ?? "Не удалось сохранить разбивку");
       if (data.requiresConfirmation) {
-        if (
-          window.confirm(
-            `Будет снято ${data.answersToReset} ${pluralRu(data.answersToReset, ["ответ", "ответа", "ответов"])} на сравнения в изменённых сегментах. Их результаты нужно будет определить заново. Сохранить разбивку?`,
-          )
-        )
-          await save(true);
+        const reopen: { title: string }[] = data.segmentsToReopen ?? [];
+        const parts = [
+          data.answersToReset
+            ? `Будет снято ${data.answersToReset} ${pluralRu(data.answersToReset, ["ответ", "ответа", "ответов"])} на сравнения в изменённых сегментах. Их результаты нужно будет определить заново.`
+            : "",
+          reopen.length
+            ? `${reopen.length > 1 ? "Готовые топы" : "Готовый топ"} ${reopen.map((s) => `«${s.title}»`).join(", ")} ${reopen.length > 1 ? "изменятся" : "изменится"}: места нужно будет сохранить заново.`
+            : "",
+        ].filter(Boolean);
+        if (window.confirm(`${parts.join(" ")} Сохранить разбивку?`)) await save(true);
         return;
       }
       setDirty(false);
@@ -353,12 +357,23 @@ export function SegmentEditor({
                         >
                           ⠿
                         </button>
+                        {t.coverArtId || t.coverPath ? (
+                          // Task 33: pictures are what identifies a participant.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            className="rank-cover"
+                            src={`/api/tracks/${t.id}/cover?art=${encodeURIComponent(t.coverArtId ?? "own")}&size=thumb`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : null}
                         <span className="track-name">
                           <b>{t.title}</b>
-                          {t.artist ? <small>{t.artist}</small> : null}
+                          {t.subtitle || t.artist ? <small>{t.subtitle ?? t.artist}</small> : null}
+                          {t.excluded ? <small>исключён</small> : null}
                         </span>
                       </div>
-                      {t.album || t.sourceFolder ? (
+                      {t.kind !== "image" && (t.album || t.sourceFolder) ? (
                         <p className="track-origin muted">
                           {[t.album, t.sourceFolder]
                             .filter(Boolean)

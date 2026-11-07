@@ -1,6 +1,7 @@
-import type { Comparison, Pair, Progress, RankedItem } from "../types";
+import type { Pair } from "../types";
 import { computeScores, makeComparator, NeedComparison } from "../comparisons";
-import type { Engine } from "./index";
+import type { Comparison } from "../types";
+import type { Engine } from "./types";
 
 /**
  * Comparison sort (stable merge sort) that asks the user only the comparisons it
@@ -40,49 +41,41 @@ export function mergeWorstCaseComparisons(n: number): number {
   return n * k - 2 ** k + 1;
 }
 
+function nextMergePair(items: string[], comparisons: Comparison[]): Pair | null {
+  const cmp = makeComparator(comparisons);
+  try {
+    mergeSortOrder(items, cmp);
+    return null; // completed without needing a new comparison
+  } catch (e) {
+    if (e instanceof NeedComparison) return { a: e.a, b: e.b };
+    throw e;
+  }
+}
+
 export const mergeEngine: Engine = {
   scheme: "merge",
   // A merge sort already runs at the information-theoretic floor, so group
   // answers buy it nothing: a k-way merge costs n*log2(n) comparisons either
   // way. It stays pairwise and says so instead of silently ignoring the setting.
   maxGroupSize: 2,
+  // Merge sort has no meaningful intermediate ranking until it finishes.
+  partial: false,
 
-  nextQuestion(items, comparisons): string[] | null {
-    const pair = this.nextPair(items, comparisons);
-    return pair ? [pair.a, pair.b] : null;
+  next({ items, comparisons }) {
+    const pair = nextMergePair(items, comparisons);
+    return pair ? { kind: "rank", items: [pair.a, pair.b] } : null;
   },
 
-  nextPair(items, comparisons): Pair | null {
-    const cmp = makeComparator(comparisons);
-    try {
-      mergeSortOrder(items, cmp);
-      return null; // completed without needing a new comparison
-    } catch (e) {
-      if (e instanceof NeedComparison) return { a: e.a, b: e.b };
-      throw e;
-    }
-  },
-
-  isComplete(items, comparisons): boolean {
-    return this.nextPair(items, comparisons) === null;
-  },
-
-  ranking(items, comparisons): RankedItem[] {
-    const cmp = makeComparator(comparisons);
-    const order = mergeSortOrder(items, cmp); // throws if incomplete — guard with isComplete
+  result({ items, comparisons }) {
+    if (nextMergePair(items, comparisons))
+      return { placed: [], unplaced: items.map((id) => ({ id })) };
+    const order = mergeSortOrder(items, makeComparator(comparisons));
     const scores = computeScores(items, comparisons);
-    return order.map((id, i) => ({ id, rank: i + 1, score: scores.get(id) ?? 0 }));
-  },
-
-  progress(items, comparisons): Progress {
     return {
-      completed: comparisons.length,
-      estimatedTotal: mergeWorstCaseComparisons(items.length),
+      placed: order.map((id, i) => ({ id, rank: i + 1, score: scores.get(id) ?? 0 })),
+      unplaced: [],
     };
   },
 
-  // Merge sort has no meaningful intermediate ranking until it finishes.
-  partialRanking() {
-    return null;
-  },
+  plannedScreens: (n) => mergeWorstCaseComparisons(n),
 };

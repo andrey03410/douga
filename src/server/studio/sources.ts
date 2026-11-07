@@ -9,6 +9,7 @@ import { getBuiltinPresets, videoPresetSchema } from "@/video";
 import { prisma } from "@/lib/db";
 import { probeMediaInfo } from "@/lib/audio";
 import { ensureTournamentSegments } from "@/server/tournament-segments";
+import { effectiveScheme, effectiveSettings, tierMap } from "@/lib/domain/segment-run";
 import { safeFile } from "./assets";
 import { hash, canonical, type Db } from "./shared";
 import { StudioError } from "./errors";
@@ -20,6 +21,11 @@ async function loadSource(db: Db, userId: string, id: string) {
       orderBy: [{ rank: "asc" as const }, { trackId: "asc" as const }],
     },
     tracks: true,
+    // Task 33: tier answers give participants their tier name.
+    batches: {
+      where: { kind: "tier" },
+      orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+    },
   };
   const tournament = await db.tournament.findFirst({
     where: { id, userId },
@@ -146,6 +152,7 @@ export async function reconcileSource(
         score: r.score,
       })),
       tracks: [...tournament.tracks].sort((a, b) => a.id.localeCompare(b.id)),
+      tiers: tournament.batches.map((b) => [b.segmentId, b.itemIds, b.tier]),
     }),
   );
   const participants: Participant[] = [];
@@ -160,33 +167,47 @@ export async function reconcileSource(
       .filter((rank) => byTrack.get(rank.trackId)?.segmentId === segment.id)
       .slice(0, size ?? undefined);
     if (!ranks.length) continue;
+    // Tier names exist only while the segment is a tier list (task 33).
+    const scheme = effectiveScheme(tournament, segment);
+    const tierNames = scheme === "tiers" ? (effectiveSettings(scheme, tournament, segment).tiers ?? []) : [];
+    const tiers = tierMap(tournament.batches.filter((b) => b.segmentId === segment.id));
     const participantIds: string[] = [];
     for (const rank of ranks) {
       const track = byTrack.get(rank.trackId);
       if (!track) throw new StudioError("SOURCE_TRACK_NOT_FOUND");
       const retained = old.get(track.id);
+      const picture = track.kind === "image";
       const participant: Participant = {
         ...retained,
         id: track.id,
-        label: track.artist ? `${track.artist} — ${track.title}` : track.title,
+        // A picture participant is called by its name; its anime goes to subtitle (P23).
+        label: track.artist && !picture ? `${track.artist} — ${track.title}` : track.title,
         rank: rank.rank,
         score: rank.score,
       };
       // These fields belong to the source. Removing a DB value also removes stale authored data.
-      for (const key of ["comment", "album", "bestMomentSec"] as const) {
+      for (const key of ["comment", "album", "bestMomentSec", "subtitle"] as const) {
         delete participant[key];
         if (track[key] !== null)
           Object.assign(participant, { [key]: track[key] });
       }
+      delete participant.link;
+      if (track.sourceUrl) participant.link = track.sourceUrl;
+      participant.kind = picture ? "image" : track.kind === "video" ? "video" : "audio";
+      delete participant.tier;
+      const tier = tiers.get(track.id);
+      if (tier !== undefined && tierNames[tier]) participant.tier = tierNames[tier];
       const key = `source:${track.id}`;
       const coverKey = `${key}:cover`;
       if (!retained) {
-        document.bindings[key] = {
-          kind: "track",
-          tournamentId: tournament.id,
-          trackId: track.id,
-        };
-        let hasAudio = true;
+        if (!picture)
+          document.bindings[key] = {
+            kind: "track",
+            tournamentId: tournament.id,
+            trackId: track.id,
+          };
+        // A picture has no sound: the document's music plays under it (task 33).
+        let hasAudio = !picture;
         if (track.kind === "video") {
           try {
             hasAudio = (await probeMediaInfo(await safeFile(track.filePath)))

@@ -2,23 +2,31 @@ import { NextResponse } from "next/server";
 import { userOr401, notFound, badRequest } from "@/lib/api";
 import {
   getTournament,
-  recordGroupAnswer,
+  recordAnswer,
   nextComparison,
+  type Answer,
 } from "@/server/tournaments";
-
-const MESSAGES: Record<string, string> = {
-  GROUP_MISMATCH: "Экран устарел — обновите страницу и ответьте заново",
-  NOTHING_TO_ANSWER: "Сравнивать больше нечего",
-  INVALID_PAIR: "Некорректные данные сравнения",
-};
+import { segmentIdOf, tournamentErrorMessage } from "@/lib/tournament-errors";
 
 const isIdList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
 
+/** The three screen answers (task 33); a pair screen is just the two-item rank. */
+function parseAnswer(body: Record<string, unknown> | null): Answer | null {
+  if (!body) return null;
+  if (typeof body.pick === "string") return { kind: "pick", winner: body.pick };
+  if (typeof body.itemId === "string" && typeof body.tier === "number")
+    return { kind: "tier", itemId: body.itemId, tier: body.tier };
+  const ranked = body.ranked;
+  const rest = body.rest ?? [];
+  if (!isIdList(ranked) || !isIdList(rest) || ranked.length + rest.length < 2) return null;
+  return { kind: "rank", ranked, rest };
+}
+
 /**
- * One comparison screen. `ranked` is best-first; `rest` holds the tracks the
- * user declined to separate. A pair screen is just the two-track case, so the
- * classic "left / draw / right" answer travels the same route.
+ * One comparison screen: `{ranked, rest}` orders a group (rest = roughly equal),
+ * `{pick}` chooses the best, `{itemId, tier}` puts one participant into a tier
+ * (-1 = "не участвует").
  */
 export async function POST(
   req: Request,
@@ -28,35 +36,20 @@ export async function POST(
   if ("response" in auth) return auth.response;
 
   const body = await req.json().catch(() => null);
-  const ranked = body?.ranked;
-  const rest = body?.rest ?? [];
-  if (!isIdList(ranked) || !isIdList(rest) || ranked.length + rest.length < 2) {
-    return badRequest("Некорректные данные сравнения");
-  }
+  const answer = parseAnswer(body);
+  if (!answer) return badRequest("Некорректные данные сравнения");
 
-  const t = await getTournament(
-    auth.userId,
-    params.id,
-    typeof body?.segmentId === "string"
-      ? body.segmentId
-      : (new URL(req.url).searchParams.get("segmentId") ?? undefined),
-  );
+  const segmentId = segmentIdOf(req, body);
+  const t = await getTournament(auth.userId, params.id, segmentId);
   if (!t) return notFound();
 
   try {
-    await recordGroupAnswer(t, ranked, rest);
+    await recordAnswer(t, answer);
   } catch (e) {
-    const code = String((e as Error).message);
-    return badRequest(MESSAGES[code] ?? code);
+    return badRequest(tournamentErrorMessage(String((e as Error).message)));
   }
 
-  const updated = await getTournament(
-    auth.userId,
-    params.id,
-    typeof body?.segmentId === "string"
-      ? body.segmentId
-      : (new URL(req.url).searchParams.get("segmentId") ?? undefined),
-  );
+  const updated = await getTournament(auth.userId, params.id, segmentId);
   const next = updated ? nextComparison(updated) : null;
   return NextResponse.json({
     ok: true,

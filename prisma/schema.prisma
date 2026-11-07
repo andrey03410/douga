@@ -54,6 +54,11 @@ model Tournament {
   // Opponents per track bought beyond the plan via "one more round". Stored in
   // opponents, not rounds, so changing groupSize does not move what was bought.
   bonusOpponents Int @default(0)
+  // Task 33: the algorithm is chosen by the person. True while nobody picked
+  // one yet (agent-built bases); `scheme` then is only a placeholder.
+  schemePending Boolean @default(false)
+  // Task 33: settings of the default scheme (JSON, see scheme-settings.ts).
+  schemeSettings String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -77,6 +82,12 @@ model TournamentSegment {
   status String @default("in_progress")
   topSize Int?
   bonusOpponents Int @default(0)
+  // Task 33: own algorithm; null inherits Tournament.scheme.
+  scheme String?
+  schemeSettings String?
+  // Task 33: JSON {base, pending} while newcomers are inserted into a finished
+  // order; null otherwise.
+  insertBase String?
   tracks Track[]
   batches ComparisonBatch[]
   rankings Ranking[]
@@ -96,12 +107,22 @@ model Track {
   coverPath String?
   coverArtId String?
   coverArt Art? @relation("TrackCover", fields: [coverArtId], references: [id], onDelete: Restrict)
+  // Task 33: participant metadata. `subtitle` is the second caption line
+  // (anime of a character, "year · studio" of an anime), `sourceKey` detects
+  // duplicates (shikimori:character:1, art:<id>), `note` is the agent's reason.
+  subtitle String?
+  sourceUrl String?
+  sourceKey String?
+  note String?
+  // Task 33: excluded participants are kept with their answers but skipped by
+  // the engine and the result.
+  excluded Boolean @default(false)
   title        String
   artist       String?
   filePath     String
   durationSec  Float?
   order        Int
-  kind         String  @default("audio") // "audio" | "video"
+  kind         String  @default("audio") // "audio" | "video" | "image"
   // File size on disk. Float (not Int) because files may exceed 2^31 bytes.
   // Nullable: rows created before phase 5 are backfilled lazily via stat().
   sizeBytes    Float?
@@ -121,6 +142,10 @@ model ComparisonBatch {
   segment TournamentSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   size         Int // tracks shown on the screen
   itemIds      String // JSON array of the shown track ids, in the order shown
+  // Task 33: "rank" | "pick" | "tier". Tier screens carry no pairs, only `tier`
+  // (-1 = "не участвует").
+  kind         String   @default("rank")
+  tier         Int?
   createdAt    DateTime @default(now())
 
   comparisons  Comparison[]

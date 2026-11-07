@@ -19,6 +19,9 @@ export const MCP_TOOL_NAMES = [
   "tournament_list",
   "tournament_get",
   "tournament_create",
+  "tournament_items_add",
+  "tournament_items_update",
+  "tournament_items_remove",
   "tournament_segments_update",
   "video_capabilities",
   "video_motion_list",
@@ -72,7 +75,7 @@ export const MCP_INSTRUCTIONS = [
   'Простой путь: video_preset_list recipes:true + kind/format/query → video_preset_get (форма/пример/изображение) → video_project_create presetId → video_content_set (участники с visualAssetId/audioAssetId, раунды либо действия доски; mode merge|replace) → video_storyboard → video_review → video_review_apply выбранных suggestions → повторная проверка. Все nextAction содержат готовый tool и arguments. Галерея /studio/recipes.',
   'video_storyboard показывает смысловые кадры без commit. Для следующих страниц используйте nextPageAction/sourceJobId; review/deep с sourceJobId проверяют тот же снимок. compareRevision/compareJobId — до/после; pixelDiff:true добавляет diff PNG/PSNR. queued → video_job_get → video_job_inspect (PNG). Без worker очередь ждёт. video_review mode:deep готовит клипы со звуком; notChecked не означает успех.',
   'Топ турнира: video_source_list → video_project_create presetId топа + sourceId → оформление → validate/commit/job. Места определяет человек. Свой топ: source.kind:"manual", заданные rank, медиа из пула; settings.top.snippet.mode active. picker.* — пикер, board.* — доски; полные документы video_examples.',
-  'Медиа: import_local_media/import_youtube_audio/import_shikimori_poster/video_import_start → пул. artId = assetId привязки {kind:"pool",assetId}. tournament_create/segments_update готовят состав; requiresConfirmation/answersToReset требуют согласия перед confirmReset:true.',
+  'Медиа: import_local_media/import_youtube_audio/import_shikimori_poster/video_import_start → пул. artId = assetId привязки {kind:"pool",assetId}. tournament_create (items: shikimori/assetId/path; рецепт базы в описании), tournament_items_add/update/remove, segments_update готовят состав; алгоритм и ответы — человек; requiresConfirmation/answersToReset требуют согласия перед confirmReset:true.',
   'Моушен: video_motion_list/video_motion_get; flash требует category. Типографика: video_font_list/video_font_get, video_typography_list/video_typography_get; строки/глифы/PNG — video_text_inspect. Схемы video_schema_get; галереи /studio/motion и /studio/typography.',
   'Запись: expectedVersion (CAS, не revision), idempotencyKey для повторов. Рецепт через video_preset_apply сохраняет сцены/тайминги; mode preserve сохраняет overrides, replace заменяет только оформление. После проверки validate → commit → job_start. Просмотр/исправление не публикует ролик.',
 ].join("\n");

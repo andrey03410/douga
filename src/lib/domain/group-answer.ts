@@ -1,5 +1,4 @@
-import type { Comparison, Scheme } from "./types";
-import { mergeWorstCaseComparisons } from "./engines/merge";
+import type { Comparison } from "./types";
 
 /**
  * Phase 18: one screen can ask for a ranking of several tracks instead of a
@@ -69,23 +68,17 @@ export function validateGroupAnswer(
 }
 
 /**
- * Upper bound on screens for the progress bar and the "how long will this take"
- * estimate in the create form. Never below the real run, so the bar stays <=100%.
+ * Task 33: a "pick the best" screen. The winner beats every other participant
+ * on the screen; the others are NOT compared among themselves — unlike the
+ * "roughly equal" tail of a ranked screen, nothing is said about them.
  */
-export function plannedScreens(scheme: Scheme, n: number, groupSize: number): number {
-  if (n <= 1) return 0;
-  const k = clampGroupSize(groupSize, n);
+export function decodePickAnswer(winner: string, others: string[]): Comparison[] {
+  return others
+    .filter((id) => id !== winner)
+    .map((id) => ({ a: winner, b: id, result: "a" as const }));
+}
 
-  if (scheme === "merge") return mergeWorstCaseComparisons(n);
-
-  if (scheme === "round_robin") {
-    const pairs = (n * (n - 1)) / 2;
-    const perScreen = (k * (k - 1)) / 2;
-    return Math.ceil(pairs / perScreen);
-  }
-
-  // Swiss: each pass over the field costs ceil(n/k) screens and gives every
-  // track k-1 comparisons.
-  const rounds = Math.ceil(targetComparisonsPerItem(n) / (k - 1));
-  return rounds * Math.ceil(n / k);
+/** A pick answer must name one participant of the screen. */
+export function validatePickAnswer(question: string[], winner: string): "GROUP_MISMATCH" | null {
+  return question.includes(winner) ? null : "GROUP_MISMATCH";
 }

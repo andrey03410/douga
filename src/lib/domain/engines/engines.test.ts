@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createEngine, type Engine } from "./index";
+import { legacyEngine as createEngine, type LegacyEngine as Engine } from "@/test/engine-legacy";
 import { swissRounds } from "./swiss";
 import { mergeWorstCaseComparisons } from "./merge";
 import type { Comparison } from "../types";

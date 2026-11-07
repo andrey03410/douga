@@ -12,17 +12,22 @@ const FFMPEG = ffmpegPath as unknown as string;
 /** Low sample rate is plenty for energy analysis and keeps decoding fast. */
 const ANALYSIS_RATE = 8000;
 
-function run(args: string[], input?: Buffer): Promise<Buffer> {
+function run(args: string[], input?: Buffer, timeoutMs?: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const proc = spawn(FFMPEG, args, { stdio: ["pipe", "pipe", "pipe"] });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
+    const timer = timeoutMs ? setTimeout(() => proc.kill("SIGKILL"), timeoutMs) : null;
     proc.stdout.on("data", (d) => out.push(d));
     proc.stderr.on("data", (d) => err.push(d));
-    proc.on("error", reject);
-    proc.on("close", (code) => {
+    proc.on("error", (e) => {
+      if (timer) clearTimeout(timer);
+      reject(e);
+    });
+    proc.on("close", (code, signal) => {
+      if (timer) clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(out));
-      else reject(new Error(`ffmpeg exited ${code}: ${Buffer.concat(err).toString()}`));
+      else reject(new Error(`ffmpeg exited ${code ?? signal}: ${Buffer.concat(err).toString()}`));
     });
     if (input) {
       proc.stdin.write(input);
@@ -67,6 +72,25 @@ export async function extractPoster(inputPath: string, outputPath: string): Prom
     // very short video: 0.5s seek lands past the end -> retry from frame 0
   }
   await run(["-y", "-i", inputPath, "-frames:v", "1", "-q:v", "3", outputPath]);
+}
+
+/**
+ * Task 33: a small JPEG of a picture participant for the compare grid. The
+ * first frame only (GIFs are served as is by the caller, they keep moving).
+ */
+export async function makeThumbnail(inputPath: string, outputPath: string, width = 480): Promise<void> {
+  await run([
+    "-y",
+    "-i",
+    inputPath,
+    "-vf",
+    `scale='min(${width},iw)':-2`,
+    "-frames:v",
+    "1",
+    "-q:v",
+    "4",
+    outputPath,
+  ], undefined, 30_000); // a stuck decoder must not hold a thumbnail slot forever
 }
 
 /** Decode a file to mono float32 PCM at ANALYSIS_RATE for RMS analysis. */

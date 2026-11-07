@@ -1,12 +1,11 @@
-import type { Comparison, Pair, Progress, RankedItem } from "../types";
+import type { Comparison } from "../types";
 import { computeScores, opponentCounts, pairKey, playedPairs, rankByScore } from "../comparisons";
 import {
   MAX_GROUP_SIZE,
   clampGroupSize,
-  plannedScreens,
   targetComparisonsPerItem,
 } from "../group-answer";
-import type { Engine } from "./index";
+import type { Engine } from "./types";
 
 /** Number of Swiss rounds for n players: ceil(log2 n), at least 1. */
 export function swissRounds(n: number): number {
@@ -75,38 +74,28 @@ function nextGroup(
   return group.length >= 2 ? group : null;
 }
 
+/** Swiss plan: each pass over the field costs ceil(n/k) screens and gives every track k-1 comparisons. */
+export function swissPlannedScreens(n: number, groupSize: number): number {
+  if (n <= 1) return 0;
+  const k = clampGroupSize(groupSize, n);
+  const rounds = Math.ceil(targetComparisonsPerItem(n) / (k - 1));
+  return rounds * Math.ceil(n / k);
+}
+
 export const swissEngine: Engine = {
   scheme: "swiss",
   maxGroupSize: MAX_GROUP_SIZE,
+  partial: true,
 
-  nextQuestion(items, comparisons, groupSize, bonusOpponents = 0): string[] | null {
-    return nextGroup(items, comparisons, groupSize, bonusOpponents);
-  },
-
-  nextPair(items, comparisons): Pair | null {
-    const group = nextGroup(items, comparisons, 2);
-    return group ? { a: group[0], b: group[1] } : null;
-  },
-
-  isComplete(items, comparisons, bonusOpponents = 0): boolean {
-    return nextGroup(items, comparisons, 2, bonusOpponents) === null;
-  },
-
-  ranking(items, comparisons): RankedItem[] {
-    return rankByScore(items, comparisons);
-  },
-
-  progress(items, comparisons, groupSize = 2): Progress {
-    const n = items.length;
-    const k = clampGroupSize(groupSize, n);
-    return {
-      completed: comparisons.length,
-      estimatedTotal: plannedScreens("swiss", n, k) * ((k * (k - 1)) / 2),
-    };
+  next({ items, comparisons, groupSize, bonusOpponents = 0 }) {
+    const group = nextGroup(items, comparisons, groupSize, bonusOpponents);
+    return group ? { kind: "rank", items: group } : null;
   },
 
   // Points-based standings are meaningful at any point.
-  partialRanking(items, comparisons): RankedItem[] {
-    return rankByScore(items, comparisons);
+  result({ items, comparisons }) {
+    return { placed: rankByScore(items, comparisons), unplaced: [] };
   },
+
+  plannedScreens: swissPlannedScreens,
 };

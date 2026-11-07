@@ -2,9 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { createEngine } from "@/lib/domain/engines";
-import type { Scheme } from "@/lib/domain/types";
-import { clampGroupSize } from "@/lib/domain/group-answer";
+import { effectiveScheme, effectiveSettings, estimatedScreens, runSegment, screensBefore } from "@/lib/domain/segment-run";
 
 type Db = Prisma.TransactionClient;
 export const segmentsUpdateSchema = z
@@ -68,12 +66,13 @@ export async function ensureTournamentSegments(db: Db, tournamentId: string) {
 }
 
 export async function completeSingleton(db: Db, segmentId: string) {
-  const tracks = await db.track.findMany({ where: { segmentId } });
+  // Task 33: excluded participants do not count — one active participant is a finished top.
+  const tracks = await db.track.findMany({ where: { segmentId, excluded: false } });
   if (tracks.length !== 1) return;
   const tr = tracks[0];
   await db.tournamentSegment.update({
     where: { id: segmentId },
-    data: { status: "completed", topSize: 1 },
+    data: { status: "completed", topSize: 1, insertBase: null },
   });
   await db.ranking.upsert({
     where: {
@@ -195,8 +194,13 @@ export async function updateTournamentSegments(
       (c) => moved.has(c.trackAId) || moved.has(c.trackBId),
     );
     const answersToReset = removedBatches.length + removedLegacy.length;
-    if (answersToReset && !parsed.data.confirmReset)
-      return { requiresConfirmation: true as const, answersToReset };
+    // P24: a finished top that changes reopens; its places are saved again by the person.
+    const segmentsToReopen = old
+      // a lone participant is "finished" automatically: nothing of the person's to lose
+      .filter((p) => p.status === "completed" && changedSegments.has(p.id) && p.tracks.filter((t) => !t.excluded).length > 1)
+      .map((p) => ({ segmentId: p.id, title: p.title }));
+    if ((answersToReset || segmentsToReopen.length) && !parsed.data.confirmReset)
+      return { requiresConfirmation: true as const, answersToReset, segmentsToReopen };
     if (removedBatchIds.length)
       await db.comparisonBatch.deleteMany({
         where: { id: { in: removedBatchIds } },
@@ -222,7 +226,7 @@ export async function updateTournamentSegments(
             data: {
               ...data,
               ...(changedSegments.has(s.id)
-                ? { status: "in_progress", topSize: null, bonusOpponents: 0 }
+                ? { status: "in_progress", topSize: null, bonusOpponents: 0, insertBase: null }
                 : {}),
             },
           })
@@ -241,7 +245,7 @@ export async function updateTournamentSegments(
     });
     for (const id of retained) await completeSingleton(db, id);
     await aggregateTournamentStatus(db, tournamentId);
-    return { requiresConfirmation: false as const, answersToReset };
+    return { requiresConfirmation: false as const, answersToReset, segmentsToReopen };
   });
 }
 
@@ -293,24 +297,37 @@ export function segmentProgress(
       (c) => ids.has(c.trackAId) && ids.has(c.trackBId),
     );
     const batches = t.batches.filter((b) => b.segmentId === s.id);
-    const log = comparisons.map((c) => ({
-      a: c.trackAId,
-      b: c.trackBId,
-      result: c.result as "a" | "b" | "draw",
-    }));
-    const engine = createEngine(t.scheme as Scheme);
-    const progress = engine.progress(
-      [...ids],
-      log,
-      Math.min(clampGroupSize(t.groupSize, tracks.length), engine.maxGroupSize),
-    );
+    const scheme = effectiveScheme(t, s);
+    const answeredScreens =
+      batches.length + comparisons.filter((c) => !c.batchId).length;
+    const run = runSegment({
+      scheme,
+      settings: scheme ? effectiveSettings(scheme, t, s) : {},
+      groupSize: t.groupSize,
+      bonusOpponents: s.bonusOpponents,
+      tracks,
+      comparisons,
+      batches,
+      overlay: s.insertBase,
+      completed: s.status === "completed",
+    });
     return {
       ...s,
       tracks,
       trackCount: tracks.length,
-      answeredScreens:
-        batches.length + comparisons.filter((c) => !c.batchId).length,
-      progress,
+      activeCount: run.items.length,
+      effectiveScheme: scheme,
+      answeredScreens,
+      // Screens, like the compare page (task 33: engines no longer count pairs).
+      progress: {
+        completed: answeredScreens,
+        estimatedTotal: estimatedScreens(
+          run,
+          answeredScreens,
+          false,
+          screensBefore(run.overlay, batches, comparisons.filter((c) => !c.batchId).length),
+        ),
+      },
     };
   });
 }

@@ -16,6 +16,12 @@ const MIME: Record<string, string> = {
   ".mp4": "video/mp4",
   ".webm": "video/webm",
   ".mov": "video/quicktime",
+  // task 33: picture participants (SDK bindings without media:"cover")
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
 };
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {

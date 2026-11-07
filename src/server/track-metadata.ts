@@ -10,6 +10,10 @@ export const trackMetadataSchema = z
     comment: z.string().max(5000).nullable().optional(),
     bestMomentSec: z.number().finite().nonnegative().nullable().optional(),
     coverArtId: z.string().min(1).nullable().optional(),
+    // Task 33: participant captions; exclusion goes through setExcluded.
+    subtitle: z.string().trim().max(500).nullable().optional(),
+    note: z.string().trim().max(2000).nullable().optional(),
+    excluded: z.boolean().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);
@@ -39,6 +43,7 @@ export async function updateTrackMetadata(
       where: { id: track.tournamentId },
       data: { updatedAt: new Date() },
     });
-    return db.track.update({ where: { id }, data });
+    const { excluded: _excluded, ...fields } = data;
+    return db.track.update({ where: { id }, data: fields });
   });
 }

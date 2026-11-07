@@ -1,7 +1,7 @@
-import type { Comparison, Pair, Progress, RankedItem } from "../types";
+import type { Comparison } from "../types";
 import { pairKey, playedPairs, rankByScore } from "../comparisons";
-import { MAX_GROUP_SIZE, clampGroupSize, plannedScreens } from "../group-answer";
-import type { Engine } from "./index";
+import { MAX_GROUP_SIZE, clampGroupSize } from "../group-answer";
+import type { Engine } from "./types";
 
 /**
  * Every item vs every other. Accurate but O(N^2) comparisons — which is exactly
@@ -54,36 +54,22 @@ function nextGroup(
 export const roundRobinEngine: Engine = {
   scheme: "round_robin",
   maxGroupSize: MAX_GROUP_SIZE,
+  partial: true,
 
-  nextQuestion(items, comparisons, groupSize): string[] | null {
-    return nextGroup(items, comparisons, groupSize);
+  next({ items, comparisons, groupSize }) {
+    const group = nextGroup(items, comparisons, groupSize);
+    return group ? { kind: "rank", items: group } : null;
   },
 
-  nextPair(items, comparisons): Pair | null {
-    const group = nextGroup(items, comparisons, 2);
-    return group ? { a: group[0], b: group[1] } : null;
+  result({ items, comparisons }) {
+    return { placed: rankByScore(items, comparisons), unplaced: [] };
   },
 
-  isComplete(items, comparisons): boolean {
-    return nextGroup(items, comparisons, 2) === null;
-  },
-
-  ranking(items, comparisons): RankedItem[] {
-    return rankByScore(items, comparisons);
-  },
-
-  // Completion is exactly "every pair answered", so pairs are an exact measure
-  // whatever the group size — no need to guess how many screens greedy will take.
-  progress(items, comparisons): Progress {
-    const n = items.length;
-    return {
-      completed: comparisons.length,
-      estimatedTotal: (n * (n - 1)) / 2,
-    };
-  },
-
-  // Points-based standings are meaningful at any point.
-  partialRanking(items, comparisons): RankedItem[] {
-    return rankByScore(items, comparisons);
+  // The floor ceil(pairs / C(k,2)); greedy grouping may need more screens, the
+  // service keeps the estimate at least one past the screens already done.
+  plannedScreens(n, groupSize) {
+    if (n <= 1) return 0;
+    const k = clampGroupSize(groupSize, n);
+    return Math.ceil((n * (n - 1)) / 2 / ((k * (k - 1)) / 2));
   },
 };

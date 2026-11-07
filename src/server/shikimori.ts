@@ -41,7 +41,9 @@ import {
   fetchAnimeRaw,
   fetchPersonRaw,
   fetchUserHistoryRaw,
+  fetchShikimoriCards,
 } from "@/lib/shikimori";
+import type { ExtractedTrack } from "@/lib/upload";
 import { createArt } from "@/server/arts";
 
 const MAX_RESULTS = 8;
@@ -416,4 +418,107 @@ export async function importPoster(userId: string, input: ImportPosterInput): Pr
     maxPoolBytes: input.maxPoolBytes,
   });
   return { artId: art.id };
+}
+
+
+// ---- Tournament participants (task 33) ----
+
+export interface ShikimoriItemInput {
+  type: "character" | "anime";
+  id: number;
+  title?: string;
+  subtitle?: string;
+  note?: string;
+}
+
+export interface SkippedItem {
+  index: number;
+  type: "character" | "anime";
+  id: number;
+  /** NOT_FOUND | NO_IMAGE | SHIKIMORI_UNAVAILABLE */
+  reason: string;
+}
+
+/** Characters without a caller-supplied subtitle get one profile request each — only for small batches. */
+export const PROFILE_SUBTITLE_LIMIT = 20;
+
+/**
+ * Turn Shikimori characters and anime into picture participants. Names, links
+ * and poster URLs come in GraphQL pages of 50; pictures go through the shared
+ * image queue. A participant that cannot be fetched is skipped with a reason
+ * instead of failing the whole base (P11).
+ */
+export async function shikimoriParticipants(
+  items: ShikimoriItemInput[],
+): Promise<{ tracks: (ExtractedTrack | null)[]; skipped: SkippedItem[] }> {
+  const tracks: (ExtractedTrack | null)[] = items.map(() => null);
+  const skipped: SkippedItem[] = [];
+  const cards = new Map<string, Awaited<ReturnType<typeof fetchShikimoriCards>>>();
+  for (const type of ["character", "anime"] as const) {
+    const ids = items.filter((i) => i.type === type).map((i) => i.id);
+    if (!ids.length) continue;
+    try {
+      cards.set(type, await fetchShikimoriCards(type, ids));
+    } catch {
+      cards.set(type, new Map());
+      items.forEach((it, index) => {
+        if (it.type === type) skipped.push({ index, type, id: it.id, reason: "SHIKIMORI_UNAVAILABLE" });
+      });
+    }
+  }
+  const unavailable = new Set(skipped.map((s) => s.index));
+  const needProfile = items.filter(
+    (it, i) => it.type === "character" && !it.subtitle && !unavailable.has(i),
+  );
+  const profileSubtitle = new Map<number, string>();
+  if (needProfile.length && needProfile.length <= PROFILE_SUBTITLE_LIMIT)
+    for (const it of needProfile) {
+      try {
+        const p = await characterProfile(it.id);
+        if (p.animes[0]?.label) profileSubtitle.set(it.id, p.animes[0].label);
+      } catch {
+        /* subtitle stays empty */
+      }
+    }
+  for (const [index, it] of items.entries()) {
+    if (unavailable.has(index)) continue;
+    const card = cards.get(it.type)?.get(it.id);
+    if (!card) {
+      skipped.push({ index, type: it.type, id: it.id, reason: "NOT_FOUND" });
+      continue;
+    }
+    let image: { data: Buffer; contentType: string } | null = null;
+    if (card.posterUrl)
+      image = await fetchPosterByUrl(card.posterUrl).catch(() => null);
+    if (!image)
+      image = await fetchPoster(`/system/${it.type === "anime" ? "animes" : "characters"}/original/${it.id}.jpg`).catch(
+        () => null,
+      );
+    if (!image) {
+      skipped.push({ index, type: it.type, id: it.id, reason: "NO_IMAGE" });
+      continue;
+    }
+    const ext = EXT_BY_CONTENT_TYPE[image.contentType] ?? ".jpg";
+    const animeSubtitle =
+      it.type === "anime"
+        ? [card.year, card.studios?.length ? card.studios.join(", ") : null].filter(Boolean).join(" · ") ||
+          null
+        : null;
+    tracks[index] = {
+      filename: `shikimori-${it.type}-${it.id}${ext}`,
+      kind: "image",
+      title: it.title?.trim() || pickLabel(card.russian, card.name) || `#${it.id}`,
+      artist: null,
+      album: null,
+      sourceFolder: null,
+      durationSec: null,
+      data: image.data,
+      subtitle: it.subtitle?.trim() || animeSubtitle || profileSubtitle.get(it.id) || null,
+      sourceUrl: card.url,
+      sourceKey: `shikimori:${it.type}:${it.id}`,
+      note: it.note?.trim() || null,
+    };
+  }
+  skipped.sort((a, b) => a.index - b.index);
+  return { tracks, skipped };
 }

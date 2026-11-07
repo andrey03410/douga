@@ -86,6 +86,8 @@ it("inspects wrapper folders and splits a single archive without losing singleto
   expect(await preview.json()).toEqual({
     folders: ["Episode 1", "Episode 2"],
     trackCount: 2,
+    imageCount: 0,
+    kind: "media",
   });
   const result = await upload(req("/api/tournaments", "POST", data));
   expect(result.status).toBe(200);
