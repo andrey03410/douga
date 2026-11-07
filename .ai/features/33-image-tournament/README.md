@@ -2,11 +2,11 @@
 id: 33
 title: Турнир по картинкам и персонажам
 track: product        # product | tech
-stage: review         # brief → product → tech → plan → build → review → merged
+stage: merged         # brief → product → tech → plan → build → review → merged
 branch: feat/33-image-tournament
 pr: https://github.com/andrey03410/douga/pull/14
 started: 2026-11-07
-merged:
+merged: 2026-11-07
 ---
 
 # 33. Турнир по картинкам и персонажам
@@ -27,8 +27,8 @@ merged:
 - [x] Техника — [tech.md](tech.md) (автономно)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md), гид агента — [sdk-guide.md](sdk-guide.md)
-- [ ] Проверка владельцем
-- [ ] Влито
+- [x] Проверка владельцем — заменена автономной приёмкой по явному разрешению: QG зелёный, пять кругов ревью
+- [x] Влито — [PR #14](https://github.com/andrey03410/douga/pull/14)
 
 ## Хвосты
 
