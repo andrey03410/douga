@@ -36,3 +36,4 @@ export * from "./recipe-apply";
 export * from "./interactive-types";
 export * from "./interactive-schema";
 export * from "./interactive";
+export * from "./interactive-examples";

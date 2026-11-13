@@ -17,7 +17,9 @@
     "./premount": "./src/premount.ts",
     "./studio-frame": "./src/studio-frame.ts",
     "./studio-paint": "./src/studio-paint.ts",
-    "./typography-fonts": "./src/typography-fonts.tsx"
+    "./typography-fonts": "./src/typography-fonts.tsx",
+    "./hit-test": "./src/hit-test.ts",
+    "./version": "./src/version.ts"
   },
   "dependencies": {
     "@douga/video": "*"
