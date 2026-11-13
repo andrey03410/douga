@@ -33,8 +33,8 @@ Remotion 4 · ffmpeg-static · Zod · Vitest · Node 22.
 | Пул медиа и импорт | [media](.ai/map/media.md) | `src/server/arts.ts`, `src/lib/ytdlp.ts`, `src/server/media-url.ts` |
 | Shikimori | [shikimori](.ai/map/shikimori.md) | `src/lib/shikimori.ts` |
 | MCP-сервер | [mcp](.ai/map/mcp.md) | `src/mcp/` |
-| Рендер: Remotion, ffmpeg | [render](.ai/map/render.md) | `src/remotion/`, `src/server/studio/render.ts` |
-| AI Video SDK и студия | [studio-sdk](.ai/map/studio-sdk.md) | `src/video/`, `src/server/studio/` |
+| Рендер: Remotion, ffmpeg | [render](.ai/map/render.md) | `packages/render/`, `src/remotion-entry/`, `src/server/studio/render.ts` |
+| AI Video SDK и студия | [studio-sdk](.ai/map/studio-sdk.md) | `packages/video/`, `src/server/studio/` |
 
 Остальное: [`.ai/README.md`](.ai/README.md) — что лежит в `.ai/`,
 [`.ai/history.md`](.ai/history.md) — фазы 1–21 и задачи со ссылками на спеки.

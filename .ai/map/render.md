@@ -20,11 +20,11 @@ missing/dimensions явно notComparable. Считает суммарные out
 визуальная/художественная оценка остаётся отдельной. Задание, декодированное без
 ошибки, не объявляет плавность доказанной.
 
-[`visual-fixtures.ts`](../../src/video/visual-fixtures.ts) содержит непустые fixed
+[`visual-fixtures.ts`](../../packages/video/src/visual-fixtures.ts) содержит непустые fixed
 fixtures всех 54 прежних пресетов,33 рецептов,67 motion entries и типографики:
 локальные SVG/PCM, RU/JP, границы, dense/empty. Матрица хранит available/selected
 events и честно отмечает representative sampling (≤12 кадров/fixture).
-[`visual-regression.ts`](../../src/video/visual-regression.ts) считает PSNR,
+[`visual-regression.ts`](../../packages/video/src/visual-regression.ts) считает PSNR,
 changed ratio/maxDelta и ROI на RGBA, различает missing baseline/размер/среду.
 EngineId — provenance, его изменение не отключает сравнение.
 
@@ -47,15 +47,15 @@ ROI остаются exact0,но построены по compiled rect и не �
 
 ## Моушен и resolved media
 
-- [`motion-frame.ts`](../../src/remotion/motion-frame.ts) оценивает 40 закрытых
+- [`motion-frame.ts`](../../packages/render/src/motion-frame.ts) оценивает 40 закрытых
   эффектов по scene-local frame/fps; движение складывается с keyframes.
-  [`MotionText.tsx`](../../src/remotion/MotionText.tsx) сохраняет пробелы,
+  [`MotionText.tsx`](../../packages/render/src/MotionText.tsx) сохраняет пробелы,
   графемы Unicode и конечное число;
   переводы строк остаются в общем inline flow, а нейтральная поза возвращает
-  исходный text node для сохранения кернинга; [`MotionWidgets.tsx`](../../src/remotion/MotionWidgets.tsx)
-  рисует timer/VS/badge/progress, [`MotionBackdrop.tsx`](../../src/remotion/MotionBackdrop.tsx)
+  исходный text node для сохранения кернинга; [`MotionWidgets.tsx`](../../packages/render/src/MotionWidgets.tsx)
+  рисует timer/VS/badge/progress, [`MotionBackdrop.tsx`](../../packages/render/src/MotionBackdrop.tsx)
   — пять фонов из seed/кадра. CSS animations и wall-clock не используются.
-- [`motion-transition.ts`](../../src/remotion/motion-transition.ts) соединяет
+- [`motion-transition.ts`](../../packages/render/src/motion-transition.ts) соединяет
   соседние сцены wipe/zoom/push/flash/iris/split/blur/crossfade. Outgoing удерживает
   последний кадр и Freeze context (включая source frame видео), без собственного
   fade/slide и без повторного аудио. Временной разрыв не перескакивается.
@@ -69,7 +69,7 @@ ROI остаются exact0,но построены по compiled rect и не �
   Цвет с alpha строится через `studio-paint.ts:colorWithAlpha`, а не добавлением
   hex-суффикса к произвольному валидному CSS color. Новые VS/badge имеют fallback
   fontSize от rect; explicit style.fontSize приоритетнее.
-- [`compiled-media.ts`](../../src/video/compiled-media.ts): `compiledMediaUsages(plan)`
+- [`compiled-media.ts`](../../packages/video/src/compiled-media.ts): `compiledMediaUsages(plan)`
   — общий обход audio, nodes.media и backdrop.layers.media. Его используют
   worker rewrite, watch rewrite/preload и offline slices/posters/retarget/unresolved.
   Фоновые видео не должны пропадать, даже если scene.nodes.media пуст.
@@ -79,8 +79,8 @@ ROI остаются exact0,но построены по compiled rect и не �
   декодированных RGBA кадров; новые эффекты требуют настоящего MP4 и live watch/offline.
 
 ## Где код
-- [`src/remotion/index.ts`](../../src/remotion/index.ts) → [`Root.tsx`](../../src/remotion/Root.tsx) — одна композиция `Studio` (`STUDIO_COMPOSITION_ID`). `calculateMetadata` берёт `durationInFrames`, `fps`, `width` и `height` из `props.plan`
-- [`src/remotion/StudioVideo.tsx`](../../src/remotion/StudioVideo.tsx) — кадр студии; `style.blur` применяется к картинке, видео и карточке. V1 без blur сохраняет прежний стиль. У `<Img>` стоит `pauseWhenLoading`, но только пока адрес не декодирован заранее (`imageDecoded` из [`image-ready.ts`](../../src/remotion/image-ready.ts)). Покадровый MP4 ждёт кадр через `delayRender`. `premountFor` (2 с, [`premount.ts`](../../src/remotion/premount.ts)) Remotion применяет только в Player
+- [`src/remotion-entry/index.ts`](../../src/remotion-entry/index.ts) → [`Root.tsx`](../../src/remotion-entry/Root.tsx) — одна композиция `Studio` (`STUDIO_COMPOSITION_ID`). `calculateMetadata` берёт `durationInFrames`, `fps`, `width` и `height` из `props.plan`
+- [`packages/render/src/StudioVideo.tsx`](../../packages/render/src/StudioVideo.tsx) — кадр студии; `style.blur` применяется к картинке, видео и карточке. V1 без blur сохраняет прежний стиль. У `<Img>` стоит `pauseWhenLoading`, но только пока адрес не декодирован заранее (`imageDecoded` из [`image-ready.ts`](../../packages/render/src/image-ready.ts)). Покадровый MP4 ждёт кадр через `delayRender`. `premountFor` (2 с, [`premount.ts`](../../packages/render/src/premount.ts)) Remotion применяет только в Player
 - [`src/server/studio/render.ts`](../../src/server/studio/render.ts) и [`engine.ts`](../../src/server/studio/engine.ts) — выбор композиции `Studio`, сборка бандла и `renderMedia`
 - [`src/lib/audio.ts`](../../src/lib/audio.ts) — `probeMediaInfo`, `extractPoster`, `decodePcm`, `findActiveSnippet`. Активный фрагмент топа считается здесь и кэшируется в `StudioAnalysis` по хэшу ассета
 - [`src/lib/domain/rms.ts`](../../src/lib/domain/rms.ts) — окно с максимальной RMS-энергией
@@ -90,7 +90,7 @@ ROI остаются exact0,но построены по compiled rect и не �
 ## Данные
 - Задание студии — `StudioJob` ([schema](../../prisma/schema.prisma)): статус, прогресс, `outputPath`, `outputBytes`. Финальный MP4 и клипы лежат в `storage/studio-jobs/<userId>/<jobId>`
 - Встроенный тик студии — `storage/studio/builtin/tick.wav`, его пишет студия сама
-- Бандл Remotion кэшируется по `engineId`: хэш `src/remotion`, `src/video`, `src/lib` и `package-lock.json`. Первое задание после правки этих файлов пересобирает бандл (до 120 с)
+- Бандл Remotion кэшируется по `engineId`: хэш `src/remotion-entry`, `packages/render/src`, `packages/video/src`, `src/lib` и `package-lock.json`. Первое задание после правки этих файлов пересобирает бандл (до 120 с)
 
 ## Как устроено
 - Сайт и MCP только ставят задание. Выполняет его отдельный процесс `npm run studio:worker`
@@ -103,6 +103,13 @@ ROI остаются exact0,но построены по compiled rect и не �
 - Осмотр картинки через ffmpeg — без input seek (`-ss`), даже к нулю: крупный JPEG теряет единственный кадр ([`studio/inspection.ts`](../../src/server/studio/inspection.ts))
 - Финальный рендер только для админа. У роли user кнопка скрыта, а `video_job_start kind:"render"` отвечает `FORBIDDEN`
 - Системных ffmpeg и ffprobe может не быть. Кадры и громкость снимает бинарник `node_modules/ffmpeg-static/ffmpeg`
+
+## Пакет `@douga/render` (задача 34)
+
+`StudioVideo`, кадровая математика и типографика переехали в [`packages/render/src/`](../../packages/render/src/),
+точка входа Remotion — в [`src/remotion-entry/`](../../src/remotion-entry/). Новое: [`hit-test.ts`](../../packages/render/src/hit-test.ts)
+находит нажатую карточку на анимированном кадре. Его зовёт `InteractivePlayer` ([`@douga/player`](../../packages/player/src/)).
+Рендер финального MP4 не изменился и остаётся у админа.
 
 ## Как проверить
 - Юниты пробы и RMS: `npx vitest run src/lib/audio-probe.test.ts src/lib/domain/rms.test.ts src/lib/domain/download-name.test.ts`

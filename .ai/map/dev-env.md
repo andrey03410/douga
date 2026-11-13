@@ -46,7 +46,7 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
   - `SHIKIMORI_BASE_URL` — домен сервиса периодически переезжает;
   - `SHIKIMORI_USER_AGENT`;
   - `SHIKIMORI_RETRY_MS` — тестовый хук, сокращает паузы между повторами.
-- MCP: `MCP_ACTOR_EMAIL` ([mcp.md](mcp.md)), `MCP_LOCAL_MEDIA_DIRS` (папки через `:`, `~/` поддерживается; если пусто, доступа к диску нет) и `DOUGA_PUBLIC_URL` — база ссылки `/watch/…`, которую возвращает `video_publish`.
+- MCP: `MCP_ACTOR_EMAIL` ([mcp.md](mcp.md)), `MCP_LOCAL_MEDIA_DIRS` (папки через `:`, `~/` поддерживается; если пусто, доступа к диску нет) и `DOUGA_PUBLIC_URL` — база ссылки `/watch/…`, которую возвращает `video_publish`, и адреса манифеста интерактивного снимка (`/api/interactive/<token>/manifest`).
 - Как читается `.env`: Next загружает его сам, `studio:worker` и `mcp` — через флаг `--env-file-if-exists`. Явно переданные переменные окружения важнее. Скрипты `scripts/e2e-*.mjs` берут адрес сервера из `BASE`.
 
 ## Данные
@@ -75,6 +75,13 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
   - `DATABASE_URL` указывает на `prisma/dev.db`, то есть тесты пишут в ту же базу, что и dev-сайт. `TEST_DATABASE_URL=file:/abs/copy.db` направляет прогон в копию базы: так несколько агентов гоняют свои файлы параллельно. Итоговый QG идёт на `dev.db`;
   - юниты лежат рядом с кодом, интеграционные — в [`src/integration/`](../../src/integration/), хелперы — в [`src/test/`](../../src/test/).
 - Обязательная тройка после последних правок, в этом порядке: `npm test` → `npm run build` → `npx tsc --noEmit`. Для правок только в доках её не гоняют. Подробнее — в [verify](../../.claude/skills/verify/SKILL.md).
+
+## Пакеты `packages/*` (задача 34)
+
+Ядро SDK живёт в npm workspaces: `@douga/video`, `@douga/render`, `@douga/player`, `@douga/node`.
+Соседний проект asobiba подключает их через `file:../douga/packages/*`, поэтому пути и экспорты
+пакетов — внешний контракт. Ломающая правка там ломает и сборку asobiba. Версия Remotion
+в douga и asobiba должна совпадать: asobiba сверяет её при импорте снимка.
 
 ## Грабли
 
