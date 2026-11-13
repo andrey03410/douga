@@ -2,7 +2,7 @@
 id: 34
 title: Интерактивные ролики для asobiba
 track: product        # product | tech
-stage: plan           # brief → product → tech → plan → build → review → merged
+stage: build           # brief → product → tech → plan → build → review → merged
 branch: feat/34-interactive-video
 pr:
 started: 2026-11-13
@@ -18,15 +18,15 @@ Douga становится движком интерактивных ролик�
 Парная задача в asobiba — `asobiba/.ai/features/07-video-games/` (ветка `feat/07-video-games`):
 мост, видео-контракт игр, сцена партии и Quizor.
 
-> **Автономный режим стадий `product` и `tech`** (дословно — в [brief.md](brief.md#разрешение-автономности)).
-> План, реализация и вливание этим разрешением не покрыты.
+> **Автономный режим до вливания** (дословно — в [brief.md](brief.md#автономный-режим-до-вливания)).
+> Продукт и техника приняты автономно, дальше агент сам ведёт план, реализацию, QG, ревью, PR и merge.
 
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
 - [x] Продукт — [product.md](product.md) (автономно, 2026-11-13)
 - [x] Техника — [tech.md](tech.md) (автономно, 2026-11-13)
-- [ ] План — [plan.md](plan.md)
+- [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Проверка владельцем
 - [ ] Влито
