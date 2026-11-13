@@ -43,7 +43,12 @@ afterAll(async () => {
   for (const id of [owner, other]) {
     if (!id) continue;
     const projects = await studio.listStudioProjects(id).catch(() => []);
-    for (const row of projects) await studio.deleteStudioProject(id, row.id).catch(() => {});
+    // A project with jobs cannot go (JOB_IN_USE): its jobs go first.
+    for (const row of projects) {
+      for (const job of await prisma.studioJob.findMany({ where: { projectId: row.id }, select: { id: true } }))
+        await studio.deleteStudioJob(id, job.id).catch(() => {});
+      await studio.deleteStudioProject(id, row.id).catch(() => {});
+    }
     await prisma.user.delete({ where: { id } }).catch(() => {});
     await removePath(`studio/${id}`);
   }

@@ -254,6 +254,8 @@ const plainText = z.union([
       key: opt(id),
       prefix: opt(boundedTextSchema),
       suffix: opt(boundedTextSchema),
+      /** Suffix by a numeric value, Russian rules: [1, 2–4, 5+]; replaces `suffix` for numbers. */
+      plural: opt(z.tuple([boundedTextSchema, boundedTextSchema, boundedTextSchema])),
     })
     .strict(),
 ]);
@@ -285,7 +287,7 @@ export const textValueSchema = z.union([
             graphemes(
               typeof run.text === "string"
                 ? run.text
-                : `${run.text.prefix ?? ""}${run.text.suffix ?? ""}`,
+                : `${run.text.prefix ?? ""}${run.text.suffix ?? ""}${run.text.plural?.join("") ?? ""}`,
             ).length,
           0,
         ) <= 10000,

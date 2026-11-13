@@ -57,7 +57,7 @@ export function interactiveExample(): VideoDocument {
           nodes: [
             textNode({
               id: "votes",
-              text: { bind: "participant.votes", suffix: " голосов" },
+              text: { bind: "participant.votes", plural: [" голос", " голоса", " голосов"] },
               rect: { x: 0.1, y: 0.8, width: 0.8, height: 0.1 },
             }),
             textNode({

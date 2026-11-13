@@ -99,6 +99,16 @@ export function InteractivePlayer(props: InteractivePlayerProps) {
     warmer.warm(-1);
     let held = false;
     let ended = false;
+    let shown = -1;
+    // Hosts and checks read the shown frame without re-rendering React. A seek straight to a
+    // hold (a viewer who comes in while the scene waits) fires no frameupdate, so the sync
+    // tick reports the frame too.
+    const show = (frame: number) => {
+      if (frame === shown) return;
+      shown = frame;
+      warmer.onFrame(frame);
+      boxRef.current?.setAttribute("data-frame", String(frame));
+    };
     const tick = () => {
       const p = live.current;
       const limit = frameLimit({ durationInFrames: plan.durationInFrames, holdFrame: p.holdFrame });
@@ -124,6 +134,7 @@ export function InteractivePlayer(props: InteractivePlayerProps) {
         if (player.isPlaying()) player.pause();
         if (player.getCurrentFrame() !== step.frame) player.seekTo(step.frame);
       }
+      show(player.getCurrentFrame());
       const atHold = !p.paused && p.holdFrame !== null && p.holdFrame !== undefined && target >= limit && limit < plan.durationInFrames - 1;
       if (atHold && !held) p.onEvent?.({ type: "hold", frame: limit });
       held = atHold;
@@ -131,11 +142,7 @@ export function InteractivePlayer(props: InteractivePlayerProps) {
       if (atEnd && !ended) p.onEvent?.({ type: "ended" });
       ended = atEnd;
     };
-    const onFrame = (event: { detail: { frame: number } }) => {
-      warmer.onFrame(event.detail.frame);
-      // Hosts and checks read the shown frame without re-rendering React.
-      boxRef.current?.setAttribute("data-frame", String(event.detail.frame));
-    };
+    const onFrame = (event: { detail: { frame: number } }) => show(event.detail.frame);
     const onWaiting = () => live.current.onEvent?.({ type: "waiting" });
     const onResume = () => live.current.onEvent?.({ type: "resume" });
     const onError = (event: { detail: { error: Error } }) =>

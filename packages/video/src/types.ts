@@ -52,6 +52,8 @@ export type PlainTextValue =
       key?: string;
       prefix?: string;
       suffix?: string;
+      /** Suffix by a numeric value, Russian rules: [1, 2–4, 5+]; replaces `suffix` for numbers. */
+      plural?: [string, string, string];
     };
 export type TextValue =
   | PlainTextValue

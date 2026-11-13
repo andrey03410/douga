@@ -45,7 +45,7 @@ describe("interactive layer", () => {
   it("puts sample data into the linear render and real data into a match compile", () => {
     const d = archetypes();
     const sample = compileVideo(d, manifest).plan;
-    expect(texts(sample, "votes").sort()).toEqual(["0 голосов", "1 голосов", "3 голосов"]);
+    expect(texts(sample, "votes").sort()).toEqual(["0 голосов", "1 голос", "3 голоса"]);
     expect(texts(sample, "headline")).toContain("Ваш общий топ");
     const real = compileVideo(
       applyMatchData(d, {
@@ -138,5 +138,16 @@ describe("slicePlan", () => {
     const slice = slicePlan(full, { sceneIds: [question.id] });
     expect(slice.interaction!.scenes[0].holds[0].frame).toBe(question.holds[0].frame - question.from);
     expect(() => slicePlan(full, { sceneIds: ["missing"] })).toThrow("SLICE_EMPTY");
+  });
+});
+
+describe("plural text suffix", () => {
+  it("picks the Russian form by number and keeps suffix for text", async () => {
+    const { pluralForm } = await import("./nodes");
+    const forms: [string, string, string] = [" голос", " голоса", " голосов"];
+    expect([0, 1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 101, 111, 1.5].map((n) => `${n}${pluralForm(n, forms)}`)).toEqual([
+      "0 голосов", "1 голос", "2 голоса", "4 голоса", "5 голосов", "11 голосов", "12 голосов", "14 голосов",
+      "21 голос", "22 голоса", "25 голосов", "101 голос", "111 голосов", "1.5 голоса",
+    ]);
   });
 });

@@ -31,6 +31,7 @@
 - **Рецепты** ([`interactive-recipes.ts`](../../packages/video/src/interactive-recipes.ts)): 15 рецептов
   `recipe.interactive.{quiz-question,quiz-media,quiz-reveal,vote-result,scoreboard}.{wide,vertical,square}`.
   Короткая форма `video_content_set` принимает часть `interactive` (слияние по id, `replace`, `null` удаляет).
+- Привязка текста принимает `plural: [1, 2–4, 5+]` — окончание по числу (`2 голоса`, `5 голосов`); для нечисел остаётся `suffix`. Рецепты и пример видео-квиза пишут голоса и очки так.
 - Модель `StudioInteractivePublication` (одна на проект, `token`, `snapshotId`, `revision`, `stillJobId`).
 - Отклонения от плана: визуальных фикстур на интерактивные рецепты нет; поле момента в asobiba называется `start`.
 

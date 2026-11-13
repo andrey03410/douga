@@ -94,10 +94,10 @@ function topDocument(format: VideoFormat, segment: "result" | "board"): VideoDoc
   const nodes =
     segment === "result"
       ? [
-          textNode({ id: "votes", text: { bind: "participant.votes", suffix: " голосов" }, rect: { x: 0.1, y: 0.82, width: 0.8, height: 0.08 } }),
+          textNode({ id: "votes", text: { bind: "participant.votes", plural: [" голос", " голоса", " голосов"] }, rect: { x: 0.1, y: 0.82, width: 0.8, height: 0.08 } }),
           textNode({ id: "headline", text: { bind: "match.text", key: "headline" }, rect: { x: 0.1, y: 0.04, width: 0.8, height: 0.08 } }),
         ]
-      : [textNode({ id: "score", text: { bind: "participant.score", suffix: " очк." }, rect: { x: 0.1, y: 0.82, width: 0.8, height: 0.08 } })];
+      : [textNode({ id: "score", text: { bind: "participant.score", plural: [" очко", " очка", " очков"] }, rect: { x: 0.1, y: 0.82, width: 0.8, height: 0.08 } })];
   d.segments = [
     {
       id: segment,

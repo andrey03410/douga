@@ -150,7 +150,18 @@ export function boundText(
       undefined,
       "warning",
     );
-  return `${value.prefix ?? ""}${result ?? ""}${value.suffix ?? ""}`;
+  const suffix = value.plural && typeof result === "number" ? pluralForm(result, value.plural) : (value.suffix ?? "");
+  return `${value.prefix ?? ""}${result ?? ""}${suffix}`;
+}
+
+/** Russian plural form of a number: 1 голос, 2 голоса, 5 голосов, 11 голосов, 21 голос. */
+export function pluralForm(n: number, [one, few, many]: [string, string, string]): string {
+  const a = Math.abs(Math.trunc(n)) % 100;
+  const b = a % 10;
+  if (!Number.isInteger(n) || (a > 10 && a < 20)) return Number.isInteger(n) ? many : few;
+  if (b === 1) return one;
+  if (b > 1 && b < 5) return few;
+  return many;
 }
 function mediaKey(
   ctx: CompileContext,
