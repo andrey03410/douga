@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument, getBuiltinPreset } from "@/video";
+import { createVideoDocument, getBuiltinPreset } from "@douga/video";
 import * as studio from "@/server/studio";
 
 const root = resolve(__dirname, "../..");

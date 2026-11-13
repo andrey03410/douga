@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";

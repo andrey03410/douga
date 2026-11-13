@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileVideo, getBuiltinPreset, type AssetManifest } from "@/video";
+import { compileVideo, getBuiltinPreset, type AssetManifest } from "@douga/video";
 import { MCP_INSTRUCTIONS, MCP_TOOL_NAMES } from "./instructions";
 import { videoExamples } from "./studio-tools";
 

@@ -35,7 +35,7 @@ export {
   getStudioJobArtifact,
 } from "./jobs";
 export { runStudioWorkerOnce } from "./worker";
-export { videoResourceLimits } from "@/video/resource-limits";
+export { videoResourceLimits } from "@douga/video/resource-limits";
 
 export { startStudioImport } from "./imports";
 export * from "./queries";

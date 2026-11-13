@@ -3,7 +3,7 @@ import TypographyPanel from "./TypographyPanel";
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { readLoadedJobWindow } from "./job-feed";
-import type { CompiledVideo } from "@/video";
+import type { CompiledVideo } from "@douga/video";
 import type { StudioJobView } from "@/server/studio/job-types";
 import type { StudioProjectView } from "@/server/studio/types";
 import { formatBytes } from "@/lib/domain/permissions";

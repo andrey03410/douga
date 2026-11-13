@@ -7,8 +7,8 @@ import ffmpeg from "ffmpeg-static";
 import { bundle } from "@remotion/bundler";
 import { renderStill, selectComposition } from "@remotion/renderer";
 import { expect, it } from "vitest";
-import { baseNode } from "../video/nodes";
-import type { CardStyle, CompiledVideo } from "../video/types";
+import { baseNode } from "@douga/video/nodes";
+import type { CardStyle, CompiledVideo } from "@douga/video/types";
 
 it("renders actual linear/radial paint and soft shadow pixels through the shared Studio renderer", async () => {
   const dir = await mkdtemp(join(tmpdir(), "studio-paint-"));
@@ -69,7 +69,7 @@ it("renders actual linear/radial paint and soft shadow pixels through the shared
       ],
     };
     const serveUrl = await bundle({
-      entryPoint: resolve("src/remotion/index.ts"),
+      entryPoint: resolve("src/remotion-entry/index.ts"),
       publicDir: join(dir, "public"),
       outDir: join(dir, "bundle"),
       webpackOverride: (c) => ({

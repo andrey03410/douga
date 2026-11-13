@@ -4,8 +4,8 @@ import type {
   VideoSegment,
   VideoScene,
   VideoNode,
-} from "@/video";
-import { getBuiltinPresets, videoPresetSchema } from "@/video";
+} from "@douga/video";
+import { getBuiltinPresets, videoPresetSchema } from "@douga/video";
 import { prisma } from "@/lib/db";
 import { probeMediaInfo } from "@/lib/audio";
 import { ensureTournamentSegments } from "@/server/tournament-segments";

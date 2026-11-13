@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { plan, videoNode, imageNode, hashB } from "./fixtures";
-import type { CompiledScene } from "@/video";
-import { rewritePlanMedia, upcomingMedia } from "./model";
+import { plan, videoNode, imageNode, hashB } from "@douga/player/fixtures";
+import type { CompiledScene } from "@douga/video";
+import { rewritePlanMedia, upcomingMedia } from "@douga/player/model";
 import {
   mediaSlices,
   applySlices,
@@ -9,7 +9,7 @@ import {
   offlineMediaUnresolved,
   posterSliceId,
 } from "./offline";
-import { compiledMediaUsages } from "../video/compiled-media";
+import { compiledMediaUsages } from "@douga/video/compiled-media";
 const makePlan = (image = false) =>
   plan({
     scenes: [

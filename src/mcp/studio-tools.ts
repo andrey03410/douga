@@ -13,7 +13,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Actor } from "./actor";
 import { can } from "@/lib/domain/permissions";
 import { prisma } from "@/lib/db";
-import * as sdk from "@/video";
+import * as sdk from "@douga/video";
 import * as studio from "@/server/studio";
 import { actor as freshActor } from "@/server/studio/shared";
 import { listArts } from "@/server/arts";

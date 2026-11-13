@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
-import { typographyThemes } from "@/video/typography-catalog";
-import type { TypographyThemeId } from "@/video/typography-types";
+import { typographyThemes } from "@douga/video/typography-catalog";
+import type { TypographyThemeId } from "@douga/video/typography-types";
 import { studioRequest } from "./StudioWorkspace";
 
 export default function TypographyPanel({

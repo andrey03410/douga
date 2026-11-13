@@ -4,7 +4,7 @@ import { removePath, saveFile } from "@/lib/storage";
 import { createArt } from "@/server/arts";
 import { usageSummary, listArchiveRows } from "@/server/users";
 import { createStudioProject, deleteStudioProject } from "@/server/studio";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 
 // Phase 17: the cabinet used to load every art row and stat() every render file
 // on each visit. The summary is now pure aggregates and the lists are paged.

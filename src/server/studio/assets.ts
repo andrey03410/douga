@@ -1,4 +1,4 @@
-import { preflightVideoResources } from "@/video/resource-limits";
+import { preflightVideoResources } from "@douga/video/resource-limits";
 import "server-only";
 import path from "node:path";
 import { createReadStream } from "node:fs";
@@ -29,8 +29,8 @@ import {
   type VideoNode,
   type VideoScene,
   type Participant,
-} from "@/video";
-import { mergeSettings } from "@/video/settings";
+} from "@douga/video";
+import { mergeSettings } from "@douga/video/settings";
 import { freezeTypographyFonts, getTypographyMeasureText } from "./typography-fonts";
 import { actor, type Db } from "./shared";
 import { StudioError } from "./errors";

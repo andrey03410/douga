@@ -1,6 +1,6 @@
-import { compiledMediaUsages } from "../video/compiled-media";
+import { compiledMediaUsages } from "@douga/video/compiled-media";
 import { downloadTitleStem } from "@/lib/domain/download-name";
-import type { CompiledVideo, ResolvedAsset } from "@/video";
+import type { CompiledVideo, ResolvedAsset } from "@douga/video";
 
 export const HTML_WARN_BYTES = 80 * 1024 * 1024;
 export const HTML_MAX_BYTES = 400 * 1024 * 1024;

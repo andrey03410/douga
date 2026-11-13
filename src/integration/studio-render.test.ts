@@ -11,7 +11,7 @@ import {
   selectComposition,
 } from "@remotion/renderer";
 import { expect, it } from "vitest";
-import type { CompiledVideo } from "../video/types";
+import type { CompiledVideo } from "@douga/video/types";
 
 // A helper-only frame test misses Remotion timeline clamping, trim offsets,
 // native audio loop handling and encoder output. Exercise the real boundary.
@@ -189,7 +189,7 @@ it("renders late-scene video source offsets and continuous audio policy across s
     };
     const inputProps = { plan, assetMode: "static" };
     const serveUrl = await bundle({
-      entryPoint: resolve("src/remotion/index.ts"),
+      entryPoint: resolve("src/remotion-entry/index.ts"),
       publicDir,
       outDir: join(directory, "bundle"),
       webpackOverride: (config) => ({

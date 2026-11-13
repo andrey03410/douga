@@ -1,0 +1,15 @@
+{
+  "name": "@douga/video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Douga video SDK: document schema, compiler, presets, recipes, interactive layer. Pure, no I/O.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
+  }
+}

@@ -4,9 +4,9 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject, SyntheticEvent } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { AnyZodObject } from "zod";
-import { StudioVideo } from "@/remotion/StudioVideo";
-import { imageDecoded, markImageDecoded } from "@/remotion/image-ready";
-import type { CompiledVideo } from "@/video";
+import { StudioVideo } from "@douga/render/StudioVideo";
+import { imageDecoded, markImageDecoded } from "@douga/render/image-ready";
+import type { CompiledVideo } from "@douga/video";
 import {
   chapterAt,
   chapters,
@@ -22,7 +22,7 @@ import {
   type Chapter,
   type KeyAction,
   type KeyTarget,
-} from "./model";
+} from "@douga/player/model";
 
 const LOADING_DELAY_MS = 300;
 const PREFETCH_HORIZON_SEC = 30;

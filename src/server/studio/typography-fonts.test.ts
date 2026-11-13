@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ResolvedTypography } from "@/video/typography-types";
+import type { ResolvedTypography } from "@douga/video/typography-types";
 import { createTypographyMeasureText, getTypographyMeasureText } from "./typography-fonts";
 
 const style = (overrides: Partial<ResolvedTypography> = {}) => ({
@@ -58,7 +58,7 @@ describe("pinned typography measurement", () => {
 describe("frozen typography resources", () => {
   it("copies only selected bytes and licenses, sharing variable files across weights", async () => {
     const { freezeTypographyFonts, verifyTypographyFonts } = await import("./typography-fonts");
-    const { typographyFontAssets } = await import("@/video/font-manifest");
+    const { typographyFontAssets } = await import("@douga/video/font-manifest");
     const { absPath } = await import("@/lib/storage");
     const directory = `studio-font-test/${Date.now()}`;
     directories.push(absPath(directory));

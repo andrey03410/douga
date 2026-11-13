@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import { createArt, deleteArt } from "@/server/arts";
 import { studioJobLimits } from "@/server/studio/job-types";
 import { exportCommitGate } from "@/server/studio/export-slice";

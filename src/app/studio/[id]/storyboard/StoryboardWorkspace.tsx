@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { AnyZodObject } from "zod";
-import { StudioVideo } from "@/remotion/StudioVideo";
-import { sharedAudioTagCount } from "@/watch/model";
-import type { CompiledVideo } from "@/video";
-import type { StoryboardTile } from "@/video/storyboard";
+import { StudioVideo } from "@douga/render/StudioVideo";
+import { sharedAudioTagCount } from "@douga/player/model";
+import type { CompiledVideo } from "@douga/video";
+import type { StoryboardTile } from "@douga/video/storyboard";
 import type { StudioJobView } from "@/server/studio/job-types";
 import type { InspectionOrigin } from "@/server/studio/storyboard-types";
 import type { reviewStudioVideo } from "@/server/studio/review";

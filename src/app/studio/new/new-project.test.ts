@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { parseVideoDocument } from "@/video";
+import { parseVideoDocument } from "@douga/video";
 import { NewStudioProject } from "./NewStudioProject";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push() {} }) }));

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import type { CompiledScene, CompiledVideo } from "@/video";
+import type { CompiledScene, CompiledVideo } from "@douga/video";
 import { getStudioProject } from "./projects";
 import { studioPageSchema } from "./queries";
 import { StudioError } from "./errors";

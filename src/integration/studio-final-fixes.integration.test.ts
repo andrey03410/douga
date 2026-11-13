@@ -12,7 +12,7 @@ import {
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { createArt } from "@/server/arts";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 import { studioHttp } from "@/server/studio/http";
 import { fileHash } from "@/server/studio/assets";

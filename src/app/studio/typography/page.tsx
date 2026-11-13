@@ -1,8 +1,8 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
-import { typographyFonts } from "@/video/font-manifest";
-import { typographyStyles, typographyThemes } from "@/video/typography-catalog";
+import { typographyFonts } from "@douga/video/font-manifest";
+import { typographyStyles, typographyThemes } from "@douga/video/typography-catalog";
 import TypographyGallery from "./TypographyGallery";
 import "../studio.css";
 import "./typography.css";

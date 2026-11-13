@@ -8,8 +8,8 @@ import {
   inspectStudioText,
   inspectStudioTextSchema,
 } from "@/server/studio/typography";
-import { typographyFonts, typographyFontAssets } from "@/video/font-manifest";
-import { typographyStyles, typographyThemes } from "@/video/typography-catalog";
+import { typographyFonts, typographyFontAssets } from "@douga/video/font-manifest";
+import { typographyStyles, typographyThemes } from "@douga/video/typography-catalog";
 
 const key = z.string().min(1).max(200);
 const pageSchema = z

@@ -4,10 +4,10 @@ import {
   videoContentInputSchema,
   getVideoContentMissingInputs,
   VideoContentError,
-} from "@/video/content";
+} from "@douga/video/content";
 import { StudioError } from "./errors";
 import { mutationSchema } from "./types";
-import { parseVideoDocument } from "@/video/schema";
+import { parseVideoDocument } from "@douga/video/schema";
 import { applyStudioContentDraft } from "./projects";
 export const setStudioContentSchema = mutationSchema
   .extend({ content: videoContentInputSchema })

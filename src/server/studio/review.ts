@@ -1,9 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { compileVideo, patchVideoDocument } from "@/video";
-import { reviewVideo, type VideoReviewReport } from "@/video/video-review";
-import { selectStoryboard } from "@/video/storyboard";
+import { compileVideo, patchVideoDocument } from "@douga/video";
+import { reviewVideo, type VideoReviewReport } from "@douga/video/video-review";
+import { selectStoryboard } from "@douga/video/storyboard";
 import { loadInspectionProject, loadPinnedInspectionProject, enqueueInspection } from "./storyboard";
 import { canonical, hash, owned, replay, requestHash } from "./shared";
 import { transformStudioDraft } from "./projects";

@@ -2,9 +2,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
 import { ZodError } from "zod";
-import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
+import { applyVideoRecipe, RecipeApplyError } from "@douga/video/recipe-apply";
 import { deleteStudioReviewBackups, preserveStudioReviewBackup } from "./review-backups";
-import { buildVideoContent, type VideoContentInput } from "@/video/content";
+import { buildVideoContent, type VideoContentInput } from "@douga/video/content";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
@@ -15,7 +15,7 @@ import {
   PresetIncompatibleError,
   createVideoDocument,
   type VideoDocument,
-} from "@/video";
+} from "@douga/video";
 import {
   actor,
   owned,

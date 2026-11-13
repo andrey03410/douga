@@ -15,7 +15,7 @@ export default defineConfig({
     // Explicit Promise-based concurrency tests still exercise races within a file.
     fileParallelism: false,
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     // TEST_DATABASE_URL points a run at a copy of the DB, so parallel runs
     // (several agents at once) do not trip over each other's rows.
     env: {

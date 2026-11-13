@@ -1,0 +1,14 @@
+{
+  "name": "@douga/node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node-side helpers for Douga: text measurement with pinned fonts, interactive snapshot checks.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@douga/video": "*",
+    "fontkit": "2.0.4"
+  }
+}

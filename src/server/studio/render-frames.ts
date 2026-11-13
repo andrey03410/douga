@@ -2,7 +2,7 @@ import "server-only";
 import { cp, copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
-import { compiledMediaUsages, type ResolvedAsset } from "@/video";
+import { compiledMediaUsages, type ResolvedAsset } from "@douga/video";
 import { absPath } from "@/lib/storage";
 import { fileHash, safeFile } from "./assets";
 import { verifyEngine } from "./engine";

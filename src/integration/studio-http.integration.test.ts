@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 import { studioHttp } from "@/server/studio/http";
 const session = vi.hoisted(() => ({ id: "" }));

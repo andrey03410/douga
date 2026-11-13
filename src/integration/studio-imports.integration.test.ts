@@ -20,7 +20,7 @@ import { fileHash } from "@/server/studio/assets";
 import { quotasFor } from "@/lib/domain/permissions";
 import * as studio from "@/server/studio";
 import * as importsInternal from "@/server/studio/imports";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import { deleteArt } from "@/server/arts";
 import { studioHttpError as importsHttpError } from "@/server/studio/http";
 import {

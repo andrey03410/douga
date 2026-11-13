@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 import type { NextConfig } from "next";
 import { getMiddlewareMatchers } from "next/dist/build/analysis/get-page-static-info";
