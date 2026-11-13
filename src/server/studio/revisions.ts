@@ -308,6 +308,8 @@ export async function deleteStudioSnapshot(userId: string, snapshotId: string) {
       throw new StudioError("JOB_IN_USE");
     if (await db.studioPublication.count({ where: { snapshotId } }))
       throw new StudioError("PUBLICATION_IN_USE");
+    if (await db.studioInteractivePublication.count({ where: { snapshotId } }))
+      throw new StudioError("PUBLICATION_IN_USE");
     await db.studioSnapshot.delete({ where: { id: snapshotId } });
   });
 }

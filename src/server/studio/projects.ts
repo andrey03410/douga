@@ -763,6 +763,7 @@ export async function deleteStudioProject(
     if (await db.studioJob.count({ where: { projectId: id } }))
       throw new StudioError("JOB_IN_USE");
     await db.studioPublication.deleteMany({ where: { projectId: id } });
+    await db.studioInteractivePublication.deleteMany({ where: { projectId: id } });
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
     await deleteStudioReviewBackups(db, userId, id);
     await db.studioProject.delete({ where: { id } });

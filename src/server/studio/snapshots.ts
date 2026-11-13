@@ -9,6 +9,7 @@ export async function releaseSnapshotIfFree(
 ): Promise<boolean> {
   if (await db.studioJob.count({ where: { snapshotId } })) return false;
   if (await db.studioPublication.count({ where: { snapshotId } })) return false;
+  if (await db.studioInteractivePublication.count({ where: { snapshotId } })) return false;
   const removed = await db.studioSnapshot.deleteMany({ where: { id: snapshotId } });
   return removed.count > 0;
 }
