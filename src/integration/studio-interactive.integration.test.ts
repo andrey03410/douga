@@ -114,4 +114,20 @@ describe("interactive publication", () => {
     await prisma.studioJob.update({ where: { id: job.id }, data: { status: "failed" } });
     expect((await interactiveManifestResponse(published.token)).status).toBe(200);
   });
+
+  it("shows match data in the timeline and inspections without saving it", async () => {
+    const game = await studio.createStudioProject(owner, { document: archetypes(), idempotencyKey: randomUUID() });
+    const players = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, name: `Игрок ${i}`, score: i }));
+    const timeline = await studio.getStudioTimeline(owner, game.id, { matchData: { players }, limit: 100 });
+    const board = timeline.items.filter((item) => item.segmentId === "board");
+    expect(board.map((item) => item.participantId).sort()).toEqual(players.map((p) => `player:${p.id}`));
+    const prepared = await studio.loadInspectionProject(owner, game.id, { matchData: { texts: { headline: "Итог" } } });
+    const texts = prepared.plan.scenes.flatMap((s) => s.nodes).map((n) => n.text);
+    expect(texts).toContain("Итог");
+    expect(prepared.origin.matchDataHash).toMatch(/^[a-f0-9]{64}$/);
+    const after = await studio.getStudioProject(owner, game.id);
+    expect(after.version).toBe(game.version);
+    expect(JSON.stringify(after.document)).not.toContain("Игрок 4");
+    await expect(studio.getStudioTimeline(owner, game.id, { matchData: { players: [{ id: "", name: "x" }] } })).rejects.toThrow();
+  });
 });

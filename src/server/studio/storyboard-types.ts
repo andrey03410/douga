@@ -8,6 +8,8 @@ export interface InspectionOrigin {
   documentHash: string;
   contentHash: string;
   format: { width: number; height: number; fps: number };
+  /** Task 34: hash of the match data the plan was compiled with. */
+  matchDataHash?: string;
 }
 export interface InspectionSummary {
   origin: InspectionOrigin;

@@ -1,4 +1,5 @@
 import "server-only";
+import { frozenWithMatchData } from "./match-data";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { cleanupDirectory } from "./assets";
@@ -183,10 +184,13 @@ export async function runStudioWorkerOnce(
       const snapshot = job.snapshotId ? await prisma.studioSnapshot.findUniqueOrThrow({
         where: { id: job.snapshotId },
       }) : null;
-      const frozen = inspection?.frozen ?? JSON.parse(snapshot!.payloadJson) as StudioFrozenRevision;
+      let frozen = inspection?.frozen ?? JSON.parse(snapshot!.payloadJson) as StudioFrozenRevision;
       const { snapshotId: _, hash: expected, ...content } = frozen;
       if (hash(canonical(content)) !== expected)
         throw new StudioError("SNAPSHOT_HASH_MISMATCH");
+      // Task 34: a preview job with match data shows the plan a game would show.
+      if (!inspection && input.matchData && job.kind !== "render")
+        frozen = await frozenWithMatchData(frozen, input.matchData, `${directory}/typography`);
       if (inspection?.compareFrozen) {
         const { snapshotId: _, hash: digest, ...before } = inspection.compareFrozen;
         if (hash(canonical(before)) !== digest) throw new StudioError("SNAPSHOT_HASH_MISMATCH");

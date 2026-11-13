@@ -1,5 +1,6 @@
 import "server-only";
 import path from "node:path";
+import { frozenWithMatchData } from "./match-data";
 import { prisma } from "@/lib/db";
 import type { StudioJob } from "@/generated/prisma/client";
 import { can } from "@/lib/domain/permissions";
@@ -191,7 +192,10 @@ export async function startStudioJob(
     idempotencyKey: internalKey,
   });
   try {
-    validateRequest(input, frozen);
+    validateRequest(
+      input,
+      "matchData" in input && input.matchData ? await frozenWithMatchData(frozen, input.matchData) : frozen,
+    );
     return await prisma.$transaction(async (db) => {
       await owned(userId, projectId, db);
       const user = await jobActor(userId, input.kind, db);

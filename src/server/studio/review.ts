@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { compileVideo, patchVideoDocument } from "@douga/video";
 import { reviewVideo, type VideoReviewReport } from "@douga/video/video-review";
 import { selectStoryboard } from "@douga/video/storyboard";
+import { matchDataInput } from "./match-data";
 import { loadInspectionProject, loadPinnedInspectionProject, enqueueInspection } from "./storyboard";
 import { canonical, hash, owned, replay, requestHash } from "./shared";
 import { transformStudioDraft } from "./projects";
@@ -28,6 +29,7 @@ export const studioReviewSchema = z.object({
   profile: profileSchema.optional(),
   limit: z.number().int().min(1).max(50).default(20),
   cursor: z.number().int().min(0).max(100000).default(0),
+  matchData: matchDataInput,
 }).strict();
 export const applyStudioReviewSchema = z.object({
   expectedVersion: z.number().int().positive(), reportId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -60,7 +62,7 @@ export async function reviewStudioVideo(userId: string, projectId: string, raw: 
   const pinned = input.sourceJobId ? await loadPinnedInspectionProject(userId, projectId, input.sourceJobId,
     { expectedVersion: input.expectedVersion, revision: input.revision }) : undefined;
   if (pinned && pinned.input.render.kind !== "storyboard") throw new StudioError("INSPECTION_SOURCE_INVALID");
-  const prepared = pinned?.prepared ?? await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
+  const prepared = pinned?.prepared ?? await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision, matchData: input.matchData });
   const originArguments = input.sourceJobId ? { sourceJobId: input.sourceJobId }
     : prepared.origin.revision ? { revision: prepared.origin.revision } : { expectedVersion: prepared.origin.version };
   const report = reviewVideo(prepared.plan, prepared.validation.diagnostics, prepared.document, input.profile);

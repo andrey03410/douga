@@ -12,6 +12,7 @@ import { view } from "./projects";
 import { evaluate, runtime, cleanupDirectory, fileHash, safeFile } from "./assets";
 import { prepareStudioEngine } from "./engine";
 import { freezeTypographyFonts, verifyTypographyFonts } from "./typography-fonts";
+import { frozenWithMatchData, matchDataHash, matchDataInput } from "./match-data";
 import { StudioError } from "./errors";
 import { assertStudioJobQuota, jobDirectory, jobView, ownedJob } from "./jobs";
 import { activeJobStatuses, studioJobLimits, type StudioJobView } from "./job-types";
@@ -32,6 +33,7 @@ export const storyboardSchema = z.object({
   compareJobId: key.optional(),
   sourceJobId: key.optional(),
   pixelDiff: z.boolean().optional(),
+  matchData: matchDataInput,
   idempotencyKey: z.string().min(1).max(200).optional(),
 }).strict().superRefine((v, ctx) => {
   if (v.pixelDiff !== undefined && v.mode !== "compare" && !v.sourceJobId)
@@ -43,10 +45,21 @@ export const storyboardSchema = z.object({
     ctx.addIssue({ code: "custom", message: "Compare requires one origin; continuation uses the source job's pinned origins" });
 });
 export type StoryboardInput = z.input<typeof storyboardSchema>;
-const originInput = z.object({ expectedVersion: z.number().int().positive().optional(), revision: z.number().int().positive().optional() }).strict();
+const originInput = z.object({ expectedVersion: z.number().int().positive().optional(), revision: z.number().int().positive().optional(), matchData: matchDataInput }).strict();
+
+/** Reads the exact draft/revision; with match data, the plan a game would show. */
+export async function loadInspectionProject(userId: string, projectId: string,
+  raw: z.input<typeof originInput> = {}, directory?: string) {
+  const { matchData, ...rest } = originInput.parse(raw);
+  const base = await loadInspectionBase(userId, projectId, rest, directory);
+  if (!matchData) return base;
+  const frozen = await frozenWithMatchData(base.frozen, matchData);
+  return { ...base, plan: frozen.plan, validation: frozen.validation, fontFiles: {}, frozen,
+    origin: { ...base.origin, matchDataHash: matchDataHash(matchData) } };
+}
 
 /** Reads the exact draft/revision. In particular, never calls getStudioProject/reconcileSource. */
-export async function loadInspectionProject(userId: string, projectId: string,
+async function loadInspectionBase(userId: string, projectId: string,
   raw: z.input<typeof originInput> = {}, directory?: string) {
   const input = originInput.parse(raw);
   const current = await view(await owned(userId, projectId));
@@ -222,7 +235,7 @@ export async function startStudioStoryboard(userId: string, projectId: string, r
     engineId = pinned.engineId;
     if (previous) return jobView(await ownedJob(userId, previous.jobId));
   } else {
-    prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision });
+    prepared = await loadInspectionProject(userId, projectId, { expectedVersion: input.expectedVersion, revision: input.revision, matchData: input.matchData });
     engineId = await prepareStudioEngine();
   }
   if (input.pixelDiff !== undefined && input.mode !== "compare") throw new StudioError("PIXEL_DIFF_REQUIRES_COMPARE");

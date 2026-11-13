@@ -1,4 +1,5 @@
 import "server-only";
+import { matchDataInput } from "./match-data";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { CompiledScene, CompiledVideo } from "@douga/video";
@@ -10,6 +11,8 @@ export const studioTimelineSchema = studioPageSchema.extend({
   // Generated IDs contain percent-encoded template + stable source identity.
   cursor: z.string().min(1).max(4096).optional(),
   revision: z.number().int().positive().optional(),
+  /** Task 34: frames of the plan a game would show with this data. */
+  matchData: matchDataInput,
 });
 export type StudioTimelineInput = z.input<typeof studioTimelineSchema>;
 
@@ -86,7 +89,10 @@ export async function getStudioTimeline(
   const input = studioTimelineSchema.parse(raw);
   const current = await getStudioProject(userId, projectId);
   let plan = current.plan;
-  if (input.revision) {
+  if (input.matchData) {
+    const { loadInspectionProject } = await import("./storyboard");
+    plan = (await loadInspectionProject(userId, projectId, { revision: input.revision, matchData: input.matchData })).plan;
+  } else if (input.revision) {
     const saved = await prisma.studioRevision.findFirst({
       where: { projectId, revision: input.revision },
       select: { planJson: true },
