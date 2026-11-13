@@ -1,3 +1,4 @@
+import { applyMatchData, checkInteractive, compileInteraction } from "./interactive";
 import type { TypographyCompileOptions } from "./typography-types";
 import {
   collectTypographyFonts,
@@ -33,7 +34,21 @@ export function compileVideo(
   manifest: AssetManifest = {},
   options: TypographyCompileOptions = {},
 ): CompileResult {
-  return compileDocument(input, manifest, undefined, options);
+  const layer = (input as Partial<VideoDocument> | null)?.interactive;
+  if (!layer || typeof layer !== "object") return compileDocument(input, manifest, undefined, options);
+  // Task 34: the linear render, storyboards and clips play the sample data.
+  let prepared = input;
+  try {
+    if (!layer.current && layer.sample && Array.isArray(input.source?.participants))
+      prepared = applyMatchData(input, layer.sample);
+  } catch {
+    // Malformed input: the schema reports it below.
+  }
+  const result = compileDocument(prepared, manifest, undefined, options);
+  if (!result.plan.scenes.length) return result;
+  result.plan.interaction = compileInteraction(prepared, result.plan);
+  const diagnostics = [...result.diagnostics, ...checkInteractive(prepared, result.plan)];
+  return { plan: result.plan, diagnostics, ready: !diagnostics.some((d) => d.severity === "error") };
 }
 function compileDocument(
   input: VideoDocument,

@@ -124,6 +124,15 @@ export function boundText(
     case "round.prompt":
       result = r?.prompt;
       break;
+    case "participant.votes":
+      result = p?.votes;
+      break;
+    case "participant.pickedBy":
+      result = p?.pickedBy?.join(", ");
+      break;
+    case "match.text":
+      result = value.key ? ctx.document.interactive?.current?.texts?.[value.key] : undefined;
+      break;
     case "group.label":
       result = value.groupId
         ? r?.groups?.find((g) => g.id === value.groupId)?.label

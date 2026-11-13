@@ -15,6 +15,7 @@ import {
   transitionSchema,
 } from "./motion-schema";
 import { preflightVideoResources } from "./resource-limits";
+import { interactiveLayerSchema } from "./interactive-schema";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { VideoDocument, VideoNode, VideoPreset } from "./types";
@@ -187,6 +188,8 @@ export const participantSchema = z
     tier: opt(str),
     link: opt(str),
     kind: opt(z.enum(["audio", "video", "image"])),
+    votes: opt(n.min(0)),
+    pickedBy: opt(z.array(z.string().max(120)).max(16)),
     media: opt(z.object({ visual: opt(id), audio: opt(id) }).strict()),
     settings: opt(settingsSchema),
   })
@@ -243,8 +246,12 @@ const plainText = z.union([
         "segment.count",
         "round.prompt",
         "group.label",
+        "participant.votes",
+        "participant.pickedBy",
+        "match.text",
       ]),
       groupId: opt(id),
+      key: opt(id),
       prefix: opt(boundedTextSchema),
       suffix: opt(boundedTextSchema),
     })
@@ -694,6 +701,7 @@ const documentObject = z
         .strict(),
     ),
     preset: opt(z.object({ id, version: positive.int() }).strict()),
+    interactive: opt(interactiveLayerSchema),
   })
   .strict();
 export const videoDocumentSchema: z.ZodType<VideoDocument> = z

@@ -6,7 +6,10 @@
   "description": "Douga players: shared playback model and the interactive player for games.",
   "exports": {
     "./model": "./src/model.ts",
-    "./fixtures": "./src/fixtures.ts"
+    "./preload": "./src/preload.ts",
+    "./fixtures": "./src/fixtures.ts",
+    "./InteractivePlayer": "./src/InteractivePlayer.tsx",
+    "./clock": "./src/clock.ts"
   },
   "dependencies": {
     "@douga/video": "*",

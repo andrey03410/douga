@@ -1,3 +1,4 @@
+import type { CompiledInteraction, InteractiveLayer } from "./interactive-types";
 import type {
   TextTypography,
   TypographySettings,
@@ -42,8 +43,13 @@ export type PlainTextValue =
         | "segment.number"
         | "segment.count"
         | "round.prompt"
-        | "group.label";
+        | "group.label"
+        | "participant.votes"
+        | "participant.pickedBy"
+        | "match.text";
       groupId?: string;
+      /** Key of `match.text`. */
+      key?: string;
       prefix?: string;
       suffix?: string;
     };
@@ -152,6 +158,10 @@ export interface Participant {
   link?: string;
   /** Task 33: what the participant is; an image has no sound of its own. */
   kind?: "audio" | "video" | "image";
+  /** Task 34: votes of a match, written by applyMatchData. */
+  votes?: number;
+  /** Task 34: names of the players who picked this participant. */
+  pickedBy?: string[];
   media?: { visual?: string; audio?: string };
   settings?: Settings;
 }
@@ -469,6 +479,8 @@ export interface VideoDocument {
   scenes: VideoScene[];
   audio?: VideoAudio;
   preset?: { id: string; version: number };
+  /** Task 34: interactive layer; the linear render plays it with sample data. */
+  interactive?: InteractiveLayer;
 }
 export interface VideoPreset {
   schemaVersion: 1;
@@ -629,6 +641,8 @@ export interface CompiledVideo {
   }[];
   scenes: CompiledScene[];
   audio: CompiledAudio[];
+  /** Task 34: only plans of interactive documents carry it. */
+  interaction?: CompiledInteraction;
 }
 export interface CompileResult {
   plan: CompiledVideo;
