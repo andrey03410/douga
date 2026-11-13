@@ -131,7 +131,11 @@ export function InteractivePlayer(props: InteractivePlayerProps) {
       if (atEnd && !ended) p.onEvent?.({ type: "ended" });
       ended = atEnd;
     };
-    const onFrame = (event: { detail: { frame: number } }) => warmer.onFrame(event.detail.frame);
+    const onFrame = (event: { detail: { frame: number } }) => {
+      warmer.onFrame(event.detail.frame);
+      // Hosts and checks read the shown frame without re-rendering React.
+      boxRef.current?.setAttribute("data-frame", String(event.detail.frame));
+    };
     const onWaiting = () => live.current.onEvent?.({ type: "waiting" });
     const onResume = () => live.current.onEvent?.({ type: "resume" });
     const onError = (event: { detail: { error: Error } }) =>
