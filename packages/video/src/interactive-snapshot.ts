@@ -107,7 +107,8 @@ export const interactiveSnapshotSchema = z
 
 /** JSON with sorted keys: the same snapshot hashes the same everywhere. */
 export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  // As JSON.stringify: an undefined array element is null on the wire, so it hashes as null.
+  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? "null" : canonicalJson(v))).join(",")}]`;
   if (value && typeof value === "object")
     return `{${Object.keys(value as object)
       .filter((k) => (value as Record<string, unknown>)[k] !== undefined)

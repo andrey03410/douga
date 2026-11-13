@@ -14,7 +14,7 @@ describe("MCP instructions", () => {
     expect(getBuiltinPreset("top.classic.wide")?.kind).toBe("top");
     expect(MCP_INSTRUCTIONS).toContain('source.kind:"manual"');
     expect(MCP_INSTRUCTIONS).toContain("picker.*");
-    expect(new Set(MCP_TOOL_NAMES).size).toBe(64);
+    expect(new Set(MCP_TOOL_NAMES).size).toBe(70);
   });
 });
 

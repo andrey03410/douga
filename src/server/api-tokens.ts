@@ -43,11 +43,14 @@ export async function issueApiToken(userId: string, raw: z.input<typeof issueApi
   const { name } = issueApiTokenSchema.parse(raw);
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
   if (!user || user.role === "guest") throw new ApiTokenError("FORBIDDEN");
-  if ((await prisma.apiToken.count({ where: { userId, revokedAt: null } })) >= MAX_ACTIVE)
-    throw new ApiTokenError("TOKEN_LIMIT");
   const token = `${API_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
-  const row = await prisma.apiToken.create({
-    data: { userId, name, prefix: token.slice(0, 10), tokenHash: digest(token) },
+  // Count and create in one transaction: parallel requests cannot pass the limit together.
+  const row = await prisma.$transaction(async (tx) => {
+    if ((await tx.apiToken.count({ where: { userId, revokedAt: null } })) >= MAX_ACTIVE)
+      throw new ApiTokenError("TOKEN_LIMIT");
+    return tx.apiToken.create({
+      data: { userId, name, prefix: token.slice(0, 10), tokenHash: digest(token) },
+    });
   });
   return { token, ...view(row) };
 }

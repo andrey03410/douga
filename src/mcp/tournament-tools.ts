@@ -81,7 +81,15 @@ function locate(skipped: SkippedItem[], where: { segmentIndex: number; itemIndex
   return skipped.map(({ index, ...rest }) => ({ ...where[index], ...rest }));
 }
 
-export function registerTournamentTools(server: McpServer, actor: Actor) {
+/**
+ * Disk paths belong to the machine of a stdio session (MCP_LOCAL_MEDIA_DIRS). Over HTTP
+ * a token holder must never read the server's disk, so `{path}` is refused before any read.
+ */
+export function assertSourcesAllowed(sources: ItemSource[], local: boolean): void {
+  if (!local && sources.some((s) => "path" in s)) throw new Error("LOCAL_MEDIA_DISABLED");
+}
+
+export function registerTournamentTools(server: McpServer, actor: Actor, options: { local: boolean } = { local: true }) {
   const guard = (fn: (role: string) => Promise<unknown>) =>
     authorizeActor(actor.userId)
       .then((user) => fn(user.role))
@@ -147,6 +155,7 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
             where.push({ segmentIndex, itemIndex });
           }),
         );
+        assertSourcesAllowed(sources, options.local);
         const resolved = await resolveItemSources(actor.userId, sources, quotasFor(role).maxArchiveBytes);
         const skipped = locate(resolved.skipped, where);
         const tracks: ExtractedTrack[] = [];
@@ -218,6 +227,7 @@ export function registerTournamentTools(server: McpServer, actor: Actor) {
           segmentsToReopen: target ? [{ segmentId: target.id, title: target.title }] : [],
         };
         if (target?.status === "completed" && target.activeCount > 1 && !confirmReset) return ask;
+        assertSourcesAllowed(items, options.local);
         const resolved = await resolveItemSources(actor.userId, items, quotasFor(role).maxArchiveBytes);
         const skipped = locate(
           resolved.skipped,

@@ -69,7 +69,7 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
   );
   registerStudioTools(server, actor);
   registerStoryboardTools(server, actor);
-  registerTournamentTools(server, actor);
+  registerTournamentTools(server, actor, { local: options.local });
 
   // ---- Discovery (Shikimori, read-only) ----
   server.registerTool(
@@ -256,7 +256,8 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
             durationSec: a.durationSec,
             hasAudio: a.hasAudio,
             sizeBytes: a.sizeBytes,
-            filePath: absPath(a.filePath),
+            // The server's disk layout is for the machine owner (stdio), not token holders.
+            ...(options.local ? { filePath: absPath(a.filePath) } : {}),
             createdAt: a.createdAt,
           })),
           nextCursor: page.nextCursor,

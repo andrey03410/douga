@@ -164,7 +164,17 @@ export async function publishInteractive(
   if (!project.document?.interactive) throw new StudioError("INTERACTIVE_LAYER_MISSING");
   const existing = await prisma.studioInteractivePublication.findUnique({ where: { projectId } });
   if (existing && existing.revision === project.revision) {
-    const same = await present(prisma, existing, false);
+    // Same revision: only the stills can be redone (their job failed, was cancelled or deleted).
+    if ((await stillState(prisma, existing)).stills === "missing") {
+      const stillJobId = await startStills(userId, projectId, existing.revision);
+      await prisma.studioInteractivePublication.updateMany({
+        where: { projectId, snapshotId: existing.snapshotId },
+        data: { stillJobId },
+      });
+    }
+    const fresh = await prisma.studioInteractivePublication.findUnique({ where: { projectId } });
+    if (!fresh) throw new StudioError("NOT_FOUND");
+    const same = await present(prisma, fresh, false);
     await prisma.$transaction(async (db) => {
       if (!(await replay(db, userId, input.idempotencyKey, request)))
         await receipt(db, userId, input.idempotencyKey, request, same);
@@ -184,6 +194,7 @@ export async function publishInteractive(
     throw new StudioError("INTERACTIVE_LAYER_MISSING");
   }
   let result: InteractivePublicationView;
+  let stale = false;
   try {
     result = await prisma.$transaction(async (db) => {
       await lockProject(db, userId, projectId);
@@ -191,6 +202,11 @@ export async function publishInteractive(
       if (again) return again;
       await owned(userId, projectId, db);
       const current = await db.studioInteractivePublication.findUnique({ where: { projectId } });
+      // A slower publish of an older revision never moves the link back.
+      if (current && current.revision > frozen.revision) {
+        stale = true;
+        return present(db, current, false);
+      }
       let row: Row;
       if (current) {
         row = await db.studioInteractivePublication.update({
@@ -217,11 +233,15 @@ export async function publishInteractive(
       if (released && internalKey) await db.studioMutation.deleteMany({ where: { userId, key: internalKey } });
     });
   }
+  if (stale) return result;
   const stillJobId = await startStills(userId, projectId, frozen.revision);
-  const row = await prisma.studioInteractivePublication.update({
-    where: { projectId },
+  // Only onto the snapshot these stills were drawn from: a newer publish or an unpublish wins.
+  await prisma.studioInteractivePublication.updateMany({
+    where: { projectId, snapshotId: frozen.snapshotId },
     data: { stillJobId },
   });
+  const row = await prisma.studioInteractivePublication.findUnique({ where: { projectId } });
+  if (!row) throw new StudioError("NOT_FOUND");
   const view = await present(prisma, row, result.updated);
   await prisma.$transaction(async (db) => {
     if (!(await replay(db, userId, input.idempotencyKey, request)))
