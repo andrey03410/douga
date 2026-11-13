@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { boardRoundSchema, parseVideoDocument } from "./schema";
 import { resolveBoard } from "./board-state";
+import { interactiveLayerSchema } from "./interactive-schema";
+import type { InteractiveLayer } from "./interactive-types";
 import type {
   Participant,
   PickerRound,
@@ -34,8 +36,21 @@ const round = z
     answerParticipantIds: z.array(id).max(20000).nullable().optional(),
   })
   .strict();
+/**
+ * Task 34: the interactive layer in short form. Merge updates moments and choices by id
+ * and templates by segment or scene; replace sets the whole layer; null removes it.
+ */
+const interactivePart = z
+  .object({
+    moments: interactiveLayerSchema.innerType().shape.moments.optional(),
+    choices: interactiveLayerSchema.innerType().shape.choices.optional(),
+    templates: interactiveLayerSchema.innerType().shape.templates.optional(),
+    sample: interactiveLayerSchema.innerType().shape.sample.optional(),
+  })
+  .strict();
 const common = {
   mode: z.enum(["merge", "replace"]),
+  interactive: interactivePart.nullable().optional(),
   title: text.optional(),
   participants: z.array(participant).max(20000).optional(),
   deleteParticipantIds: z.array(id).max(20000).optional(),
@@ -323,11 +338,33 @@ export function buildVideoContent(
     )
       fail("CONTENT_ANSWER_REFERENCE_INVALID", `rounds.${r.id}.answer`);
   }
+  if (input.interactive === null) delete doc.interactive;
+  else if (input.interactive) doc.interactive = mergeInteractive(doc.interactive, input.interactive, input.mode);
   // Existing concrete scene/segment scopes cannot be silently pruned on deletion.
   for (const s of scenes)
     if (s.participantId && !participants.has(s.participantId))
       fail("CONTENT_REFERENCE_INVALID", `scenes.${s.id}.participantId`);
   return parseVideoDocument(doc);
+}
+function mergeInteractive(
+  old: InteractiveLayer | undefined,
+  part: z.infer<typeof interactivePart>,
+  mode: "merge" | "replace",
+): InteractiveLayer {
+  const base: InteractiveLayer =
+    mode === "merge" && old ? structuredClone(old) : { version: 1, moments: [], choices: [], templates: [], sample: {} };
+  const byKey = <T>(list: T[], updates: T[] | undefined, key: (item: T) => string) => {
+    if (!updates) return list;
+    unique(updates.map((u) => ({ id: key(u) })), "interactive");
+    if (mode === "replace") return updates;
+    const next = list.filter((item) => !updates.some((u) => key(u) === key(item)));
+    return [...next, ...updates];
+  };
+  base.moments = byKey(base.moments, part.moments, (m) => m.id);
+  base.choices = byKey(base.choices, part.choices, (c) => c.id);
+  base.templates = byKey(base.templates, part.templates, (t) => t.segmentId ?? `scene:${t.sceneId}`);
+  if (part.sample) base.sample = part.sample;
+  return base;
 }
 export function getVideoContentMissingInputs(doc: VideoDocument): string[] {
   const missing: string[] = [];

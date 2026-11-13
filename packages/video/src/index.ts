@@ -38,3 +38,4 @@ export * from "./interactive-schema";
 export * from "./interactive";
 export * from "./interactive-examples";
 export * from "./interactive-snapshot";
+export * from "./interactive-recipes";
