@@ -2,9 +2,9 @@
 id: 34
 title: Интерактивные ролики для asobiba
 track: product        # product | tech
-stage: build           # brief → product → tech → plan → build → review → merged
+stage: review           # brief → product → tech → plan → build → review → merged
 branch: feat/34-interactive-video
-pr:
+pr: https://github.com/andrey03410/douga/pull/15
 started: 2026-11-13
 merged:
 ---
