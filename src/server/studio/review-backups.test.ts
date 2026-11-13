@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import ffmpeg from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { removePath, absPath } from "@/lib/storage";
-import { createVideoDocument } from "@/video/builders";
+import { createVideoDocument } from "@douga/video/builders";
 import {
   createStudioProject,
   deleteStudioProject,

@@ -262,6 +262,23 @@ export async function studioHttp(
               ),
             );
         }
+        if (action === "interactive") {
+          const text = read ? "" : await req.text();
+          const raw = text.trim() ? JSON.parse(text) : {};
+          if (read) {
+            const row = await studio.getInteractivePublication(uid, id);
+            if (!row) throw new studio.StudioError("NOT_FOUND");
+            return json(row);
+          }
+          if (req.method === "POST")
+            return json(await studio.publishInteractive(uid, id, studio.publishInteractiveSchema.parse(raw)));
+          if (req.method === "DELETE") return json(await studio.unpublishInteractive(uid, id));
+        }
+        if (action === "copy" && req.method === "POST") {
+          const text = await req.text();
+          const raw = text.trim() ? JSON.parse(text) : {};
+          return json(await studio.copyStudioProject(uid, id, studio.copyStudioProjectSchema.parse(raw)), 201);
+        }
         if (read && action === "export.html") {
           if (url.searchParams.get("estimate") === "1")
             return json(await studio.estimateStudioExport(uid, id));

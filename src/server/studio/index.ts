@@ -13,6 +13,7 @@ export {
   deleteStudioProject,
 } from "./projects";
 export * from "./revisions";
+export { copyStudioProject, copyStudioProjectSchema, type CopyStudioProjectInput } from "./projects";
 export * from "./presets";
 export { getStudioManifest } from "./assets";
 export {
@@ -35,7 +36,7 @@ export {
   getStudioJobArtifact,
 } from "./jobs";
 export { runStudioWorkerOnce } from "./worker";
-export { videoResourceLimits } from "@/video/resource-limits";
+export { videoResourceLimits } from "@douga/video/resource-limits";
 
 export { startStudioImport } from "./imports";
 export * from "./queries";
@@ -49,3 +50,12 @@ export * from "./storyboard";
 export * from "./review";
 export * from "./recipe-preview";
 export * from "./review-backups";
+export {
+  publishInteractive,
+  unpublishInteractive,
+  getInteractivePublication,
+  listInteractivePublications,
+  publishInteractiveSchema,
+  interactiveManifestUrl,
+  type InteractivePublicationView,
+} from "./interactive";

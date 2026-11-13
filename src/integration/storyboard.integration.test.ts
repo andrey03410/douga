@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import { createStudioProject, deleteStudioProject, saveStudioDraft } from "@/server/studio/projects";
 vi.mock("@/server/studio/engine", async (original) => ({
   ...(await original<object>()),

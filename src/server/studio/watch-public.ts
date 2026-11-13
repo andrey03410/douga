@@ -1,8 +1,8 @@
 import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import type { CompiledVideo } from "@/video";
-import { rewritePlanMedia, type WatchMediaName, watchMediaPath } from "@/watch/model";
+import type { CompiledVideo } from "@douga/video";
+import { rewritePlanMedia, type WatchMediaName, watchMediaPath } from "@douga/player/model";
 import { safeFile } from "./assets";
 import { streamStudioFile, studioMimeType } from "./http-media";
 import type { StudioFrozenRevision } from "./types";

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { createVideoDocument, compileVideo } from "@/video";
+import { createVideoDocument, compileVideo } from "@douga/video";
 const mocks = vi.hoisted(() => ({ load: vi.fn(), pinned: vi.fn(), owned: vi.fn(), enqueue: vi.fn(), transform: vi.fn() }));
 vi.mock("./storyboard", () => ({ loadInspectionProject: mocks.load, loadPinnedInspectionProject: mocks.pinned, enqueueInspection: mocks.enqueue }));
 vi.mock("./shared", async original => ({ ...(await original<object>()), owned: mocks.owned }));

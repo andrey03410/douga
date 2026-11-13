@@ -7,7 +7,7 @@ import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { can } from "@/lib/domain/permissions";
 import { absPath } from "@/lib/storage";
-import type { CompiledVideo } from "@/video";
+import type { CompiledVideo } from "@douga/video";
 import {
   applySlices,
   mediaSlices,

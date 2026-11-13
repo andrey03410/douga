@@ -8,7 +8,7 @@ import {
   getBuiltinPresets,
   parseVideoDocument,
   type VideoDocument,
-} from "@/video";
+} from "@douga/video";
 import { reconcileSource } from "@/server/studio/sources";
 import {
   createStudioProjectFromPreset,

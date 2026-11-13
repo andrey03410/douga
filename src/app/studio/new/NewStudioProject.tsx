@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createVideoDocument, type VideoDocument } from "@/video";
+import { createVideoDocument, type VideoDocument } from "@douga/video";
 import { studioRequest } from "../StudioWorkspace";
 function example(kind: "top" | "picker", sourceId?: string): VideoDocument {
   const document = createVideoDocument({ kind });

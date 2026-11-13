@@ -39,7 +39,7 @@ process.once("message", async (request: any) => {
       await mkdir(resolve(request.publicDir, "fonts"), { recursive: true });
       await cp(resolve("public/fonts/typography-v1"), resolve(request.publicDir, "fonts/typography-v1"), { recursive: true });
       await bundle({
-        entryPoint: resolve("src/remotion/index.ts"),
+        entryPoint: resolve("src/remotion-entry/index.ts"),
         outDir: request.outDir,
         publicDir: request.publicDir,
         webpackOverride: (config) => ({

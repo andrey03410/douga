@@ -1,21 +1,25 @@
 import { z } from "zod";
+import { matchDataSchema } from "@douga/video/interactive-schema";
 const common = {
   expectedVersion: z.number().int().positive().optional(),
   revision: z.number().int().positive().optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
 };
 const frame = z.number().int().nonnegative().max(2_147_483_647);
+/** Task 34: preview jobs may show the video with a game's data; renders never do. */
+const matchData = matchDataSchema.optional();
 /** Job states that still own a worker slot; shared by light modules (account deletion). */
 export const activeJobStatuses = ["queued", "running"];
 
 export const startStudioJobSchema = z.discriminatedUnion("kind", [
-  z.object({ ...common, kind: z.literal("still"), frame }).strict(),
+  z.object({ ...common, kind: z.literal("still"), frame, matchData }).strict(),
   z
     .object({
       ...common,
       kind: z.literal("clip"),
       fromFrame: frame,
       durationFrames: frame.positive(),
+      matchData,
     })
     .strict(),
   z
@@ -24,6 +28,7 @@ export const startStudioJobSchema = z.discriminatedUnion("kind", [
       kind: z.literal("audio"),
       fromFrame: frame,
       durationFrames: frame.positive(),
+      matchData,
     })
     .strict(),
   z.object({ ...common, kind: z.literal("render") }).strict(),

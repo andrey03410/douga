@@ -11,7 +11,7 @@ import {
   extractVideoPreset,
   applyVideoPreset,
   compileVideo,
-} from "@/video";
+} from "@douga/video";
 import { createArt, deleteArt, listArts } from "@/server/arts";
 import { deleteTournament } from "@/server/tournaments";
 import { deleteUser, usageSummary } from "@/server/users";

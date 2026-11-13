@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { parseVideoDocument, videoDocumentSchema } from "@/video/schema";
+import { parseVideoDocument, videoDocumentSchema } from "@douga/video/schema";
 import type { StudioProjectView } from "./types";
 import {
   canonical,

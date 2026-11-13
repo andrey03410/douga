@@ -304,6 +304,7 @@ export async function deleteUser(actorId: string, targetId: string) {
     // Jobs reference snapshots and projects with onDelete: Restrict.
     await tx.studioJob.deleteMany({ where: { userId: targetId } });
     await tx.studioPublication.deleteMany({ where: { userId: targetId } });
+    await tx.studioInteractivePublication.deleteMany({ where: { userId: targetId } });
     await tx.studioSnapshot.deleteMany({
       where: { project: { userId: targetId } },
     });

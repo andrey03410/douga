@@ -12,11 +12,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "../src/lib/db";
 import { runStudioWorkerOnce } from "../src/server/studio/worker";
-import { visualFixtureMedia } from "../src/video/visual-fixtures";
+import { visualFixtureMedia } from "@douga/video/visual-fixtures";
 import { encodeVisualPng } from "./visual-regression";
 import { ownedScenarioContent, measurePcm16, parseMcpToolData } from "./storyboard-verification-helpers";
-import type { VideoContentInput } from "../src/video/content";
-import type { VideoDocument } from "../src/video/types";
+import type { VideoContentInput } from "@douga/video/content";
+import type { VideoDocument } from "@douga/video/types";
 
 const root = process.cwd(), run = promisify(execFile), digest = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }

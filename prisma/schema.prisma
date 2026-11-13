@@ -33,7 +33,9 @@ model User {
   studioMutations StudioMutation[]
   studioJobs StudioJob[]
   studioPublications StudioPublication[]
+  studioInteractivePublications StudioInteractivePublication[]
   studioExportCaches StudioExportCache[]
+  apiTokens ApiToken[]
 }
 
 // ---- Phase 1: tournament ----
@@ -240,6 +242,7 @@ model StudioProject {
   snapshots StudioSnapshot[]
   jobs StudioJob[]
   publications StudioPublication[]
+  interactivePublications StudioInteractivePublication[]
   exportCaches StudioExportCache[]
 }
 model StudioRevision {
@@ -282,6 +285,7 @@ model StudioSnapshot {
   payloadJson String
   jobs StudioJob[]
   publications StudioPublication[]
+  interactivePublications StudioInteractivePublication[]
   bytes Float
   createdAt DateTime @default(now())
 }
@@ -372,4 +376,38 @@ model StudioWorkerLease {
   id String @id
   token String?
   until DateTime?
+}
+
+/// Task 34: one interactive snapshot link per project for game hosts (Asobiba).
+/// The token is the capability; Restrict on every FK like StudioPublication.
+model StudioInteractivePublication {
+  id String @id @default(cuid())
+  projectId String @unique
+  project StudioProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  token String @unique
+  snapshotId String
+  snapshot StudioSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  revision Int
+  /// Storyboard job that draws one still per interactive scene; null when none.
+  stillJobId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+  @@index([snapshotId])
+}
+
+/// Task 34: personal MCP tokens for the HTTP transport. Only the hash is stored.
+model ApiToken {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  prefix String
+  tokenHash String @unique
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+  @@index([userId])
 }

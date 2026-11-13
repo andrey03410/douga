@@ -2,9 +2,9 @@
 import { useMemo } from "react";
 import type { AnyZodObject } from "zod";
 import { Player } from "@remotion/player";
-import { StudioVideo } from "@/remotion/StudioVideo";
-import type { CompiledVideo } from "@/video";
-import { sharedAudioTagCount } from "@/watch/model";
+import { StudioVideo } from "@douga/render/StudioVideo";
+import type { CompiledVideo } from "@douga/video";
+import { sharedAudioTagCount } from "@douga/player/model";
 export default function StudioPreview({ plan }: { plan: CompiledVideo }) {
   // Premounted cues hold a shared tag too, so the default of five can run out.
   const audioTags = useMemo(() => sharedAudioTagCount(plan), [plan]);

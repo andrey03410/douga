@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import type { CompiledVideo } from "@/video";
+import type { CompiledVideo } from "@douga/video";
 import { WatchPlayer, WatchShell } from "./WatchPlayer";
 
 declare global {

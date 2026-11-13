@@ -6,7 +6,7 @@ import {
   parseVideoDocument,
   getBuiltinPresets,
   videoPresetSchema,
-} from "@/video";
+} from "@douga/video";
 import { actor, replay, receipt, requestHash, jsonText } from "./shared";
 import { StudioError } from "./errors";
 import {

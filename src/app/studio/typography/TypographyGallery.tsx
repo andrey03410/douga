@@ -1,13 +1,13 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { CompiledVideo, Diagnostic } from "@/video";
-import type { TypographyFont } from "@/video/font-manifest";
+import type { CompiledVideo, Diagnostic } from "@douga/video";
+import type { TypographyFont } from "@douga/video/font-manifest";
 import type {
   TypographyThemeId,
   TypographyStyleId,
   FontId,
-} from "@/video/typography-types";
+} from "@douga/video/typography-types";
 import { studioRequest } from "../StudioWorkspace";
 const Preview = dynamic(() => import("../StudioPreview"), { ssr: false });
 type Theme = { id: TypographyThemeId; name: string; description: string };

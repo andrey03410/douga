@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { CompiledVideo } from "@/video";
-import type { VideoRecipe } from "@/video/recipes";
+import type { CompiledVideo } from "@douga/video";
+import type { VideoRecipe } from "@douga/video/recipes";
 import type { InspectionOrigin } from "@/server/studio/storyboard-types";
 const Preview = dynamic(() => import("../StudioPreview"), {
   ssr: false,

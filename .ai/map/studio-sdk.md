@@ -2,15 +2,47 @@
 
 Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
 
+## Интерактивные ролики для asobiba (задача 34)
+
+Ядро SDK вынесено в npm-пакеты `packages/*`, которые asobiba подключает через `file:`:
+- `@douga/video` ([`packages/video/src/`](../../packages/video/src/)) — документ, компилятор, интерактивный слой;
+- `@douga/render` ([`packages/render/src/`](../../packages/render/src/)) — `StudioVideo` и [`hit-test.ts`](../../packages/render/src/hit-test.ts);
+- `@douga/player` ([`packages/player/src/`](../../packages/player/src/)) — [`InteractivePlayer.tsx`](../../packages/player/src/InteractivePlayer.tsx) на серверных часах; ставит `data-frame` с показанным кадром;
+- `@douga/node` ([`packages/node/src/`](../../packages/node/src/)) — измерение текста по файлам шрифтов с проверкой SHA-256.
+
+Точка входа Remotion осталась в приложении: [`src/remotion-entry/`](../../src/remotion-entry/).
+
+- **Интерактивный слой** документа ([`interactive-schema.ts`](../../packages/video/src/interactive-schema.ts), [`interactive.ts`](../../packages/video/src/interactive.ts)):
+  моменты (`moments`, кадр ожидания по событию сцены), выборы (`choices`, нажимаемые карточки), данные партии
+  `MatchData` (`players`, `participants` с votes/rank/pickedBy, `text`) и пример `sample`. `applyMatchData` подставляет
+  данные; без слоя документ не меняется. В плане — `plan.interaction`, нарезка — `slicePlan`.
+- **Публикация** ([`src/server/studio/interactive.ts`](../../src/server/studio/interactive.ts)): `publishInteractive` замораживает
+  последнюю ревизию с интерактивным слоем (без слоя — `INTERACTIVE_LAYER_MISSING`) и запускает раскадровку
+  кадров сцен (`stillJobId`). Статус `preparing` → `ready`. Снимок `douga-interactive-snapshot@1`
+  ([`interactive-snapshot.ts`](../../packages/video/src/interactive-snapshot.ts)): документ, манифест с файлами
+  `<sha256><ext>`, шрифты, сцены с кадрами, сегменты, `sample`; хэш — SHA-256 канонического JSON.
+  Публичные маршруты по токену: `GET /api/interactive/<token>/manifest` (409 `SNAPSHOT_NOT_READY`, пока кадры не готовы)
+  и `/api/interactive/<token>/files/<file>` — только файлы манифеста. `unpublishInteractive` снимает публикацию.
+- **Копия проекта** `copyStudioProject` (HTTP `POST projects/:id/copy`, MCP `video_project_copy`): готовый линейный
+  ролик превращается в игру на копии, исходник не меняется.
+- **`matchData` в заданиях** ([`match-data.ts`](../../src/server/studio/match-data.ts)): storyboard, review, still, clip,
+  audio и timeline принимают `matchData`, он сливается поверх `sample` и в документ не пишется. Ключ повторного
+  задания учитывает `matchDataHash`. Финальный MP4 по-прежнему только у админа.
+- **Рецепты** ([`interactive-recipes.ts`](../../packages/video/src/interactive-recipes.ts)): 15 рецептов
+  `recipe.interactive.{quiz-question,quiz-media,quiz-reveal,vote-result,scoreboard}.{wide,vertical,square}`.
+  Короткая форма `video_content_set` принимает часть `interactive` (слияние по id, `replace`, `null` удаляет).
+- Модель `StudioInteractivePublication` (одна на проект, `token`, `snapshotId`, `revision`, `stillJobId`).
+- Отклонения от плана: визуальных фикстур на интерактивные рецепты нет; поле момента в asobiba называется `start`.
+
 ## Рецепты, раскадровка и проверка (задача 32)
 
 - Каталог содержит 54 прежних пресета и 33 `recipe.<style>.<kind>.<format>`:
   шесть направлений, три формата, только совместимые виды роликов.
-  [`recipes.ts`](../../src/video/recipes.ts) и [`content.ts`](../../src/video/content.ts)
+  [`recipes.ts`](../../packages/video/src/recipes.ts) и [`content.ts`](../../packages/video/src/content.ts)
   дают metadata/contentForm/examples и предметное заполнение без ручных nodes/bindings.
   `merge` обновляет именованные части, `replace` явно заменяет содержимое;
   ownership, media kind, CAS и atomic receipt проверяются сервером.
-- [`storyboard.ts`](../../src/video/storyboard.ts) выбирает устойчивые состояния
+- [`storyboard.ts`](../../packages/video/src/storyboard.ts) выбирает устойчивые состояния
   сцен, события и сравнение по scene/state; default12/max24 плитки страницы.
   Coverage относится к текущей странице; custom heuristic и отсутствие устойчивого
   окна явно обозначены. Для всех сцен длинного ролика нужны остальные страницы.
@@ -21,7 +53,7 @@
 - Inspection jobs хранят frozen input в inputJson и копии в studio-jobs/<user>/<job>/inputs,
   без StudioSnapshot FK/новой ревизии. Worker проверяет hashes и обычный fenced lease.
   Повтор по origin+media/fonts+engine+options возвращает тот же active/done job.
-- [`video-review.ts`](../../src/video/video-review.ts) объясняет measured overflow/glyphs,
+- [`video-review.ts`](../../packages/video/src/video-review.ts) объясняет measured overflow/glyphs,
   ограниченные safe-area/readable-window риски и поддержанные authoring targets.
   Сервер пересчитывает кандидат на реальном measureText перед выдачей; ineffective/no-op
   и stale fixes отвергаются. Motion/audio/contrast не становятся passed по наличию плана.
@@ -49,8 +81,8 @@
 
 ## Моушен-кит
 
-- [`motion-types.ts`](../../src/video/motion-types.ts), [`motion-schema.ts`](../../src/video/motion-schema.ts),
-  [`motion-catalog.ts`](../../src/video/motion-catalog.ts) и [`motion-compiler.ts`](../../src/video/motion-compiler.ts)
+- [`motion-types.ts`](../../packages/video/src/motion-types.ts), [`motion-schema.ts`](../../packages/video/src/motion-schema.ts),
+  [`motion-catalog.ts`](../../packages/video/src/motion-catalog.ts) и [`motion-compiler.ts`](../../packages/video/src/motion-compiler.ts)
   — закрытый каталог v1: 40 эффектов, 10 хореографий, 8 новых переходов,
   5 фонов и виджеты timer/versus/badge/progress. Короткий [SDK-гид](../features/30-motion-kit/sdk-guide.md).
 - `settings.motion`: profile `smooth|snappy|bouncy|cinematic`, intensity
@@ -85,16 +117,16 @@
   проверка задачи 30 сравнивает полный JSON всех 54 пресетов × 5 FPS.
 
 ## Где код
-- [`src/video/`](../../src/video/) — домен SDK без I/O. Публичный вход — [`index.ts`](../../src/video/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
-  - [`schema.ts`](../../src/video/schema.ts) / [`types.ts`](../../src/video/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
-  - [`builders.ts`](../../src/video/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
-  - [`compiler.ts`](../../src/video/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
-  - [`layout.ts`](../../src/video/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
-  - [`presets.ts`](../../src/video/presets.ts) — 87 встроенных пресетов (54 прежних +33 рецепта), `extractVideoPreset`/`applyVideoPreset`
-  - [`board-state.ts`](../../src/video/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../src/video/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../src/video/board-presets.ts) — 8 семейств и factory
-  - [`patches.ts`](../../src/video/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
-  - [`resource-limits.ts`](../../src/video/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
-- [`src/remotion/StudioVideo.tsx`](../../src/remotion/StudioVideo.tsx) — единый рендерер плана (композиция `Studio` в [`Root.tsx`](../../src/remotion/Root.tsx)) для Player, PNG, клипов и финального MP4; покадровая математика — [`studio-frame.ts`](../../src/remotion/studio-frame.ts), градиент/тень → CSS — [`studio-paint.ts`](../../src/remotion/studio-paint.ts)
+- [`packages/video/src/`](../../packages/video/src/) (`@douga/video`) — домен SDK без I/O. Публичный вход — [`index.ts`](../../packages/video/src/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
+  - [`schema.ts`](../../packages/video/src/schema.ts) / [`types.ts`](../../packages/video/src/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
+  - [`builders.ts`](../../packages/video/src/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
+  - [`compiler.ts`](../../packages/video/src/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
+  - [`layout.ts`](../../packages/video/src/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
+  - [`presets.ts`](../../packages/video/src/presets.ts) — 87 встроенных пресетов (54 прежних +33 рецепта), `extractVideoPreset`/`applyVideoPreset`
+  - [`board-state.ts`](../../packages/video/src/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../packages/video/src/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../packages/video/src/board-presets.ts) — 8 семейств и factory
+  - [`patches.ts`](../../packages/video/src/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
+  - [`resource-limits.ts`](../../packages/video/src/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
+- [`packages/render/src/StudioVideo.tsx`](../../packages/render/src/StudioVideo.tsx) — единый рендерер плана (композиция `Studio` в [`Root.tsx`](../../src/remotion-entry/Root.tsx)) для Player, PNG, клипов и финального MP4; покадровая математика — [`studio-frame.ts`](../../packages/render/src/studio-frame.ts), градиент/тень → CSS — [`studio-paint.ts`](../../packages/render/src/studio-paint.ts)
 - [`src/server/studio/`](../../src/server/studio/) — сервисы (вход `index.ts`, все `import "server-only"`):
   - [`projects.ts`](../../src/server/studio/projects.ts) — создание, черновик (replace/patch/preset), commit/restore, CAS
   - [`revisions.ts`](../../src/server/studio/revisions.ts) — история, `freezeStudioProject` → `StudioSnapshot`
@@ -107,7 +139,7 @@
   - [`export-html.ts`](../../src/server/studio/export-html.ts) + [`export-slice.ts`](../../src/server/studio/export-slice.ts) — один офлайн-`.html`
 - [`scripts/studio-worker.ts`](../../scripts/studio-worker.ts) — исполнитель очереди (`npm run studio:worker`); [`scripts/studio-render-child.ts`](../../scripts/studio-render-child.ts) — дочерний процесс bundle/render/import
 - UI: [`src/app/studio/`](../../src/app/studio/) — `/studio/new` (`new/`), `/studio/<id>` (`StudioWorkspace.tsx`, `editor-state.ts`); список SDK-проектов — [`/projects`](../../src/app/projects/page.tsx); SDK-кнопка в результатах турнира — `src/app/tournaments/[id]/ResultsPanel.tsx`
-  - страница просмотра [`/watch/<token>`](../../src/app/watch/[token]/page.tsx) и плеер [`src/watch/WatchPlayer.tsx`](../../src/watch/WatchPlayer.tsx). Чистые функции плеера (главы, клавиши, автоскрытие, окно предзагрузки) лежат в [`src/watch/model.ts`](../../src/watch/model.ts), функции офлайн-файла — в [`src/watch/offline.ts`](../../src/watch/offline.ts). Шапку на `/watch` убирает [`src/middleware.ts`](../../src/middleware.ts)
+  - страница просмотра [`/watch/<token>`](../../src/app/watch/[token]/page.tsx) и плеер [`src/watch/WatchPlayer.tsx`](../../src/watch/WatchPlayer.tsx). Чистые функции плеера (главы, клавиши, автоскрытие, окно предзагрузки) лежат в [`packages/player/src/model.ts`](../../packages/player/src/model.ts), функции офлайн-файла — в [`src/watch/offline.ts`](../../src/watch/offline.ts). Шапку на `/watch` убирает [`src/middleware.ts`](../../src/middleware.ts)
 - API: [`src/app/api/studio/`](../../src/app/api/studio/) — catch-all `[[...path]]/route.ts` → `studioHttp`
 - MCP: [`src/mcp/studio-tools.ts`](../../src/mcp/studio-tools.ts) — `video_*`-инструменты поверх тех же сервисов, подробности в [mcp.md](mcp.md)
 - [`scripts/verify-studio.mjs`](../../scripts/verify-studio.mjs) — повторяемая проверка через настоящий stdio MCP
@@ -142,7 +174,7 @@
 - Транзакции публикации и снятия первой командой пишут строку `StudioProject` и так берут блокировку записи SQLite. Внутри одного процесса Prisma и так выполняет транзакции по очереди, а сайт, MCP и воркер — разные процессы. Снятие сверяет `expectedVersion`. Тело `publication` разбирается строго: пустое тело — без опций, кривое — `MALFORMED_JSON`.
 - Гость открывает `/watch/<token>` без сессии. Клиенту уходят название (оно же заголовок вкладки, `generateMetadata`) и план, в котором `src` переписан на `/api/watch/<token>/media/<sha256><ext>`. Файл отдаёт `streamStudioFile`: Range, без чтения целиком, `ETag` с хэшем и `private, max-age=31536000, immutable`, потому что имя файла и есть хэш. Разобранный индекс снимка хранится в памяти по `snapshotId`, снимок после заморозки не меняется. Чужой hash и снятый токен — 404, страница говорит «Ролик снят с публикации».
 - Middleware срабатывает на всех страницах, кроме `/api`, `_next/static`, `_next/image` и `favicon.ico`. Заголовок `x-douga-chrome: bare` ставится только на `/watch`, на остальных страницах присланный клиентом снимается.
-- Плеер `/watch` и офлайн-файла плавный за счёт трёх мер. Сцены и звуковые реплики `StudioVideo` монтируются за 2 с до начала (`premountFor`, только в Player). Картинки на 30 с вперёд заранее декодирует `new Image().decode()`: уже декодированный адрес не включает `pauseWhenLoading` (`src/remotion/image-ready.ts`). Звук, который ещё не начался, заранее скачивается `fetch` в HTTP-кэш, а `src` у `<audio>` не меняется. Remotion `prefetch` не годится: его поздняя подмена на blob перезагружает уже играющую реплику. Предпросмотр в студии и `/watch` берут `numberOfSharedAudioTags` из `sharedAudioTagCount`: смонтированные заранее реплики тоже занимают общий тег. Без этого каждое монтирование `<Img>` на миг ставит Player в буферизацию, а та ставит на паузу звук.
+- Плеер `/watch` и офлайн-файла плавный за счёт трёх мер. Сцены и звуковые реплики `StudioVideo` монтируются за 2 с до начала (`premountFor`, только в Player). Картинки на 30 с вперёд заранее декодирует `new Image().decode()`: уже декодированный адрес не включает `pauseWhenLoading` (`packages/render/src/image-ready.ts`). Звук, который ещё не начался, заранее скачивается `fetch` в HTTP-кэш, а `src` у `<audio>` не меняется. Remotion `prefetch` не годится: его поздняя подмена на blob перезагружает уже играющую реплику. Предпросмотр в студии и `/watch` берут `numberOfSharedAudioTags` из `sharedAudioTagCount`: смонтированные заранее реплики тоже занимают общий тег. Без этого каждое монтирование `<Img>` на миг ставит Player в буферизацию, а та ставит на паузу звук.
 - «Скачать .html» работает и без ссылки: `GET .../export.html?estimate=1` готовит файлы и возвращает точный размер, сам `GET` стримит один файл с `Content-Length`. Окна плана считаются по ролям с запасом 0,5 с (`mediaSlices`):
   - картинка и источник, который используется от края до края, встраиваются из ревизии как есть;
   - звук реплики режется в AAC `.m4a`;
@@ -153,14 +185,14 @@
 - Импорт по ссылке закрыт от SSRF тем же `assertPublicUrl`, что и пул ([media.md](media.md)). Схема `startStudioImportSchema` нормализует ссылку через `new URL(...).href`. yt-dlp получает ровно ту ссылку, которую проверил гард: Python `urlparse` читает `http://a.com\@127.0.0.1/` с хостом 127.0.0.1. `startStudioImport` отвечает `BLOCKED_HOST` на loopback или LAN (в MCP `{code: "BLOCKED_HOST"}`, задание не создаётся; HTTP-маршрута импорта нет), а нерезолвящийся хост ставит в очередь. `importStudioAttempt` проверяет адрес ещё раз прямо перед `probeUrl`. Там `BLOCKED_HOST` терминален: он есть в `terminalErrors` и падает с первой попытки. Сбой DNS — обычный `IMPORT_FAILED` с повторами. Дочерний процесс наследует `MEDIA_URL_ALLOW_PRIVATE` от worker.
 - Удаление аккаунта (`deleteUser`, [roles.md](roles.md)) блокирует только активное задание: `queued`/`running` или с живой арендой. Это `JOB_IN_USE`, 409. Завершённые задания уходят вместе с аккаунтом, файлы `studio-jobs/<userId>` тоже, общие движки остаются.
 - Тесты гоняются на той же `prisma/dev.db` (env в `vitest.config.ts`, `fileParallelism: false`) и делят тяжёлый слот. Общий `npm run studio:worker` перехватит задания интеграционных тестов — останавливайте его. Для одного задания: `npm run studio:worker -- --once --job JOB_ID`.
-- Правка в `src/remotion`, `src/video`, `src/lib` или `package-lock.json` меняет `engineId`: первое задание пересобирает бандл (таймаут 120 с) в `storage/studio-engines/`.
+- Правка в `src/remotion-entry`, `packages/render/src`, `packages/video/src`, `src/lib` или `package-lock.json` меняет `engineId`: первое задание пересобирает бандл (таймаут 120 с) в `storage/studio-engines/`.
 - `src/server/studio` не должен импортировать клиентский `remotion` (`server-boundary.test.ts`).
 - HTTP-мутации отвергают чужой `Origin` (сверка с `x-forwarded-host`/`Host`); прокси обязан подставлять публичный origin.
 - MCP отдаёт не больше 12 MiB за медиарезультат; больший файл скачивается на сайте: `/api/studio/jobs/<id>/result?download=1`. `MCP_ACTOR_EMAIL` должен совпадать с веб-аккаунтом.
 
 ## Как проверить
-- Домен: `npx vitest run src/video` (схема, компилятор, дуга, пресеты, бюджеты, градиент/тень)
-- Рендерер/UI/сервис: `npx vitest run src/remotion/studio-frame.test.ts src/remotion/studio-player.test.ts src/app/studio src/server/studio`
+- Домен: `npx vitest run packages/video` (схема, компилятор, дуга, пресеты, бюджеты, градиент/тень)
+- Рендерер/UI/сервис: `npx vitest run packages/render/src/studio-frame.test.ts packages/render/src/studio-player.test.ts src/app/studio src/server/studio`
 - Интеграция: `npx vitest run src/integration/studio-` — реальная БД, рендер, yt-dlp в `studio-imports` (медленно). Общий worker на это время останавливайте.
 - Обязательно после последних правок: `npm test` → `npm run build` → `npx tsc --noEmit`
 - Живой сайт: `npm run dev` (сначала проверьте, что порт 3000 свободен) + `npm run studio:worker`. Путь: `/projects` → `/studio/new` → `/studio/<id>`: «Сохранить и проверить», «Показать превью», задания PNG/клип/аудио.
@@ -177,27 +209,28 @@
 - [спека 25](../specs/25-ai-video-http-contract.md) — **актуальный контракт** сайта/HTTP: `/api/studio`, Origin, страницы
 - [спека 26](../specs/26-sdk-visual-demos.md) — три демо, `CardStyle.gradient`/`shadow`, отказ от seek для JPEG
 - Фаза 20: [план](../phases/phase-20-ai-video-sdk-plan.md), [решения](../phases/phase-20-implementation-decisions.md), [приёмка](../phases/phase-20-verification.md). Фаза 21: [план](../phases/phase-21-sdk-demos-plan.md), [приёмка](../phases/phase-21-verification.md) (978/978 на `07a01f8`)
+- [задача 34](../features/34-interactive-video/README.md) — пакеты `@douga/*`, интерактивный слой, снимок для asobiba, копия проекта, `matchData`, HTTP MCP
 
 ## Задача 27
 
 - [Техника сегментов](../features/27-segments/tech.md), [приёмка](../features/27-segments/verify.md).
-- Тесты: `src/video/segments.test.ts`, `src/integration/studio-segments.integration.test.ts`, `src/app/studio/new/new-project.test.ts`.
+- Тесты: `packages/video/src/segments.test.ts`, `src/integration/studio-segments.integration.test.ts`, `src/app/studio/new/new-project.test.ts`.
 - В v2 `card.style.playSound:false` выключает и отдельный participant audio; прежняя семантика v1 сохраняется. При apply общего пресета создаваемые sound slots изолированы по сегментам, разные tick не смешиваются.
 - Четыре рецепта `video_examples`: rank-reveal, segment-intro, participant-summary, staircase.
 - Пул защищает cover/poster через FK и human 409 TOURNAMENT_ASSET_IN_USE; binding track cover замораживает файл как image.
 
 ## Турнир картинок (задача 33)
 
-- Участник SDK получил `subtitle?`, `tier?`, `link?` и `kind?: "audio"|"video"|"image"` ([`types.ts`](../../src/video/types.ts), [`schema.ts`](../../src/video/schema.ts)); текстовые bindings `participant.subtitle` и `participant.tier` ([`nodes.ts`](../../src/video/nodes.ts)).
+- Участник SDK получил `subtitle?`, `tier?`, `link?` и `kind?: "audio"|"video"|"image"` ([`types.ts`](../../packages/video/src/types.ts), [`schema.ts`](../../packages/video/src/schema.ts)); текстовые bindings `participant.subtitle` и `participant.tier` ([`nodes.ts`](../../packages/video/src/nodes.ts)).
 - [`sources.ts`](../../src/server/studio/sources.ts): участник-картинка называется по имени (без «artist —»), аниме идёт в `subtitle`, ссылка Shikimori — в `link`, `tier` — название корзины, пока сегмент — тир-лист. Звуковой привязки `source:<id>` у картинки нет, только `source:<id>:cover`; `hasAudio` ложно.
 - `listStudioSources` ([`queries.ts`](../../src/server/studio/queries.ts)) отдаёт `kinds` (виды участников) у источника и сегментов и `needsMusic` (все участники — картинки). Тогда агент добавляет `audio.playlist` с треком пула, иначе ролик немой. Громкость плейлиста по умолчанию 0,35.
 - `video_examples` `top-images`: три участника-картинки с subtitle и link, музыка плейлистом, сцена reveal с карточкой, местом, именем и подписью.
 - Портретные постеры персонажей `top.classic.wide` режет под 16:9 во весь кадр. Схема уже даёт `settings.card {orientation:"portrait", fit:"contain"}`: проверено реальным клипом, лица целы. Подпись пресета лежит поверх карточки, на светлом постере её не видно — это свойство пресета, а не новой фичи.
-- Тесты: `src/video/segments.test.ts` (binds), `src/integration/studio-images.integration.test.ts` (тир-лист → источник без звука, evaluate ready). Живой маршрут — [гид агента](../features/33-image-tournament/sdk-guide.md), приёмка — [verify.md](../features/33-image-tournament/verify.md).
+- Тесты: `packages/video/src/segments.test.ts` (binds), `src/integration/studio-images.integration.test.ts` (тир-лист → источник без звука, evaluate ready). Живой маршрут — [гид агента](../features/33-image-tournament/sdk-guide.md), приёмка — [verify.md](../features/33-image-tournament/verify.md).
 
 ## Типографика (задача 31)
 
-- `src/video/typography-{types,schema,catalog,compiler,layout,examples}.ts` —
+- `packages/video/src/typography-{types,schema,catalog,compiler,layout,examples}.ts` —
   7 семейств, 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
   `node.typography`, плоские text/bind runs. [SDK-гид](../features/31-typography/sdk-guide.md).
 - `compileVideo(doc, manifest, {measureText})` остаётся чистым; серверный
@@ -222,6 +255,6 @@
   без reconcileSource. line/run details ограничены и продолжаются offsets. Diagnostic
   PNG без commit/revision/job допускает только готовность либо TEXT_OVERFLOW,
   использует общий heavy lease, bounded child и временные файлы с cleanup.
-- Проверка: `src/video/typography.test.ts`, `src/server/studio/typography*.test.ts`,
+- Проверка: `packages/video/src/typography.test.ts`, `src/server/studio/typography*.test.ts`,
   `src/integration/typography-*.integration.test.ts`, `src/mcp/typography-tools.test.ts`,
-  `src/remotion/typography*.test.ts`; реальная приёмка — verify.md задачи 31.
+  `packages/render/src/typography*.test.ts`; реальная приёмка — verify.md задачи 31.

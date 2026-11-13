@@ -30,8 +30,9 @@ async function sourceId() {
   const files = [
     "package-lock.json",
     ...(await filesUnder("public/fonts/typography-v1")),
-    ...(await filesUnder("src/remotion")),
-    ...(await filesUnder("src/video")),
+    ...(await filesUnder("src/remotion-entry")),
+    ...(await filesUnder("packages/render/src")),
+    ...(await filesUnder("packages/video/src")),
     ...(await filesUnder("src/lib")),
   ].filter((f) => !f.endsWith(".test.ts"));
   return hash(

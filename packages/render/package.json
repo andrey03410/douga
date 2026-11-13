@@ -1,0 +1,32 @@
+{
+  "name": "@douga/render",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Douga frame renderer: StudioVideo and helpers for a compiled plan.",
+  "exports": {
+    "./MotionBackdrop": "./src/MotionBackdrop.tsx",
+    "./MotionText": "./src/MotionText.tsx",
+    "./MotionWidgets": "./src/MotionWidgets.tsx",
+    "./StoryboardSheet": "./src/StoryboardSheet.tsx",
+    "./StudioVideo": "./src/StudioVideo.tsx",
+    "./TypographyText": "./src/TypographyText.tsx",
+    "./image-ready": "./src/image-ready.ts",
+    "./motion-frame": "./src/motion-frame.ts",
+    "./motion-transition": "./src/motion-transition.ts",
+    "./premount": "./src/premount.ts",
+    "./studio-frame": "./src/studio-frame.ts",
+    "./studio-paint": "./src/studio-paint.ts",
+    "./typography-fonts": "./src/typography-fonts.tsx",
+    "./hit-test": "./src/hit-test.ts",
+    "./version": "./src/version.ts"
+  },
+  "dependencies": {
+    "@douga/video": "*"
+  },
+  "peerDependencies": {
+    "react": ">=18.3 <20",
+    "react-dom": ">=18.3 <20",
+    "remotion": "4.0.475"
+  }
+}

@@ -4,9 +4,9 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject, SyntheticEvent } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { AnyZodObject } from "zod";
-import { StudioVideo } from "@/remotion/StudioVideo";
-import { imageDecoded, markImageDecoded } from "@/remotion/image-ready";
-import type { CompiledVideo } from "@/video";
+import { StudioVideo } from "@douga/render/StudioVideo";
+import { createMediaWarmer } from "@douga/player/preload";
+import type { CompiledVideo } from "@douga/video";
 import {
   chapterAt,
   chapters,
@@ -18,15 +18,12 @@ import {
   previousChapterFrame,
   seekBySeconds,
   sharedAudioTagCount,
-  upcomingMedia,
   type Chapter,
   type KeyAction,
   type KeyTarget,
-} from "./model";
+} from "@douga/player/model";
 
 const LOADING_DELAY_MS = 300;
-const PREFETCH_HORIZON_SEC = 30;
-const PREFETCH_STEP_SEC = 5;
 const SEEK_STEP_SEC = 5;
 
 /**
@@ -341,42 +338,11 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
     setMuted(player.isMuted());
     if (player.getVolume() > 0) state.lastVolume = player.getVolume();
 
-    const warmed = new Set<string>();
-    const warming = new AbortController();
-    // Decoded pictures stay in the memory cache while something holds them.
-    const stills = new Map<string, HTMLImageElement>();
-    const warm = (afterFrame: number) => {
-      const ahead = upcomingMedia(plan, afterFrame, PREFETCH_HORIZON_SEC * plan.fps);
-      for (const url of ahead.sounds) {
-        if (warmed.has(url)) continue;
-        warmed.add(url);
-        // Only fills the HTTP cache (public media are immutable). The <audio> keeps
-        // its src, so nothing reloads under a cue that is already playing.
-        void fetch(url, { signal: warming.signal })
-          .then((response) => response.body?.pipeTo(new WritableStream()))
-          .catch(() => {});
-      }
-      for (const url of ahead.stills) {
-        if (stills.has(url) || imageDecoded(url)) continue;
-        const image = new Image();
-        image.src = url;
-        stills.set(url, image);
-        image.decode().then(
-          () => markImageDecoded(url),
-          () => {
-            // Undecodable here: <Img> keeps pausing for it as before.
-          },
-        );
-      }
-    };
-    warm(-1);
-    let step = -1;
+    const warmer = createMediaWarmer(plan);
+    warmer.warm(-1);
     const onFrame = (event: { detail: { frame: number } }) => {
       if (!state.started) return;
-      const next = Math.floor(event.detail.frame / (PREFETCH_STEP_SEC * plan.fps));
-      if (next === step) return;
-      step = next;
-      warm(event.detail.frame);
+      warmer.onFrame(event.detail.frame);
     };
 
     let loadingTimer: number | undefined;
@@ -444,8 +410,7 @@ export function WatchPlayer({ plan, title }: { plan: CompiledVideo; title: strin
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => {
-      warming.abort();
-      stills.clear();
+      warmer.dispose();
       window.clearTimeout(loadingTimer);
       window.clearInterval(hideTimer);
       player.removeEventListener("frameupdate", onFrame);

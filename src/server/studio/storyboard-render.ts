@@ -10,7 +10,7 @@ import { StudioError } from "./errors";
 import { comparePngImages } from "./image-pixels";
 import type { RenderAttempt } from "./render";
 import type { StoryboardFrameArtifact, StoryboardRenderInput } from "./storyboard-types";
-import type { StoryboardSheetProps } from "@/remotion/StoryboardSheet";
+import type { StoryboardSheetProps } from "@douga/render/StoryboardSheet";
 
 export async function renderStoryboardAttempt(request: RenderAttempt & { input: StoryboardRenderInput }): Promise<StudioJobResult> {
   const { tiles, summary } = request.input;

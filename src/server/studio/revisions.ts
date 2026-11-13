@@ -17,7 +17,7 @@ import {
   directoryFor,
   assertProjectSourcesUnchanged,
 } from "./projects";
-import { parseVideoDocument, type VideoDocument } from "@/video";
+import { parseVideoDocument, type VideoDocument } from "@douga/video";
 import { reconcileSource } from "./sources";
 import { StudioError } from "./errors";
 import { verifyTypographyFonts } from "./typography-fonts";
@@ -307,6 +307,8 @@ export async function deleteStudioSnapshot(userId: string, snapshotId: string) {
     if (await db.studioJob.count({ where: { snapshotId } }))
       throw new StudioError("JOB_IN_USE");
     if (await db.studioPublication.count({ where: { snapshotId } }))
+      throw new StudioError("PUBLICATION_IN_USE");
+    if (await db.studioInteractivePublication.count({ where: { snapshotId } }))
       throw new StudioError("PUBLICATION_IN_USE");
     await db.studioSnapshot.delete({ where: { id: snapshotId } });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import * as sdk from "@/video";
+import * as sdk from "@douga/video";
 import * as timeline from "@/server/studio/timeline";
 import { registerStudioTools, videoExamples } from "./studio-tools";
 import { MCP_INSTRUCTIONS, MCP_TOOL_NAMES } from "./instructions";

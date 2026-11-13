@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { getVideoRecipes, getVideoRecipe, videoRecipeStyles } from "@/video/recipes";
+import { getVideoRecipes, getVideoRecipe, videoRecipeStyles } from "@douga/video/recipes";
 import { actor } from "./shared";
 import { StudioError } from "./errors";
 export const selectStudioRecipesSchema = z

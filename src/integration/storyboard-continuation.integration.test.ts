@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import ffmpeg from "ffmpeg-static";
 import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import { createStudioProject, deleteStudioProject, saveStudioDraft } from "@/server/studio/projects";
 import { updateTrackMetadata } from "@/server/track-metadata";
 import { fileHash } from "@/server/studio/assets";

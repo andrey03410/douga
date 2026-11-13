@@ -1,8 +1,24 @@
 # MCP-сервер
 
+## Интерактив для asobiba и HTTP (задача 34)
+
+- Инструменты: `video_project_copy` (копия готового ролика под игру), `video_interactive_recipe_list`,
+  `video_interactive_create` (проект по интерактивному рецепту), `video_interactive_publish`,
+  `video_interactive_get`, `video_interactive_unpublish`. Раздел `interactive` в `video_capabilities`
+  описывает контракт снимка, рецепты и маршрут. `matchData` принимают storyboard, review, задания
+  кадров и клипов и timeline. Маршрут агента — токен из `video_interactive_publish` уходит в
+  `video_snapshot_import` asobiba.
+- Сервер собирается одной функцией [`createMcpServer(actor, {local})`](../../src/mcp/create-server.ts).
+  stdio ([`server.ts`](../../src/mcp/server.ts)) — `local: true`; HTTP — `local: false`, без инструментов
+  локального диска и yt-dlp.
+- HTTP: [`/api/mcp`](../../src/app/api/mcp/route.ts), Streamable HTTP без сессий, `Authorization: Bearer dga_…`.
+  Каждый запрос заново находит аккаунт по токену; нет токена или он отозван — 401.
+  Токены — [`api-tokens.ts`](../../src/server/api-tokens.ts): в базе только SHA-256, до 10 активных,
+  гостю не выдаются; выпуск и отзыв в кабинете ([`ApiTokens.tsx`](../../src/app/account/ApiTokens.tsx)).
+
 ## Текущий маршрут агента (задача 32)
 
-Сейчас **61 инструмент**. Каталог расширен до 87 встроенных пресетов (54 прежних
+Сейчас **70 инструментов** по stdio; по HTTP — 67, без трёх локальных (задача 34, ниже). Каталог расширен до 87 встроенных пресетов (54 прежних
 и 33 рецепта). `video_capabilities.guidedAuthoring` объявляет маршрут и бюджеты.
 
 1. `video_preset_list({recipes:true,kind,format,query?})` — до 3 совместимых рецептов
@@ -62,7 +78,7 @@ Stdio MCP-сервер `douga` позволяет внешнему ИИ само
   выбранному эффекту. `video_examples({id?})` читает один либо все 27 документов:
   15 прежних и 12 motion-рецептов. Новые items включают standInManifest и note;
   synthetic pool IDs надо заменить собственными assetId перед сохранением.
-- [`motion-examples.ts`](../../src/video/motion-examples.ts) — общий browser-safe
+- [`motion-examples.ts`](../../packages/video/src/motion-examples.ts) — общий browser-safe
   builder всех 67 локальных превью; [`/studio/motion`](../../src/app/studio/motion/page.tsx)
   требует вход, держит один StudioPreview и копирует подписанный fragment envelope.
   Профиль/сила/вариант пересобирают тот же VideoDocument, compiler и renderer.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CompiledScene } from "@/video";
-import { cue, hash, hashB, imageNode, plan, videoNode } from "./fixtures";
+import type { CompiledScene } from "@douga/video";
+import { cue, hash, hashB, imageNode, plan, videoNode } from "@douga/player/fixtures";
 import {
   HTML_MAX_ASSET_BASE64,
   HTML_MAX_BYTES,
@@ -274,7 +274,7 @@ describe("html size and disposition", () => {
 });
 
 it("retains segment intervals when media is embedded for offline playback", async () => {
-  const { chapters } = await import("./model");
+  const { chapters } = await import("@douga/player/model");
   const video = plan({
     segments: [{ id: "ep", title: "Эпизод", kind: "top", from: 0, to: 30 }],
     audio: [cue({ durationInFrames: 30 })],

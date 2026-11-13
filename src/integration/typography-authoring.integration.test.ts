@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 let owner: string, other: string, projectId: string;
 beforeAll(async () => {
@@ -121,7 +121,7 @@ it("does not replace a malformed draft while applying a theme", async () => {
 });
 it("prepares all built-in gallery themes, styles and fonts in every format using real font metrics", async () => {
   const { typographyThemes, typographyStyles, typographyFonts } =
-    await import("@/video");
+    await import("@douga/video");
   for (const format of ["wide", "vertical", "square"] as const) {
     for (const theme of typographyThemes) {
       const r = await studio.previewStudioTypography(owner, {
@@ -158,7 +158,7 @@ it("prepares all built-in gallery themes, styles and fonts in every format using
 
 it("keeps every populated factory preset ready with clean typography in all three formats", async () => {
   const { getBuiltinPresets, applyTypographyTheme, compileVideo } =
-    await import("@/video");
+    await import("@douga/video");
   const { getTypographyMeasureText } =
     await import("@/server/studio/typography-fonts");
   const measureText = await getTypographyMeasureText();

@@ -6,7 +6,7 @@ import {
   getBuiltinPresets,
   getBuiltinPreset,
   videoPresetSchema,
-} from "@/video";
+} from "@douga/video";
 import { actor } from "./shared";
 import { reconcileSource } from "./sources";
 import { StudioError } from "./errors";

@@ -8,7 +8,7 @@ import {
   type MotionCatalogEntry,
   type MotionProfile,
   type MotionIntensity,
-} from "@/video";
+} from "@douga/video";
 import StudioPreview from "../StudioPreview";
 const categories: { id: MotionCatalogCategory; label: string; note: string }[] =
   [

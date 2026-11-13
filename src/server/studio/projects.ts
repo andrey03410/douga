@@ -1,10 +1,10 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
-import { ZodError } from "zod";
-import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
+import { z, ZodError } from "zod";
+import { applyVideoRecipe, RecipeApplyError } from "@douga/video/recipe-apply";
 import { deleteStudioReviewBackups, preserveStudioReviewBackup } from "./review-backups";
-import { buildVideoContent, type VideoContentInput } from "@/video/content";
+import { buildVideoContent, type VideoContentInput } from "@douga/video/content";
 import { prisma } from "@/lib/db";
 import {
   parseVideoDocument,
@@ -15,7 +15,7 @@ import {
   PresetIncompatibleError,
   createVideoDocument,
   type VideoDocument,
-} from "@/video";
+} from "@douga/video";
 import {
   actor,
   owned,
@@ -763,6 +763,7 @@ export async function deleteStudioProject(
     if (await db.studioJob.count({ where: { projectId: id } }))
       throw new StudioError("JOB_IN_USE");
     await db.studioPublication.deleteMany({ where: { projectId: id } });
+    await db.studioInteractivePublication.deleteMany({ where: { projectId: id } });
     await db.studioSnapshot.deleteMany({ where: { projectId: id } });
     await deleteStudioReviewBackups(db, userId, id);
     await db.studioProject.delete({ where: { id } });
@@ -773,4 +774,38 @@ export async function deleteStudioProject(
   await cleanupDirectory(`studio/${userId}/${id}`);
   await cleanupDirectory(`studio-exports/${userId}/${id}`);
   return result;
+}
+export const copyStudioProjectSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    /** Copy the unsaved draft instead of the latest saved revision. */
+    fromDraft: z.boolean().optional(),
+    idempotencyKey: z.string().min(1).max(200).optional(),
+  })
+  .strict();
+export type CopyStudioProjectInput = z.input<typeof copyStudioProjectSchema>;
+/**
+ * A new project from an existing one: the interactive copy of a finished video is made
+ * here, so the original keeps its linear render untouched.
+ */
+export async function copyStudioProject(
+  userId: string,
+  projectId: string,
+  raw: CopyStudioProjectInput = {},
+): Promise<StudioProjectView> {
+  const input = copyStudioProjectSchema.parse(raw);
+  return createFromDocument(
+    userId,
+    input,
+    requestHash(`copy:${projectId}`, input),
+    async () => {
+      const source = await getStudioProject(userId, projectId);
+      const document = structuredClone(
+        input.fromDraft && source.draft ? source.draft.document : source.document,
+      ) as { title?: string } | null;
+      if (!document) throw new StudioError("NOT_FOUND");
+      document.title = input.title ?? `${document.title ?? "Проект"} (копия)`;
+      return document;
+    },
+  );
 }

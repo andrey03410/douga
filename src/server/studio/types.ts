@@ -5,9 +5,9 @@ import type {
   Diagnostic,
   VideoDocument,
   VideoPreset,
-} from "@/video";
-import { videoPatchOperationSchema } from "@/video";
-import { videoResourceLimits } from "@/video/resource-limits";
+} from "@douga/video";
+import { videoPatchOperationSchema } from "@douga/video";
+import { videoResourceLimits } from "@douga/video/resource-limits";
 import { studioJobLimits } from "./job-types";
 const key = z.string().min(1).max(200);
 export const inspectStudioAssetSchema = z

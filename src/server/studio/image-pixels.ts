@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile, stat } from "node:fs/promises";
 import ffmpeg from "ffmpeg-static";
 import { VERSION } from "remotion";
-import { compareVisualFrame, type RgbaImage, type VisualEnvironment } from "@/video/visual-regression";
+import { compareVisualFrame, type RgbaImage, type VisualEnvironment } from "@douga/video/visual-regression";
 import { StudioError } from "./errors";
 
 const MAX_PIXELS = 1920 * 1920, MAX_PNG_BYTES = 12 * 1024 * 1024;

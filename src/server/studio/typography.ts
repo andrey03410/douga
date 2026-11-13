@@ -11,12 +11,12 @@ import {
   videoDocumentSchema,
   type CompiledVideo,
   type Diagnostic,
-} from "@/video";
+} from "@douga/video";
 import {
   fontIds,
   typographyStyleIds,
   typographyThemeIds,
-} from "@/video/typography-types";
+} from "@douga/video/typography-types";
 import { actor, owned } from "./shared";
 import { evaluate, runtime } from "./assets";
 import { view, applyStudioTypographyDraft } from "./projects";

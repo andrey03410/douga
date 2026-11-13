@@ -1,4 +1,4 @@
-import type { StoryboardSelection, StoryboardTile } from "@/video/storyboard";
+import type { StoryboardSelection, StoryboardTile } from "@douga/video/storyboard";
 import type { StudioFrozenRevision } from "./types";
 
 export interface InspectionOrigin {
@@ -8,6 +8,8 @@ export interface InspectionOrigin {
   documentHash: string;
   contentHash: string;
   format: { width: number; height: number; fps: number };
+  /** Task 34: hash of the match data the plan was compiled with. */
+  matchDataHash?: string;
 }
 export interface InspectionSummary {
   origin: InspectionOrigin;
@@ -15,7 +17,7 @@ export interface InspectionSummary {
   scope?: { mode: "overview" | "scene" | "compare"; sceneId?: string; segmentId?: string; pageSize: number; pixelDiff?: boolean };
   compareOrigin?: InspectionOrigin;
   diagnostic?: { ready: false; codes: string[] };
-  comparison?: import("@/video/storyboard-diff").StoryboardDocumentDiff;
+  comparison?: import("@douga/video/storyboard-diff").StoryboardDocumentDiff;
 }
 export interface StoryboardRenderInput {
   kind: "storyboard";

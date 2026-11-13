@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { removePath } from "@/lib/storage";
-import { createVideoDocument } from "@/video";
+import { createVideoDocument } from "@douga/video";
 import * as studio from "@/server/studio";
 import { ownedStudioMedia } from "@/server/studio/http-media";
 import { loadPublicWatch, publicWatchMedia } from "@/server/studio/watch-public";

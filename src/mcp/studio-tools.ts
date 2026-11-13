@@ -13,7 +13,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Actor } from "./actor";
 import { can } from "@/lib/domain/permissions";
 import { prisma } from "@/lib/db";
-import * as sdk from "@/video";
+import * as sdk from "@douga/video";
 import * as studio from "@/server/studio";
 import { actor as freshActor } from "@/server/studio/shared";
 import { listArts } from "@/server/arts";
@@ -485,6 +485,20 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         compilerVersion: "1.0.0",
         guidedAuthoring: { recipes: 33, styles: 6, gallery: "/studio/recipes", content: "video_content_set", storyboard: "video_storyboard", review: "video_review", apply: "video_review_apply", pageSize: { default: 12, max: 24 }, async: true, originPinned: true },
         typography: { catalogVersion: 1, fonts: 7, styles: 12, themes: 6, inspect: "video_text_inspect", gallery: "/studio/typography" },
+        interactive: {
+          contract: sdk.INTERACTIVE_CONTRACT,
+          snapshot: sdk.INTERACTIVE_SNAPSHOT_FORMAT + "@1",
+          layer: zodToJsonSchema(sdk.interactiveLayerSchema),
+          matchData: zodToJsonSchema(sdk.matchDataSchema),
+          bindings: ["participant.votes", "participant.pickedBy", "participant.score", "participant.rank", "match.text(key)"],
+          recipes: sdk.getInteractiveRecipes().map((r) => r.id),
+          route: [
+            "finished video: video_project_copy → video_content_set {interactive} → video_draft_commit",
+            "from scratch: video_interactive_recipe_list → video_interactive_create → video_content_set",
+            "check with matchData: video_storyboard / video_review / video_timeline_get / video_job_start(still|clip)",
+            "video_interactive_publish → Asobiba video_snapshot_import {token} → game config with rules.video",
+          ],
+        },
         motion: {
           catalogVersion: sdk.motionCatalog.version,
           count: sdk.motionCatalog.entries.length,
@@ -496,7 +510,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
           intensities: ["subtle", "normal", "bold"],
         },
         protocol: {
-          transport: "stdio",
+          transport: "stdio | http (/api/mcp, Bearer dga_…)",
           latest: LATEST_PROTOCOL_VERSION,
           supported: SUPPORTED_PROTOCOL_VERSIONS,
         },
@@ -748,6 +762,57 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
           : null,
       };
     },
+  );
+  register(
+    "video_project_copy",
+    "Copy a project into a new one (latest saved revision, or the draft with fromDraft). Use it before adding an interactive layer to a finished video: the original keeps its linear render. Neutral result.",
+    project.merge(studio.copyStudioProjectSchema),
+    async ({ projectId, ...input }) =>
+      studio.studioProjectMetadata(await studio.copyStudioProject(uid, projectId, input)),
+  );
+  register(
+    "video_interactive_recipe_list",
+    "Interactive recipes (flow × format): quiz-question, quiz-media, quiz-reveal, vote-result, scoreboard. Each has gameplay notes and a short content form. Create with video_interactive_create.",
+    z.object({ flow: z.enum(sdk.interactiveFlows).optional(), format: z.enum(["wide", "vertical", "square"]).optional() }).strict(),
+    ({ flow, format }) => ({
+      recipes: sdk
+        .getInteractiveRecipes()
+        .filter((r) => (!flow || r.flow === flow) && (!format || r.format === format))
+        .map(({ example: _example, ...recipe }) => recipe),
+    }),
+  );
+  register(
+    "video_interactive_create",
+    "Create a project from an interactive recipe: scenes, moments, choices, templates and sample data are ready. Fill content with video_content_set (participants, rounds, interactive part). Neutral result.",
+    z.object({ recipeId: id, title: z.string().min(1).max(200).optional(), idempotencyKey: z.string().min(1).max(200).optional() }).strict(),
+    async ({ recipeId, title, idempotencyKey }) => {
+      const recipe = sdk.getInteractiveRecipe(recipeId);
+      if (!recipe) throw new studio.StudioError("RECIPE_NOT_FOUND");
+      const document = structuredClone(recipe.example);
+      if (title) document.title = title;
+      return studio.studioProjectMetadata(await studio.createStudioProject(uid, { document, idempotencyKey }));
+    },
+  );
+  register(
+    "video_interactive_publish",
+    "Publish the latest saved revision as an interactive snapshot for a game host (Asobiba). Needs document.interactive and a ready validation. Scene stills are prepared in the background: status preparing → ready. Returns the token and manifest URL to import in Asobiba (video_snapshot_import).",
+    project.merge(studio.publishInteractiveSchema),
+    async ({ projectId, ...input }) => {
+      const row = await studio.publishInteractive(uid, projectId, input);
+      return { ...row, nextStep: { asobiba: "video_snapshot_import", arguments: { token: row.token } } };
+    },
+  );
+  register(
+    "video_interactive_get",
+    "Read the interactive snapshot link of a project: token, status (preparing|ready), stills and manifest URL. publication is null when nothing is published.",
+    project,
+    async ({ projectId }) => ({ publication: await studio.getInteractivePublication(uid, projectId) }),
+  );
+  register(
+    "video_interactive_unpublish",
+    "Remove the interactive snapshot link. Games that already imported the snapshot keep their copy.",
+    project,
+    async ({ projectId }) => studio.unpublishInteractive(uid, projectId),
   );
   register(
     "video_document_get",

@@ -1,4 +1,4 @@
-import type { VideoContentInput } from "../src/video/content";
+import type { VideoContentInput } from "@douga/video/content";
 /** Consume the short form actually advertised to a client; never synthesize render nodes. */
 export function ownedScenarioContent(example: VideoContentInput, media: { visualAssetIds: string[]; audioAssetId: string }, title: string): VideoContentInput {
   if (!media.visualAssetIds.length || !media.audioAssetId) throw new Error("OWNED_MEDIA_REQUIRED");

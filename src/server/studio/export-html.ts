@@ -3,7 +3,7 @@ import path from "node:path";
 import { open, readFile } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { absPath } from "@/lib/storage";
-import type { CompiledVideo } from "@/video";
+import type { CompiledVideo } from "@douga/video";
 import {
   base64Length,
   htmlContentDisposition,

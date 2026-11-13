@@ -11,15 +11,15 @@ import {
 } from "node:fs/promises";
 import { z } from "zod";
 import { absPath, STORAGE_ROOT } from "@/lib/storage";
-import { getVideoRecipe } from "@/video/recipes";
+import { getVideoRecipe } from "@douga/video/recipes";
 import {
   buildVisualFixtures,
   visualFixtureMedia,
   type VisualFixture,
-} from "@/video/visual-fixtures";
-import { applyVideoRecipe, RecipeApplyError } from "@/video/recipe-apply";
+} from "@douga/video/visual-fixtures";
+import { applyVideoRecipe, RecipeApplyError } from "@douga/video/recipe-apply";
 import { getStudioPreset } from "./queries";
-import { compileVideo } from "@/video/compiler";
+import { compileVideo } from "@douga/video/compiler";
 import { actor, hash, owned } from "./shared";
 import { safeFile } from "./assets";
 import { getTypographyMeasureText } from "./typography-fonts";
