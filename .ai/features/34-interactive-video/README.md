@@ -2,7 +2,7 @@
 id: 34
 title: Интерактивные ролики для asobiba
 track: product        # product | tech
-stage: product        # brief → product → tech → plan → build → review → merged
+stage: tech           # brief → product → tech → plan → build → review → merged
 branch: feat/34-interactive-video
 pr:
 started: 2026-11-13
@@ -24,7 +24,7 @@ Douga становится движком интерактивных ролик�
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Продукт — [product.md](product.md)
+- [x] Продукт — [product.md](product.md) (автономно, 2026-11-13)
 - [ ] Техника — [tech.md](tech.md)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
