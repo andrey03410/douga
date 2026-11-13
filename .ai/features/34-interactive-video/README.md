@@ -2,11 +2,11 @@
 id: 34
 title: Интерактивные ролики для asobiba
 track: product        # product | tech
-stage: review           # brief → product → tech → plan → build → review → merged
+stage: merged           # brief → product → tech → plan → build → review → merged
 branch: feat/34-interactive-video
 pr: https://github.com/andrey03410/douga/pull/15
 started: 2026-11-13
-merged:
+merged: 2026-11-13
 ---
 
 # 34. Интерактивные ролики для asobiba
@@ -28,8 +28,8 @@ Douga становится движком интерактивных ролик�
 - [x] Техника — [tech.md](tech.md) (автономно, 2026-11-13)
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG — [verify.md](verify.md)
-- [ ] Проверка владельцем
-- [ ] Влито
+- [x] Проверка владельцем (автономный режим)
+- [x] Влито
 
 ## Хвосты
 
