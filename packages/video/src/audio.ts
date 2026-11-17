@@ -1,4 +1,4 @@
-import { videoResourceLimits } from "./resource-limits";
+import { resourceBudgetDiagnostic, videoResourceLimits } from "./resource-limits";
 import type {
   AudioCue,
   CompiledAudio,
@@ -25,12 +25,8 @@ export function addAudio(
 ): CompiledAudio | undefined {
   if (ctx.audio.length >= videoResourceLimits.maxAudioCues) {
     if (!ctx.diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED"))
-      diagnostic(
-        ctx,
-        "RESOURCE_BUDGET_EXCEEDED",
-        "Audio cue expansion exceeds resource budget.",
-        "audio",
-      );
+      ctx.diagnostics.push(resourceBudgetDiagnostic("audioCues", ctx.audio.length + 1,
+        videoResourceLimits.maxAudioCues, `audio.${options.id}`));
     return;
   }
   const offsetFrames = Math.round((options.offsetSec ?? 0) * ctx.fps);
@@ -96,12 +92,8 @@ export function compileGlobalAudio(
 ): void {
   for (const cue of ctx.document.audio?.cues ?? []) {
     if (ctx.audio.length >= videoResourceLimits.maxAudioCues) {
-      diagnostic(
-        ctx,
-        "RESOURCE_BUDGET_EXCEEDED",
-        "Audio cue expansion exceeds resource budget.",
-        "audio",
-      );
+      ctx.diagnostics.push(resourceBudgetDiagnostic("audioCues", ctx.audio.length + 1,
+        videoResourceLimits.maxAudioCues, `audio.cues.${cue.id}`));
       return;
     }
     const asset = resolveAsset(
@@ -214,12 +206,8 @@ export function compileGlobalAudio(
       (playlist.loop !== false || index < tracks.length)
     ) {
       if (index >= videoResourceLimits.maxAudioCues) {
-        diagnostic(
-          ctx,
-          "RESOURCE_BUDGET_EXCEEDED",
-          "Playlist expansion exceeds resource budget.",
-          "audio.playlist",
-        );
+        ctx.diagnostics.push(resourceBudgetDiagnostic("audioCues", index + 1,
+          videoResourceLimits.maxAudioCues, "audio.playlist"));
         return;
       }
       const asset = tracks[index % tracks.length];
@@ -251,17 +239,11 @@ export function compileGlobalAudio(
   const duck = ctx.audio
     .filter((a) => a.role === "primary" || a.role === "voice")
     .map((a) => ({ from: a.from, to: a.from + a.durationInFrames }));
-  if (
-    playlistCues.size * muteWindows.length +
-      duck.length * ctx.audio.filter((a) => a.role === "music").length >
-    videoResourceLimits.maxAudioPolicyWindows
-  ) {
-    diagnostic(
-      ctx,
-      "RESOURCE_BUDGET_EXCEEDED",
-      "Audio policy expansion exceeds resource budget.",
-      "audio",
-    );
+  const policyWindows = playlistCues.size * muteWindows.length +
+    duck.length * ctx.audio.filter((a) => a.role === "music").length;
+  if (policyWindows > videoResourceLimits.maxAudioPolicyWindows) {
+    ctx.diagnostics.push(resourceBudgetDiagnostic("audioPolicyWindows", policyWindows,
+      videoResourceLimits.maxAudioPolicyWindows, "audio"));
     return;
   }
   // Attach policies only after counting both kinds; JSON serialization duplicates shared arrays.

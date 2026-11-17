@@ -24,6 +24,8 @@ export const MCP_TOOL_NAMES = [
   "tournament_items_remove",
   "tournament_segments_update",
   "video_capabilities",
+  "video_design_guide",
+  "video_resource_estimate",
   "video_motion_list",
   "video_motion_get",
   "video_font_list",
@@ -77,12 +79,11 @@ export const MCP_TOOL_NAMES = [
  * should see the three video paths without reading all tool descriptions.
  */
 export const MCP_INSTRUCTIONS = [
-  'Douga: видео только через video_*. Нужен studio:worker. Финальный video_job_start kind:"render" — admin; clip доступен автору.',
-  'Простой путь: video_preset_list recipes:true + kind/format/query → video_preset_get (форма/пример/изображение) → video_project_create presetId → video_content_set (участники с visualAssetId/audioAssetId, раунды либо действия доски; mode merge|replace) → video_storyboard → video_review → video_review_apply выбранных suggestions → повторная проверка. Все nextAction содержат готовый tool и arguments. Галерея /studio/recipes.',
-  'video_storyboard показывает смысловые кадры без commit. Для следующих страниц используйте nextPageAction/sourceJobId; review/deep с sourceJobId проверяют тот же снимок. compareRevision/compareJobId — до/после; pixelDiff:true добавляет diff PNG/PSNR. queued → video_job_get → video_job_inspect (PNG). Без worker очередь ждёт. video_review mode:deep готовит клипы со звуком; notChecked не означает успех.',
-  'Топ турнира: video_source_list → video_project_create presetId топа + sourceId → оформление → validate/commit/job. Места определяет человек. Свой топ: source.kind:"manual", заданные rank, медиа из пула; settings.top.snippet.mode active. picker.* — пикер, board.* — доски; полные документы video_examples.',
-  'Медиа: import_local_media/import_youtube_audio/import_shikimori_poster/video_import_start → пул. artId = assetId привязки {kind:"pool",assetId}. tournament_create (items: shikimori/assetId/path; рецепт базы в описании), tournament_items_add/update/remove, segments_update готовят состав; алгоритм и ответы — человек; requiresConfirmation/answersToReset требуют согласия перед confirmReset:true.',
-  'Моушен: video_motion_list/video_motion_get; flash требует category. Типографика: video_font_list/video_font_get, video_typography_list/video_typography_get; строки/глифы/PNG — video_text_inspect. Схемы video_schema_get; галереи /studio/motion и /studio/typography.',
-  'Интерактив для Asobiba: маршрут в video_capabilities.interactive.',
-  'Запись: expectedVersion (CAS, не revision), idempotencyKey для повторов. Рецепт через video_preset_apply сохраняет сцены/тайминги; mode preserve сохраняет overrides, replace заменяет только оформление. После проверки validate → commit → job_start. Просмотр/исправление не публикует ролик.',
+  'Douga: сначала тип ролика top/picker/tier-list, затем состав, решение о стиле, стилизация и визуальная проверка. Нужен studio:worker.',
+  'Путь: video_design_guide kind + subject(characters|anime|music) → выбери стиль по составу/указанию пользователя → video_project_create kind/subject/format/design → video_content_set mode merge|replace → video_storyboard → video_review → исправь и проверь снова. Тип и стиль — разные решения. Галерея /studio/recipes, новые композиции composition.*; retired presets только для прежних документов.',
+  'Топ турнира: video_source_list → video_project_create kind:"top" + sourceId. Свой топ: source.kind:"manual", rank и visualAssetId/audioAssetId задаёт автор. Пикер: rounds/cards/groups (cardIds, label), musicAssetId/backgroundAssetId по раунду; правильный ответ только если он задан. Тир-лист: kind:"tier-list", затем content kind:"board" + tiers[{id,label,participantIds}].',
+  'Графика: guide даёт пары шрифтов, палитры, крупность, порядок motion и ошибки. Уточняй design.typography/motion/backdrop и accent/palette; единый характер ролика, крупные лица, читаемые подписи. video_text_inspect измеряет текст. Схемы video_schema_get, video_motion_get и font/typography tools — примитивы. Raw document — осознанный авторский SDK, не default.',
+  'Проверяй реальные кадры и движение: storyboard всех страниц через nextPageAction/sourceJobId; deep review/clip показывает начало, середину, конец со звуком. queued → video_job_get → video_job_inspect. notChecked и ready=true не доказывают красоту. После правок повтори просмотр. video_resource_estimate объясняет бюджеты до тяжёлой операции.',
+  'Медиа импортируй в пул: import_local_media/import_youtube_audio/import_shikimori_poster/video_import_start. assetId принадлежит актору. tournament_create/items_add/update/remove/segments_update готовят состав; места и ответы определяет человек; requiresConfirmation/answersToReset требуют согласия перед confirmReset:true.',
+  'Запись: expectedVersion — CAS, не revision; idempotencyKey для повторов. Примерка/recipe apply preserve сохраняют содержимое/тайминги и overrides; после validate → commit → job_start. Просмотр не публикует. Интерактив Asobiba — video_capabilities.interactive.',
 ].join("\n");

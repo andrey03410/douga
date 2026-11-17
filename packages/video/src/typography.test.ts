@@ -437,7 +437,7 @@ describe("authoring and complete catalog", () => {
     }
   });
   it("does not turn legacy presets or their format changes into typography scopes", () => {
-    const presets = getBuiltinPresets().filter(p => !p.id.startsWith("recipe."));
+    const presets = getBuiltinPresets().filter(p => !p.id.startsWith("recipe.") && !p.id.startsWith("composition."));
     expect(presets).toHaveLength(54);
     for (const preset of presets)
       for (const format of ["wide", "vertical", "square"] as const) {

@@ -201,8 +201,9 @@ export async function getStudioRecipePreview(userId: string, recipeId: string) {
   await actor(userId);
   recipe(recipeId);
   try {
+    const directory = recipeId.startsWith("composition.") ? path.resolve(".ai/features/35-studio-design-quality/baselines") : baselineDirectory;
     const raw = await readFile(
-      path.join(baselineDirectory, "manifest.json"),
+      path.join(directory, "manifest.json"),
       "utf8",
     );
     if (Buffer.byteLength(raw) > 64 * 1024 * 1024)
@@ -222,8 +223,8 @@ export async function getStudioRecipePreview(userId: string, recipeId: string) {
       path.basename(record.file) !== `${record.frame}.png`
     )
       throw new Error("INVALID_BASELINE_PATH");
-    const root = await realpath(baselineDirectory),
-      file = await realpath(path.resolve(baselineDirectory, record.file));
+    const root = await realpath(directory),
+      file = await realpath(path.resolve(directory, record.file));
     if (!file.startsWith(`${root}${path.sep}`))
       throw new Error("INVALID_BASELINE_PATH");
     const png = await readFile(file);

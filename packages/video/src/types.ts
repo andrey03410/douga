@@ -1,4 +1,6 @@
 import type { CompiledInteraction, InteractiveLayer } from "./interactive-types";
+import type { CompositionSettings } from "./composition-settings";
+export type { CompositionSettings } from "./composition-settings";
 import type {
   TextTypography,
   TypographySettings,
@@ -99,6 +101,8 @@ export interface CardStyle {
   orientation?: "landscape" | "portrait";
 }
 export interface Settings {
+  /** Explicit opt-in to versioned geometry; absent/null preserves legacy IR. */
+  composition?: CompositionSettings | null;
   typography?: TypographySettings | null;
   motion?: MotionSettings;
   backdrop?: BackdropSettings | null;
@@ -529,6 +533,8 @@ export interface CompiledAnimation {
   keyframes: { frame: number; value: number }[];
 }
 export interface CompiledNode {
+  /** Scene-local outline-to-fill reveal, emitted only by opted-in compositions. */
+  rankDraw?: { from: number; durationInFrames: number };
   typography?: ResolvedTypography;
   textRuns?: ResolvedTextRun[];
   textLayout?: CompiledTextLayout;

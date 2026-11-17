@@ -1,3 +1,4 @@
+import { getCompositionPresets } from "@douga/video/composition-presets";
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -240,13 +241,15 @@ export async function listStudioPresetSummaries(
 ) {
   await actor(userId);
   const { limit, cursor } = studioPageSchema.parse(input);
-  const builtins = getBuiltinPresets().map((p) => ({
+  const builtins = getCompositionPresets().map((p) => ({
     id: p.id,
     name: p.name,
     kind: p.kind,
     version: p.version,
     output: p.output,
     personal: false,
+    quality: "curated",
+    authoringKind: p.kind === "board" ? "tier-list" : p.kind,
   }));
   const builtinIndex = cursor ? builtins.findIndex((p) => p.id === cursor) : -1;
   if (
@@ -275,7 +278,7 @@ export async function listStudioPresetSummaries(
           select: { id: true, name: true },
         })
       : [];
-  const rows = [...initial, ...personal.map((p) => ({ ...p, personal: true }))];
+  const rows = [...initial, ...personal.map((p) => ({ ...p, personal: true, quality: "custom" }))];
   return {
     items: rows.slice(0, limit),
     nextCursor: rows.length > limit ? rows[limit - 1].id : null,

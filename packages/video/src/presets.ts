@@ -1,3 +1,4 @@
+import { getCompositionPresets } from "./composition-presets";
 import type {
   Settings,
   TextValue,
@@ -82,7 +83,7 @@ export function getBuiltinPresets(): VideoPreset[] {
           },
         });
       }
-  return [...presets, ...getBoardPresets(), ...getRecipePresets()];
+  return [...presets, ...getBoardPresets(), ...getRecipePresets(), ...getCompositionPresets()];
 }
 export function getBuiltinPreset(id: string): VideoPreset | undefined {
   const canonical =

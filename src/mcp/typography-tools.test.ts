@@ -18,10 +18,11 @@ async function call(name: string, input: object = {}) {
   return handlers.get(name)!(input);
 }
 describe("typography discovery", () => {
-  it("provides seven real font summaries and bounded filtered pages", async () => {
+  it("provides nine real font summaries and bounded filtered pages", async () => {
     const all = (await call("video_font_list", {})).structuredContent;
-    expect(all.total).toBe(7);
-    expect(all.items).toHaveLength(7);
+    expect(all.total).toBe(9);
+    expect(all.items).toHaveLength(9);
+    expect(all.items.map((font: any) => font.id)).toEqual(expect.arrayContaining(["cinzel", "cormorant-garamond"]));
     const first = (await call("video_font_list", { limit: 2 }))
       .structuredContent;
     const next = (

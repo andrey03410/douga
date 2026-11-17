@@ -23,19 +23,11 @@ type TryResult = {
   ready: boolean;
   diagnostics: { severity: string; code: string; message: string }[];
 };
-const kinds = { top: "Топ", picker: "Пикер", board: "Доска" };
+const kinds = { top: "Топ", picker: "Пикер", board: "Тир-лист" };
 const formats = {
   wide: "Широкий · 16:9",
   vertical: "Вертикальный · 9:16",
   square: "Квадрат · 1:1",
-};
-const styles: Record<string, string> = {
-  clean: "Чистый",
-  cinematic: "Кино и OST",
-  "anime-impact": "Аниме-акцент",
-  manga: "Манга",
-  neon: "Неон",
-  "board-clear": "Ясная доска",
 };
 const errors: Record<string, string> = {
   VERSION_CONFLICT:
@@ -74,13 +66,14 @@ async function api<T>(
 export default function RecipeGallery({
   projectId,
   sourceId,
+  initialKind,
 }: {
   projectId?: string;
   sourceId?: string;
+  initialKind?: string;
 }) {
-  const [kind, setKind] = useState(""),
+  const [kind, setKind] = useState(["top", "picker", "board"].includes(initialKind ?? "") ? initialKind! : "top"),
     [format, setFormat] = useState("wide"),
-    [style, setStyle] = useState(""),
     [query, setQuery] = useState("");
   const [recipes, setRecipes] = useState<Metadata[]>([]),
     [selectedId, setSelectedId] = useState("");
@@ -134,7 +127,6 @@ export default function RecipeGallery({
     setError("");
     const params = new URLSearchParams({ all: "1", format });
     if (kind) params.set("kind", kind);
-    if (style) params.set("style", style);
     if (query.trim()) params.set("query", query.trim());
     const timer = setTimeout(() => {
       void api<{ items: Metadata[] }>(
@@ -162,7 +154,7 @@ export default function RecipeGallery({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [kind, format, style, query]);
+  }, [kind, format, query]);
   useEffect(() => {
     setRecipe(null);
     setSample(null);
@@ -291,13 +283,13 @@ export default function RecipeGallery({
       <header className="sb-heading recipe-heading">
         <p className="sb-eyebrow">DOUGA / РЕЦЕПТЫ</p>
         <h1>
-          Сначала характер.
+          Сначала тип ролика.
           <br />
-          <span>Потом ваши герои.</span>
+          <span>Затем состав и стиль.</span>
         </h1>
         <p>
-          Выберите топ, пикер или доску. Посмотрите живой образец и примерьте до
-          трёх направлений на своих материалах.
+          Выберите топ, пикер или тир-лист. Подберите оформление по составу,
+          посмотрите движение и примерьте его на своих материалах.
         </p>
       </header>
       {error && (
@@ -333,9 +325,8 @@ export default function RecipeGallery({
       <section className="panel sb-controls" aria-label="Фильтры рецептов">
         <div className="sb-filter-row">
           <label>
-            Тип видео
+            Тип ролика
             <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="">Все типы</option>
               {Object.entries(kinds).map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
@@ -354,17 +345,6 @@ export default function RecipeGallery({
               }}
             >
               {Object.entries(formats).map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Характер
-            <select value={style} onChange={(e) => setStyle(e.target.value)}>
-              <option value="">Все направления</option>
-              {Object.entries(styles).map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
                 </option>
@@ -419,7 +399,7 @@ export default function RecipeGallery({
                 <RecipeThumbnail recipe={item} />
                 <div className="recipe-card-copy">
                   <span className="sb-eyebrow">
-                    {kinds[item.kind]} / {styles[item.style]}
+                    {item.name}
                   </span>
                   <h2>{item.name}</h2>
                   <p>{item.description}</p>
@@ -461,7 +441,7 @@ export default function RecipeGallery({
             <div className="sb-result-heading">
               <div>
                 <p className="sb-eyebrow">ЖИВОЙ ПРИМЕР</p>
-                <h2>{styles[recipe.style] ?? recipe.name}</h2>
+                <h2>{recipe.name}</h2>
               </div>
               <span className="sb-status">{formats[recipe.format]}</span>
             </div>
@@ -665,7 +645,7 @@ export default function RecipeGallery({
           <div className="recipe-apply">
             <h3>Применить выбранное оформление</h3>
             <p>
-              {styles[recipe.style] ?? recipe.name} →{" "}
+              {recipe.name} →{" "}
               {currentProject.title || kinds[currentProject.kind]} · серверный
               черновик v{currentProject.version}.
             </p>
@@ -687,7 +667,7 @@ export default function RecipeGallery({
               disabled={busy || !consent || currentProject.kind !== recipe.kind}
               onClick={() => void run(apply)}
             >
-              Применить: {styles[recipe.style] ?? recipe.name}
+              Применить: {recipe.name}
             </button>
             {currentProject.kind !== recipe.kind && (
               <p className="muted">
@@ -716,7 +696,7 @@ function RecipeThumbnail({ recipe }: { recipe: Metadata }) {
     >
       {unavailable ? (
         <div className="recipe-thumb-pending">
-          <span>{styles[recipe.style]}</span>
+          <span>{recipe.name}</span>
           <small>
             Эталон ещё не подготовлен или недоступен.
             <br />

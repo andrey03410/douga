@@ -30,9 +30,9 @@ async function raw(name: string, args: Record<string, unknown> = {}) {
 async function call(name: string, args: Record<string, unknown> = {}) {
   const result = await raw(name, args);
   const content = result.content as { type: string; text?: string }[];
-  const data = JSON.parse(content.find((c) => c.type === "text")!.text!);
-  if (result.isError) throw new Error(JSON.stringify(data));
-  return data;
+  const text = content.find((c) => c.type === "text")!.text!;
+  if (result.isError) throw new Error(text);
+  return JSON.parse(text);
 }
 async function error(
   name: string,
@@ -238,6 +238,12 @@ it("discovers SDK schemas, protocol, examples, presets and owned sources through
   expect((await call("video_examples")).items.length).toBeGreaterThan(1);
   const presets = await call("video_preset_list", { limit: 2 });
   expect(presets.items).toHaveLength(2);
+  expect(
+    presets.items.every(
+      (preset: { id: string; personal: boolean }) =>
+        preset.id.startsWith("composition.") && !preset.personal,
+    ),
+  ).toBe(true);
   expect(presets.nextCursor).toBeTruthy();
   const sources = await call("video_source_list", { limit: 1 });
   expect(sources.items[0]).toMatchObject({
@@ -248,7 +254,7 @@ it("discovers SDK schemas, protocol, examples, presets and owned sources through
   expect(source.items[0]).toMatchObject({ rank: 1, label: "Ranked tone" });
   expect(JSON.stringify(source)).not.toContain("filePath");
   const top = await call("video_project_create", {
-    presetId: "top.classic.wide",
+    kind: "top",
     sourceId,
     idempotencyKey: randomUUID(),
   });
@@ -266,6 +272,245 @@ it("discovers SDK schemas, protocol, examples, presets and owned sources through
     { document: source, presetId: "top.classic.wide" },
     "SCHEMA_INVALID",
   );
+});
+
+it("creates a type-first music top with authored design and replays the exact semantic receipt through stdio", async () => {
+  const guide = await call("video_design_guide", {
+    kind: "top",
+    subject: "music",
+    format: "square",
+  });
+  expect(guide).toMatchObject({
+    kind: "top",
+    subject: "music",
+    format: "square",
+    recommended: "composition.top.music.square",
+  });
+  expect(
+    guide.fontPairs.some(
+      (pair: { title: string; caption: string }) =>
+        pair.title === "oswald" && pair.caption === "manrope",
+    ),
+  ).toBe(true);
+  const selected = await call("video_preset_list", {
+    recipes: true,
+    kind: "top",
+    subject: "music",
+    format: "square",
+    preview: false,
+  });
+  expect(selected.recommended).toBe(guide.recommended);
+  expect(
+    selected.items.every(
+      (preset: { kind: string; format: string }) =>
+        preset.kind === "top" && preset.format === "square",
+    ),
+  ).toBe(true);
+
+  const input = {
+    kind: "top",
+    subject: "music",
+    format: "square",
+    sourceId,
+    title: "Музыка с выбранным оформлением",
+    idempotencyKey: randomUUID(),
+    design: {
+      accent: "#67d9e8",
+      palette: ["#67d9e8", "#a58bfa"],
+      typography: {
+        roles: { title: { font: "manrope", weight: 700, fill: "#e5faff" } },
+      },
+      motion: { profile: "cinematic", intensity: "subtle" },
+    },
+  };
+  const before = await prisma.studioProject.count({ where: { userId: owner } });
+  const [created, repeated] = await Promise.all([
+    call("video_project_create", input),
+    call("video_project_create", input),
+  ]);
+  expect(repeated).toEqual(created);
+  expect(created).toMatchObject({
+    kind: "top",
+    version: 1,
+    revision: 1,
+    validation: { ready: true },
+  });
+  expect(await prisma.studioProject.count({ where: { userId: owner } })).toBe(
+    before + 1,
+  );
+  const head = await call("video_document_get", { projectId: created.id });
+  expect(head.document).toMatchObject({
+    title: input.title,
+    kind: "top",
+    output: { format: "square" },
+    preset: { id: "composition.top.music.square", version: 1 },
+    source: { kind: "tournament", tournamentId: sourceId },
+    settings: {
+      composition: {
+        version: 1,
+        variant: "music-top",
+        accent: "#67d9e8",
+        palette: ["#67d9e8", "#a58bfa"],
+      },
+      typography: input.design.typography,
+      motion: input.design.motion,
+    },
+  });
+  const saved = await studio.getStudioProject(owner, created.id);
+  const title = saved
+    .plan!.scenes.flatMap((scene) => scene.nodes)
+    .find((node) => node.type === "text" && node.text === "Ranked tone");
+  expect(title?.typography).toMatchObject({
+    font: "manrope",
+    weight: 700,
+    fill: "#e5faff",
+  });
+  expect(saved.plan!.audio.some((cue) => cue.role === "primary")).toBe(true);
+  expect(await call("video_project_create", input)).toEqual(created);
+  await error(
+    "video_project_create",
+    { ...input, design: { ...input.design, accent: "#a58bfa" } },
+    "IDEMPOTENCY_CONFLICT",
+  );
+});
+
+it("uses the tier-list guide's semantic content without requiring board actions through stdio", async () => {
+  const guide = await call("video_design_guide", {
+    kind: "tier-list",
+    format: "wide",
+  });
+  expect(guide.contentExample.kind).toBe("board");
+  expect(guide.contentExample.tiers).toEqual([
+    { id: "s", label: "S", participantIds: ["hero"] },
+  ]);
+  const created = await call("video_project_create", {
+    kind: "tier-list",
+    format: "wide",
+    roundCount: 0,
+  });
+  expect(created.kind).toBe("board");
+  const filled = await call("video_content_set", {
+    projectId: created.id,
+    expectedVersion: created.version,
+    content: guide.contentExample,
+  });
+  expect(filled.validation.ready).toBe(true);
+  const draft = await call("video_document_get", {
+    projectId: created.id,
+    section: "draft",
+  });
+  expect(draft.document.preset.id).toBe("composition.tier-list.wide");
+  const board = draft.document.segments[0].scenes[0].board;
+  expect(board.slots).toEqual([{ id: "s", label: "S" }]);
+  expect(
+    board.rounds.flatMap((round: { actions: unknown[] }) => round.actions),
+  ).toEqual([expect.objectContaining({ type: "place", slotId: "s" })]);
+  expect(draft.document.source.participants).toEqual([
+    { id: "hero", label: "Персонаж" },
+  ]);
+});
+
+it("estimates expansion and reports the exceeded resource without creating projects, jobs or receipts", async () => {
+  const before = {
+    projects: await prisma.studioProject.count({ where: { userId: owner } }),
+    jobs: await prisma.studioJob.count({ where: { userId: owner } }),
+    receipts: await prisma.studioMutation.count({ where: { userId: owner } }),
+  };
+  const document = createVideoDocument({
+    kind: "top",
+    participants: [
+      { id: "a", label: "A" },
+      { id: "b", label: "B" },
+      { id: "c", label: "C" },
+    ],
+  });
+  const estimate = await call("video_resource_estimate", { document });
+  expect(estimate).toMatchObject({
+    complete: true,
+    expandedScenes: 3,
+    diagnostics: [],
+  });
+  expect(estimate.expandedNodes).toBeGreaterThanOrEqual(3);
+  const overflow = await call("video_resource_estimate", {
+    document: { scenes: Array.from({ length: 2001 }, () => ({ nodes: [] })) },
+  });
+  expect(overflow).toMatchObject({ complete: false, expandedScenes: 2001 });
+  expect(overflow.diagnostics).toEqual([
+    expect.objectContaining({
+      code: "RESOURCE_BUDGET_EXCEEDED",
+      path: "scenes.2000",
+      message: "resource=expandedScenes; used=2001; limit=2000",
+    }),
+  ]);
+  expect(await prisma.studioProject.count({ where: { userId: owner } })).toBe(
+    before.projects,
+  );
+  expect(await prisma.studioJob.count({ where: { userId: owner } })).toBe(
+    before.jobs,
+  );
+  expect(await prisma.studioMutation.count({ where: { userId: owner } })).toBe(
+    before.receipts,
+  );
+});
+
+it("rejects retired factory IDs and invalid authoring combinations while raw legacy copies retain their complete plan", async () => {
+  const before = await prisma.studioProject.count({ where: { userId: owner } });
+  for (const presetId of [
+    "top.classic.wide",
+    "recipe.clean.top.wide",
+    "board.tier",
+    "picker.memory.square",
+  ])
+    await error("video_project_create", { presetId }, "PRESET_RETIRED");
+  for (const [input, code] of [
+    [
+      { kind: "top", presetId: "composition.top.portrait.wide" },
+      "SCHEMA_INVALID",
+    ],
+    [{ kind: "top", document: {} }, "SCHEMA_INVALID"],
+    [{ kind: "board" }, "-32602"],
+    [{ kind: "picker", sourceId }, "SCHEMA_INVALID"],
+    [
+      { kind: "top", design: { accent: "javascript:alert(1)" } },
+      "-32602",
+    ],
+    [{ document: {}, design: { accent: "#67d9e8" } }, "SCHEMA_INVALID"],
+    [
+      {
+        presetId: "composition.top.portrait.wide",
+        design: { accent: "#67d9e8" },
+      },
+      "SCHEMA_INVALID",
+    ],
+  ] as const)
+    await error("video_project_create", input, code);
+  await error(
+    "video_design_guide",
+    { kind: "top", format: "square", extra: true },
+    "-32602",
+  );
+  expect(await prisma.studioProject.count({ where: { userId: owner } })).toBe(
+    before,
+  );
+
+  const document = createVideoDocument({
+    kind: "picker",
+    presetId: "picker.memory.square",
+    roundCount: 1,
+    cardsPerRound: 4,
+  });
+  const created = await call("video_project_create", { document });
+  const original = await studio.getStudioProject(owner, created.id);
+  expect(original.document).toEqual(document);
+  expect(original.validation.ready).toBe(true);
+  expect(original.document.settings.composition).toBeUndefined();
+  const copied = await call("video_project_copy", {
+    projectId: original.id,
+    title: original.title,
+  });
+  const copy = await studio.getStudioProject(owner, copied.id);
+  expect(copy.document).toEqual(original.document);
+  expect(copy.plan).toEqual(original.plan);
 });
 
 // job_start may prepare a cold Remotion bundle (service budget: 120 seconds).
@@ -583,8 +828,11 @@ it("replays factory creation after preset deletion and makes concurrent identica
 
 it("replays semantic receipts after intervening edits, preserves concurrent retries and requires replacing malformed drafts", async () => {
   const p = await call("video_project_create", {
-    presetId: "picker.classic.wide",
-    roundCount: 1,
+    document: createVideoDocument({
+      kind: "picker",
+      presetId: "picker.classic.wide",
+      roundCount: 1,
+    }),
   });
   const input = {
     projectId: p.id,
@@ -975,6 +1223,13 @@ it("returns real image/audio inspection and scoped preview jobs; neutral status 
     "canceled",
   );
   await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
+  const final = await call("video_job_start", {
+    projectId: p.id,
+    kind: "render",
+  });
+  expect(final.status).toBe("queued");
+  await call("video_job_cancel", { jobId: final.id });
+  await prisma.user.update({ where: { id: owner }, data: { role: "guest" } });
   await error(
     "video_job_start",
     { projectId: p.id, kind: "render" },

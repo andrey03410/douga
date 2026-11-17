@@ -9,6 +9,7 @@ import type {
 import { videoPatchOperationSchema } from "@douga/video";
 import { videoResourceLimits } from "@douga/video/resource-limits";
 import { studioJobLimits } from "./job-types";
+import { documentSizeDiagnostic } from "./document-size";
 const key = z.string().min(1).max(200);
 export const inspectStudioAssetSchema = z
   .object({
@@ -64,7 +65,10 @@ export type CreateStudioProjectFromPresetInput = z.infer<
 export const saveStudioDraftSchema = mutationSchema
   .extend({
     document: z.unknown().optional(),
-    text: z.string().max(2_000_000).optional(),
+    text: z.string().superRefine((text, context) => {
+      const diagnostic = documentSizeDiagnostic(text);
+      if (diagnostic) context.addIssue({ code: z.ZodIssueCode.custom, message: diagnostic.message });
+    }).optional(),
   })
   .refine(
     (v) => (v.text !== undefined) !== (v.document !== undefined),

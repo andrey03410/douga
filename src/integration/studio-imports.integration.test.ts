@@ -17,7 +17,6 @@ import { prisma } from "@/lib/db";
 import { absPath, removePath } from "@/lib/storage";
 import { probeMediaInfo } from "@/lib/audio";
 import { fileHash } from "@/server/studio/assets";
-import { quotasFor } from "@/lib/domain/permissions";
 import * as studio from "@/server/studio";
 import * as importsInternal from "@/server/studio/imports";
 import { createVideoDocument } from "@douga/video";
@@ -261,7 +260,7 @@ describe("durable standalone imports", () => {
     },
     nativeTestMs(2),
   );
-  it("checks fresh roles and pool quota before executing", async () => {
+  it("checks fresh roles and lets legacy users import beyond the former pool cap", async () => {
     const j = await start();
     await prisma.user.update({ where: { id: owner }, data: { role: "guest" } });
     const result = await studio.runStudioWorkerOnce({ jobId: j.id });
@@ -269,28 +268,15 @@ describe("durable standalone imports", () => {
     await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
     await studio.deleteStudioJob(owner, j.id);
     const filler = await prisma.art.create({
-      data: {
-        userId: owner,
-        filePath: "not-a-file",
-        sizeBytes: quotasFor("user").maxPoolBytes,
-      },
+      data: { userId: owner, filePath: "not-a-file", sizeBytes: 101 * 1024 * 1024 },
     });
-    await expect(start()).rejects.toThrow("POOL_QUOTA");
-    await prisma.art.delete({ where: { id: filler.id } });
     const queued = await start();
-    const fill = await prisma.art.create({
-      data: {
-        userId: owner,
-        filePath: "not-a-file",
-        sizeBytes: quotasFor("user").maxPoolBytes,
-      },
-    });
-    expect(
-      await studio.runStudioWorkerOnce({ jobId: queued.id }),
-    ).toMatchObject({ status: "failed", error: "POOL_QUOTA" });
-    await prisma.art.delete({ where: { id: fill.id } });
+    const imported = await studio.runStudioWorkerOnce({ jobId: queued.id });
+    expect(imported).toMatchObject({ status: "done", result: { kind: "import" } });
+    if (imported?.result?.kind === "import") await deleteArt(owner, imported.result.asset.id);
+    await prisma.art.delete({ where: { id: filler.id } });
     await studio.deleteStudioJob(owner, queued.id);
-  });
+  }, nativeTestMs(2));
   it.skipIf(process.platform === "win32")(
     "recovers after actual worker SIGKILL and retains exactly one audio result",
     async () => {
@@ -463,11 +449,10 @@ describe("durable standalone imports", () => {
     },
     nativeTestMs(1),
   );
-  it.each(["role", "quota", "cancel", "lease"] as const)(
+  it.each(["role", "cancel", "lease"] as const)(
     "fences %s changes at publication and cleans only its attempt",
     async (change) => {
       const j = await start();
-      let filler: string | undefined;
       let cleaning = false;
       let working: ReturnType<typeof studio.runStudioWorkerOnce> | undefined;
       let cleanupPromise: Promise<void> | undefined;
@@ -484,16 +469,6 @@ describe("durable standalone imports", () => {
               where: { id: owner },
               data: { role: "guest" },
             });
-          if (change === "quota")
-            filler = (
-              await prisma.art.create({
-                data: {
-                  userId: owner,
-                  filePath: "quota-fixture",
-                  sizeBytes: quotasFor("user").maxPoolBytes,
-                },
-              })
-            ).id;
           if (change === "cancel") await studio.cancelStudioJob(owner, j.id);
           if (change === "lease")
             await prisma.studioJob.update({
@@ -532,10 +507,6 @@ describe("durable standalone imports", () => {
             where: { id: owner },
             data: { role: "user" },
           });
-          if (filler)
-            await prisma.art.deleteMany({
-              where: { id: filler, userId: owner },
-            });
           await studio.deleteStudioJob(owner, j.id);
         })());
       onTestFinished(cleanup, importCleanupMs);
@@ -548,7 +519,6 @@ describe("durable standalone imports", () => {
           await prisma.art.count({
             where: {
               userId: owner,
-              ...(filler ? { id: { not: filler } } : {}),
             },
           }),
         ).toBe(0);

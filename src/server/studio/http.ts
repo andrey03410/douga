@@ -31,7 +31,7 @@ export function studioHttpError(error: unknown): Response {
             ? 409
             : /QUOTA|LIMIT/.test(code)
               ? 429
-              : /VALIDATION|ASSET_RESOLUTION/.test(code)
+              : /VALIDATION|ASSET_RESOLUTION|PRESET_RETIRED/.test(code)
                 ? 422
                 : 400;
     return json({ error: code, diagnostics: error.diagnostics }, status);
@@ -81,7 +81,7 @@ export async function studioHttp(
         return json(recipe);
       }
       if (!id && read) {
-        const filters = Object.fromEntries(["kind", "format", "style", "query"].flatMap(key => url.searchParams.get(key) ? [[key, url.searchParams.get(key)!]] : []));
+        const filters = Object.fromEntries(["kind", "subject", "format", "style", "query"].flatMap(key => url.searchParams.get(key) ? [[key, url.searchParams.get(key)!]] : []));
         return json(await studio.listStudioRecipeGallery(uid, { ...filters, all: url.searchParams.get("all") === "1" }));
       }
     }
@@ -113,10 +113,9 @@ export async function studioHttp(
                   uid,
                   studio.createStudioProjectFromPresetSchema.parse(body),
                 )
-              : await studio.createStudioProject(
-                  uid,
-                  studio.createStudioProjectSchema.parse(body),
-                ),
+              : body && typeof body === "object" && "kind" in body
+                ? await studio.createStudioProjectFromIntent(uid, body)
+                : await studio.createStudioProject(uid, studio.createStudioProjectSchema.parse(body)),
             201,
           );
         }

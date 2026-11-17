@@ -90,7 +90,7 @@ it("a finished picture tier list becomes a silent SDK source with names, subtitl
   expect(source.segments[0].kinds).toEqual(["image"]);
 
   const project = await createStudioProjectFromPreset(owner, {
-    presetId: "top.classic.wide",
+    presetId: "composition.top.portrait.wide",
     sourceId: created.id,
     title: "Героини",
   });

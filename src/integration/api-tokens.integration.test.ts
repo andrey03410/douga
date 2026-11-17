@@ -29,6 +29,17 @@ describe("api tokens", () => {
     expect(await resolveApiToken(issued.token)).toBeNull();
   });
 
+  it.each(["guest", "unknown-role"])("rejects issuing and resolving tokens after rights become %s", async (role) => {
+    const { token } = await issueApiToken(owner, { name: "before rights removal" });
+    await prisma.user.update({ where: { id: owner }, data: { role } });
+    try {
+      await expect(issueApiToken(owner, { name: "denied" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(await resolveApiToken(token)).toBeNull();
+    } finally {
+      await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
+    }
+  });
+
   it("limits active tokens per account", async () => {
     const active = await prisma.apiToken.count({ where: { userId: owner, revokedAt: null } });
     for (let i = active; i < 10; i++) await issueApiToken(owner, { name: `t${i}` });

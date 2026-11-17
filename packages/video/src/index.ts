@@ -39,3 +39,6 @@ export * from "./interactive";
 export * from "./interactive-examples";
 export * from "./interactive-snapshot";
 export * from "./interactive-recipes";
+
+export * from "./authoring";
+export * from "./composition-presets";

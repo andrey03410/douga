@@ -305,6 +305,90 @@ export const typographyFontAssets: readonly TypographyFontAsset[] = [
     "licenseHash": "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6",
     "licenseBytes": 4350,
     "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cinzel-400-normal",
+    "font": "cinzel",
+    "family": "Douga Cinzel",
+    "src": "/fonts/typography-v1/cinzel-normal.ttf",
+    "weight": 400,
+    "style": "normal",
+    "hash": "f4d83d34d1f6c741193e4acf4b3dff9531e5a67b6aa65228d00a7db72a4e0f34",
+    "bytes": 125468,
+    "license": "/fonts/typography-v1/cinzel-OFL.txt",
+    "licenseHash": "f2b3029aba64c378bf0963b62945eee15e564fe4330b934c8f2eb058282b5e83",
+    "licenseBytes": 4383,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cinzel/Cinzel%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cinzel-700-normal",
+    "font": "cinzel",
+    "family": "Douga Cinzel",
+    "src": "/fonts/typography-v1/cinzel-normal.ttf",
+    "weight": 700,
+    "style": "normal",
+    "hash": "f4d83d34d1f6c741193e4acf4b3dff9531e5a67b6aa65228d00a7db72a4e0f34",
+    "bytes": 125468,
+    "license": "/fonts/typography-v1/cinzel-OFL.txt",
+    "licenseHash": "f2b3029aba64c378bf0963b62945eee15e564fe4330b934c8f2eb058282b5e83",
+    "licenseBytes": 4383,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cinzel/Cinzel%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cormorant-garamond-400-normal",
+    "font": "cormorant-garamond",
+    "family": "Douga Cormorant Garamond",
+    "src": "/fonts/typography-v1/cormorant-garamond-normal.ttf",
+    "weight": 400,
+    "style": "normal",
+    "hash": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+    "bytes": 1195560,
+    "license": "/fonts/typography-v1/cormorant-garamond-OFL.txt",
+    "licenseHash": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+    "licenseBytes": 4387,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cormorantgaramond/CormorantGaramond%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cormorant-garamond-700-normal",
+    "font": "cormorant-garamond",
+    "family": "Douga Cormorant Garamond",
+    "src": "/fonts/typography-v1/cormorant-garamond-normal.ttf",
+    "weight": 700,
+    "style": "normal",
+    "hash": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+    "bytes": 1195560,
+    "license": "/fonts/typography-v1/cormorant-garamond-OFL.txt",
+    "licenseHash": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+    "licenseBytes": 4387,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cormorantgaramond/CormorantGaramond%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cormorant-garamond-400-italic",
+    "font": "cormorant-garamond",
+    "family": "Douga Cormorant Garamond",
+    "src": "/fonts/typography-v1/cormorant-garamond-italic.ttf",
+    "weight": 400,
+    "style": "italic",
+    "hash": "0f48ea6abb2084537854f7174c470991a463b13036309e3b50a81511611c530d",
+    "bytes": 715644,
+    "license": "/fonts/typography-v1/cormorant-garamond-OFL.txt",
+    "licenseHash": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+    "licenseBytes": 4387,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cormorantgaramond/CormorantGaramond-Italic%5Bwght%5D.ttf"
+  },
+  {
+    "id": "cormorant-garamond-700-italic",
+    "font": "cormorant-garamond",
+    "family": "Douga Cormorant Garamond",
+    "src": "/fonts/typography-v1/cormorant-garamond-italic.ttf",
+    "weight": 700,
+    "style": "italic",
+    "hash": "0f48ea6abb2084537854f7174c470991a463b13036309e3b50a81511611c530d",
+    "bytes": 715644,
+    "license": "/fonts/typography-v1/cormorant-garamond-OFL.txt",
+    "licenseHash": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+    "licenseBytes": 4387,
+    "source": "https://raw.githubusercontent.com/google/fonts/38411257417e616c5d4daa1b9e91a3dbcebe1c2e/ofl/cormorantgaramond/CormorantGaramond-Italic%5Bwght%5D.ttf"
   }
 ];
 export const typographyFonts: readonly TypographyFont[] = [
@@ -440,6 +524,43 @@ export const typographyFonts: readonly TypographyFont[] = [
     "faces": [
       "noto-serif-jp-400-normal",
       "noto-serif-jp-700-normal"
+    ]
+  },
+  {
+    "id": "cinzel",
+    "name": "Cinzel",
+    "family": "Douga Cinzel",
+    "weights": [
+      400,
+      700
+    ],
+    "italic": false,
+    "languages": [
+      "en"
+    ],
+    "faces": [
+      "cinzel-400-normal",
+      "cinzel-700-normal"
+    ]
+  },
+  {
+    "id": "cormorant-garamond",
+    "name": "Cormorant Garamond",
+    "family": "Douga Cormorant Garamond",
+    "weights": [
+      400,
+      700
+    ],
+    "italic": true,
+    "languages": [
+      "en",
+      "ru"
+    ],
+    "faces": [
+      "cormorant-garamond-400-normal",
+      "cormorant-garamond-700-normal",
+      "cormorant-garamond-400-italic",
+      "cormorant-garamond-700-italic"
     ]
   }
 ];

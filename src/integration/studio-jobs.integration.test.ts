@@ -83,9 +83,10 @@ describe("durable composition queue", () => {
     await expect(
       studio.startStudioJob(other, p.id, { kind: "still", frame: 0 }),
     ).rejects.toThrow("NOT_FOUND");
-    await expect(
-      studio.startStudioJob(owner, p.id, { kind: "render" }),
-    ).rejects.toThrow("FORBIDDEN");
+    const final = await studio.startStudioJob(owner, p.id, { kind: "render" });
+    expect(final.status).toBe("queued");
+    await studio.cancelStudioJob(owner, final.id);
+    await studio.deleteStudioJob(owner, final.id);
     await expect(
       studio.startStudioJob(owner, p.id, {
         kind: "clip",
@@ -116,7 +117,7 @@ describe("durable composition queue", () => {
   });
 });
 
-it("renders an authorized immutable still and H264/AAC clip in separate worker processes", async () => {
+it("renders immutable previews and a final MP4 for a legacy user in separate worker processes", async () => {
   const { createArt } = await import("@/server/arts");
   const { execFileSync } = await import("node:child_process");
   const { readFile, writeFile, mkdir } = await import("node:fs/promises");
@@ -166,7 +167,7 @@ it("renders an authorized immutable still and H264/AAC clip in separate worker p
     fromFrame: 0,
     durationFrames: 30,
   });
-  await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
+  // The legacy persisted user role must authorize the final worker too.
   const render = await studio.startStudioJob(owner, p.id, { kind: "render" });
   await writeFile(absPath(art.filePath), "original overwritten after enqueue");
   await studio.saveStudioDraft(owner, p.id, {
@@ -317,10 +318,11 @@ it("rechecks revoked final-render role and active queue quota", async () => {
   const p = await studio.createStudioProject(owner, { document: document() });
   await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
   const j = await studio.startStudioJob(owner, p.id, { kind: "render" });
-  await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
+  await prisma.user.update({ where: { id: owner }, data: { role: "guest" } });
   expect((await studio.runStudioWorkerOnce({ jobId: j.id }))?.error).toBe(
     "FORBIDDEN",
   );
+  await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
   await studio.deleteStudioJob(owner, j.id);
   const jobs = [];
   for (let i = 0; i < 4; i++)
@@ -335,7 +337,7 @@ it("rechecks revoked final-render role and active queue quota", async () => {
     await studio.deleteStudioJob(owner, job.id);
   }
 });
-it("accounts for results and guards account deletion before any file cleanup", async () => {
+it("accounts for results without a legacy user storage cap and guards deletion before cleanup", async () => {
   const { usageSummary, deleteUser } = await import("@/server/users");
   const p = await studio.createStudioProject(owner, { document: document() });
   const j = await studio.startStudioJob(owner, p.id, {
@@ -351,16 +353,12 @@ it("accounts for results and guards account deletion before any file cleanup", a
     where: { id: j.id },
     data: { outputBytes: 512 * 1024 * 1024 },
   });
-  await expect(
-    studio.startStudioJob(owner, p.id, { kind: "still", frame: 0 }),
-  ).rejects.toThrow("JOB_QUOTA_EXCEEDED");
-  await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
-  const adminJob = await studio.startStudioJob(owner, p.id, {
+  const nextJob = await studio.startStudioJob(owner, p.id, {
     kind: "still",
     frame: 0,
   });
-  await studio.cancelStudioJob(owner, adminJob.id);
-  await studio.deleteStudioJob(owner, adminJob.id);
+  await studio.cancelStudioJob(owner, nextJob.id);
+  await studio.deleteStudioJob(owner, nextJob.id);
   await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
   expect((await usageSummary(owner)).studio.resultBytes).toBe(
     usage.studio.resultBytes + 512 * 1024 * 1024,

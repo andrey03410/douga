@@ -1,6 +1,63 @@
 # AI Video SDK (студия)
 
-Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
+Это единственная точка входа в видео Douga. Ролик (топ, пикер или тир-лист;
+низкоуровневый SDK также поддерживает доски) описывается каноническим
+версионированным JSON `VideoDocument`. Его правят на сайте и через MCP,
+проверяют, ведут историю и рендерят через устойчивую очередь.
+
+## Создание и дизайн (задача 35)
+
+- Начинай с `video_design_guide({kind,subject,format})`: `kind` — `top`, `picker`
+  или `tier-list`; `subject` — characters/anime/music. После состава и пожелания
+  владельца агент выбирает палитру, пару шрифтов и движение. `video_project_create`
+  принимает kind/subject/format/design, sourceId для топа из турнира и factory counts;
+  обязательного styleId нет. На сайте `/studio/new` тот же порядок: тип →
+  содержимое/формат → оформление. Топ из турнира может выбрать subject по составу.
+- [`authoring.ts`](../../packages/video/src/authoring.ts) содержит
+  `createVideoFromIntent`, `getVideoDesignGuide`, `getCompositionRecipes`.
+  [`composition-presets.ts`](../../packages/video/src/composition-presets.ts)
+  отдаёт 12 новых композиций: `composition.top.portrait.<format>`,
+  `composition.top.music.<format>`, `composition.picker.<format>`,
+  `composition.tier-list.<format>`, где format — wide/vertical/square.
+  Галерея и обычное discovery предлагают эти композиции и личные оформления.
+- Полный совместимый SDK registry сохраняет старые IDs/версии.
+  `video_preset_get` читает их явно, raw document/edit/copy/restore поддерживаются.
+  Обычный create по retired presetId даёт `PRESET_RETIRED` после receipt replay.
+  Default `createVideoDocument` сохранён для старых callers/asobiba;
+  новый авторинг использует `createVideoFromIntent`. Документ без
+  `settings.composition` либо с null не получает новую геометрию.
+- `design` задаёт accent/palette и существующие typography/motion/backdrop.
+  В versioned `settings.composition` хранятся variant и палитра; геометрию
+  создаёт [`composition-compiler.ts`](../../packages/video/src/composition-compiler.ts).
+  Free layout конфликтует с ней (`COMPOSITION_GEOMETRY_CONFLICT`), плотность
+  диагностируется адресно (`COMPOSITION_DENSITY_EXCEEDED`). Схема остаётся закрытой.
+- Короткая форма content: participant subtitle/kind/tier; groups с label/cardIds,
+  answerGroupIds; musicAssetId/backgroundAssetId на раунд. Явный null выключает
+  музыку раунда, включая наследуемую, либо снимает назначение фона раунда.
+  `kind:"tier-list"` при создании становится техническим board; content
+  `{kind:"board",tiers:[{id,label,participantIds}]}` генерирует обычные placements.
+  Merge/replace/null и stable IDs сохраняются; ownership/media kind проверяются
+  до атомарной записи, включая участников вне показанных сцен.
+- Guide предлагает Oswald/Manrope либо Cinzel/Cormorant Garamond и Noto fallback
+  для JP. Это исходная рекомендация: пользовательские указания и фактический
+  состав определяют оформление. Все страницы `video_storyboard`, длинные RU/JP
+  имена через `video_text_inspect`, `video_review` и фактический deep/clip со звуком
+  обязательны; после правок просмотр повторяется. `ready=true` не оценивает красоту.
+
+Бюджеты в [`resource-limits.ts`](../../packages/video/src/resource-limits.ts):
+2 000 000 authored values, 100 000 expanded nodes; остальные пределы сохранены:
+node depth 32 (структурный guard 96), 2 000 scenes, 20 000 cues,
+200 000 audio-policy windows и 7 200 с. Серверные JSON serialize и text-save
+используют один предел 32 МиБ UTF-8 из
+[`document-size.ts`](../../src/server/studio/document-size.ts), включая кириллицу
+и surrogate pairs/escaping. Ошибка `RESOURCE_BUDGET_EXCEEDED` называет
+resource/used/limit и path; серверный size error сохраняет `DOCUMENT_TOO_LARGE`.
+`video_resource_estimate({document})` — pure read-only preflight: complete=false
+при раннем отказе. Это консервативная оценка, authored audio.cues без неявной
+музыки/playlist; фактические timeline/audio budgets проверяет compiler с manifest.
+32 МиБ документа не повышают прежний потолок offline HTML 400 МиБ или память worker.
+
+Техника и локальные доказательства реализации — [задача 35](../features/35-studio-design-quality/README.md).
 
 ## Интерактивные ролики для asobiba (задача 34)
 
@@ -27,7 +84,7 @@
   ролик превращается в игру на копии, исходник не меняется.
 - **`matchData` в заданиях** ([`match-data.ts`](../../src/server/studio/match-data.ts)): storyboard, review, still, clip,
   audio и timeline принимают `matchData`, он сливается поверх `sample` и в документ не пишется. Ключ повторного
-  задания учитывает `matchDataHash`. Финальный MP4 по-прежнему только у админа.
+  задания учитывает `matchDataHash`. Финальный MP4 доступен всем зарегистрированным: `user` совместим с правами `admin`.
 - **Рецепты** ([`interactive-recipes.ts`](../../packages/video/src/interactive-recipes.ts)): 15 рецептов
   `recipe.interactive.{quiz-question,quiz-media,quiz-reveal,vote-result,scoreboard}.{wide,vertical,square}`.
   Короткая форма `video_content_set` принимает часть `interactive` (слияние по id, `replace`, `null` удаляет).
@@ -37,8 +94,9 @@
 
 ## Рецепты, раскадровка и проверка (задача 32)
 
-- Каталог содержит 54 прежних пресета и 33 `recipe.<style>.<kind>.<format>`:
-  шесть направлений, три формата, только совместимые виды роликов.
+- Совместимый SDK-каталог сохраняет 54 прежних пресета и 33
+  `recipe.<style>.<kind>.<format>`. Они относятся к прежнему authoring;
+  текущий вход и 12 композиций описаны выше.
   [`recipes.ts`](../../packages/video/src/recipes.ts) и [`content.ts`](../../packages/video/src/content.ts)
   дают metadata/contentForm/examples и предметное заполнение без ручных nodes/bindings.
   `merge` обновляет именованные части, `replace` явно заменяет содержимое;
@@ -118,12 +176,12 @@
   проверка задачи 30 сравнивает полный JSON всех 54 пресетов × 5 FPS.
 
 ## Где код
-- [`packages/video/src/`](../../packages/video/src/) (`@douga/video`) — домен SDK без I/O. Публичный вход — [`index.ts`](../../packages/video/src/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
+- [`packages/video/src/`](../../packages/video/src/) (`@douga/video`) — домен SDK без I/O. Публичный вход — [`index.ts`](../../packages/video/src/index.ts) (authoring, types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
   - [`schema.ts`](../../packages/video/src/schema.ts) / [`types.ts`](../../packages/video/src/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
   - [`builders.ts`](../../packages/video/src/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
   - [`compiler.ts`](../../packages/video/src/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
   - [`layout.ts`](../../packages/video/src/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
-  - [`presets.ts`](../../packages/video/src/presets.ts) — 87 встроенных пресетов (54 прежних +33 рецепта), `extractVideoPreset`/`applyVideoPreset`
+  - [`presets.ts`](../../packages/video/src/presets.ts) — совместимый registry прежних IDs и новых композиций, `extractVideoPreset`/`applyVideoPreset`
   - [`board-state.ts`](../../packages/video/src/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../packages/video/src/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../packages/video/src/board-presets.ts) — 8 семейств и factory
   - [`patches.ts`](../../packages/video/src/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
   - [`resource-limits.ts`](../../packages/video/src/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
@@ -170,7 +228,7 @@
 - Задание фиксирует frozen inputs (снимок + `engineId`). Правка или новый рейтинг меняют проект, но не старые задания; новый MP4 — только новым заданием, автоматического перерендера нет. Снимок защищён FK `Restrict`, пока на него ссылаются задания.
 - `CardStyle.gradient`/`shadow` структурные: отсутствие поля наследует, явный `null` сбрасывает наследованный эффект. Не подменяйте их произвольным CSS/URL (цвет проходит regex, URL запрещены).
 - Осмотр `Art.kind=image` (`inspection.ts`) не делает input seek даже к нулю: крупный JPEG теряет единственный кадр, и ffmpeg отдаёт 0 байт.
-- Финальный `render` требует `render:run` (admin). Это проверяется при постановке и повторно в воркере. Превью доступны с `media:upload`. Лимиты ([`job-types.ts`](../../src/server/studio/job-types.ts) `studioJobLimits`): не больше 4 активных заданий на аккаунт; не-админу — не больше 512 МиБ результатов суммарно (`JOB_QUOTA_EXCEEDED`).
+- Финальный `render` требует `render:run`: право есть у всех зарегистрированных, включая старый `user`. Это проверяется при постановке и повторно в воркере. Превью доступны с `media:upload`. Лимиты ([`job-types.ts`](../../src/server/studio/job-types.ts) `studioJobLimits`): не больше 4 активных заданий на аккаунт; техническая ветка квоты 512 МиБ результатов (`JOB_QUOTA_EXCEEDED`) сохраняется для ролей без `render:run`, но у зарегистрированных `user`/`admin` этой квоты нет.
 - HTML-плеер — второй выход той же сохранённой ревизии, не замена MP4. Публикация (`POST /api/studio/projects/<id>/publication`) зовёт `freezeStudioProject` с явным номером ревизии и не коммитит черновик. На проект одна `StudioPublication`: обновление меняет снимок и оставляет токен, снятие удаляет строку. Снимок, на который ссылается публикация, не удаляют `releaseUnclaimedSnapshot`, `deleteStudioJob` и `deleteStudioSnapshot` (`PUBLICATION_IN_USE`). Удаление проекта и аккаунта сначала снимает публикации.
 - Транзакции публикации и снятия первой командой пишут строку `StudioProject` и так берут блокировку записи SQLite. Внутри одного процесса Prisma и так выполняет транзакции по очереди, а сайт, MCP и воркер — разные процессы. Снятие сверяет `expectedVersion`. Тело `publication` разбирается строго: пустое тело — без опций, кривое — `MALFORMED_JSON`.
 - Гость открывает `/watch/<token>` без сессии. Клиенту уходят название (оно же заголовок вкладки, `generateMetadata`) и план, в котором `src` переписан на `/api/watch/<token>/media/<sha256><ext>`. Файл отдаёт `streamStudioFile`: Range, без чтения целиком, `ETag` с хэшем и `private, max-age=31536000, immutable`, потому что имя файла и есть хэш. Разобранный индекс снимка хранится в памяти по `snapshotId`, снимок после заморозки не меняется. Чужой hash и снятый токен — 404, страница говорит «Ролик снят с публикации».
@@ -182,7 +240,7 @@
   - картинка видео-узла режется в H.264 `.mp4` без звука: `StudioVideo` не играет собственный звук узла;
   - постеры видео встраиваются отдельно.
 
-  Ключ нарезки — проект, hash, роль, окно, fps и версия энкодера. Поэтому коммит без правок медиа берёт готовые файлы. Подготовка файлов одного проекта идёт по очереди, это гарантирует процесс сайта. Сначала удаляются нарезки, которые этой ревизии не нужны, поэтому старые не занимают квоту новых. Исключение — нарезки, которые ещё держит незаконченное скачивание или оценка. Пропавший файл режется заново. Окно не выходит за конец источника. Квоту 512 МиБ для ролей без `render:run` считают только нарезки (`EXPORT_QUOTA_EXCEEDED`). Проверка и вставка строки идут в одной транзакции с записью в `User`, поэтому два одновременных экспорта не проскакивают порог. ffmpeg убивается через 120 с (`EXPORT_SLICE_FAILED`). Сам `.html` на диске не хранится. Бандл плеера (esbuild) кэшируется по хэшу lock-файла и своих исходников. В файле Arimo 400/700 latin+cyrillic. Если транзакция публикации откатилась, квитанция `publish-freeze:` снимается вместе с невостребованным снимком, и тот же ключ идемпотентности можно повторить.
+  Ключ нарезки — проект, hash, роль, окно, fps и версия энкодера. Поэтому коммит без правок медиа берёт готовые файлы. Подготовка файлов одного проекта идёт по очереди, это гарантирует процесс сайта. Сначала удаляются нарезки, которые этой ревизии не нужны, поэтому старые не занимают квоту новых. Исключение — нарезки, которые ещё держит незаконченное скачивание или оценка. Пропавший файл режется заново. Окно не выходит за конец источника. Квоту 512 МиБ для ролей без `render:run` считают только нарезки (`EXPORT_QUOTA_EXCEEDED`); к зарегистрированным `user`/`admin` она не применяется. Проверка и вставка строки идут в одной транзакции с записью в `User`, поэтому два одновременных экспорта не проскакивают порог. ffmpeg убивается через 120 с (`EXPORT_SLICE_FAILED`). Сам `.html` на диске не хранится. Бандл плеера (esbuild) кэшируется по хэшу lock-файла и своих исходников. В файле Arimo 400/700 latin+cyrillic. Если транзакция публикации откатилась, квитанция `publish-freeze:` снимается вместе с невостребованным снимком, и тот же ключ идемпотентности можно повторить.
 - Импорт по ссылке закрыт от SSRF тем же `assertPublicUrl`, что и пул ([media.md](media.md)). Схема `startStudioImportSchema` нормализует ссылку через `new URL(...).href`. yt-dlp получает ровно ту ссылку, которую проверил гард: Python `urlparse` читает `http://a.com\@127.0.0.1/` с хостом 127.0.0.1. `startStudioImport` отвечает `BLOCKED_HOST` на loopback или LAN (в MCP `{code: "BLOCKED_HOST"}`, задание не создаётся; HTTP-маршрута импорта нет), а нерезолвящийся хост ставит в очередь. `importStudioAttempt` проверяет адрес ещё раз прямо перед `probeUrl`. Там `BLOCKED_HOST` терминален: он есть в `terminalErrors` и падает с первой попытки. Сбой DNS — обычный `IMPORT_FAILED` с повторами. Дочерний процесс наследует `MEDIA_URL_ALLOW_PRIVATE` от worker.
 - Удаление аккаунта (`deleteUser`, [roles.md](roles.md)) блокирует только активное задание: `queued`/`running` или с живой арендой. Это `JOB_IN_USE`, 409. Завершённые задания уходят вместе с аккаунтом, файлы `studio-jobs/<userId>` тоже, общие движки остаются.
 - Тесты гоняются на той же `prisma/dev.db` (env в `vitest.config.ts`, `fileParallelism: false`) и делят тяжёлый слот. Общий `npm run studio:worker` перехватит задания интеграционных тестов — останавливайте его. Для одного задания: `npm run studio:worker -- --once --job JOB_ID`.
@@ -226,13 +284,16 @@
 - [`sources.ts`](../../src/server/studio/sources.ts): участник-картинка называется по имени (без «artist —»), аниме идёт в `subtitle`, ссылка Shikimori — в `link`, `tier` — название корзины, пока сегмент — тир-лист. Звуковой привязки `source:<id>` у картинки нет, только `source:<id>:cover`; `hasAudio` ложно.
 - `listStudioSources` ([`queries.ts`](../../src/server/studio/queries.ts)) отдаёт `kinds` (виды участников) у источника и сегментов и `needsMusic` (все участники — картинки). Тогда агент добавляет `audio.playlist` с треком пула, иначе ролик немой. Громкость плейлиста по умолчанию 0,35.
 - `video_examples` `top-images`: три участника-картинки с subtitle и link, музыка плейлистом, сцена reveal с карточкой, местом, именем и подписью.
-- Портретные постеры персонажей `top.classic.wide` режет под 16:9 во весь кадр. Схема уже даёт `settings.card {orientation:"portrait", fit:"contain"}`: проверено реальным клипом, лица целы. Подпись пресета лежит поверх карточки, на светлом постере её не видно — это свойство пресета, а не новой фичи.
+- У прежнего `top.classic.wide` портрет режется под 16:9; это совместимый шаблон.
+  Новое создание использует `composition.top.portrait.*` с отдельными арт/ранг/имя/subtitle.
+  Старые документы автоматически не мигрируют; им остаётся прежнее
+  `settings.card {orientation:"portrait", fit:"contain"}` либо осознанная примерка.
 - Тесты: `packages/video/src/segments.test.ts` (binds), `src/integration/studio-images.integration.test.ts` (тир-лист → источник без звука, evaluate ready). Живой маршрут — [гид агента](../features/33-image-tournament/sdk-guide.md), приёмка — [verify.md](../features/33-image-tournament/verify.md).
 
 ## Типографика (задача 31)
 
 - `packages/video/src/typography-{types,schema,catalog,compiler,layout,examples}.ts` —
-  7 семейств, 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
+  9 семейств (с Cinzel/Cormorant Garamond), 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
   `node.typography`, плоские text/bind runs. [SDK-гид](../features/31-typography/sdk-guide.md).
 - `compileVideo(doc, manifest, {measureText})` остаётся чистым; серверный
   `typography-fonts.ts` измеряет Fontkit по локальным pinned TTF. Без провайдера
@@ -244,8 +305,8 @@
 - `applyTypographyTheme`/`applyTypographyStyle` immutable, scopes document/segment/scene/node;
   preserve сохраняет authored color/fontSize, replace сбрасывает текстовые overrides.
   Источник/ранги/таймлайн/медиа не меняются; личные пресеты сохраняют оформление runs.
-- `public/fonts/typography-v1` содержит 10 variable TTF + OFL (25 635 784 байта
-  бинарников), 400/700 normal; italic Arimo/Rubik/Roboto Mono. Каталог не встраивает
+- `public/fonts/typography-v1` содержит 13 pinned variable TTF + OFL,
+  400/700 normal; italic Arimo/Rubik/Roboto Mono/Cormorant Garamond. Каталог не встраивает
   шрифты в клиентский JS. Полные JP-файлы могут заметно увеличить offline HTML.
 - Снимок копирует selected font/OFL в `fontFiles`; public watch, engine и offline
   используют pinned ресурсы, байты входят в квоты/оценку HTML. Дедупликация по hash.

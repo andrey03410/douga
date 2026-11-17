@@ -1,3 +1,7 @@
+import { isAuthoringMotion } from "@douga/video/authoring-motion";
+import { documentSizeDiagnostic, studioDocumentMaxBytes } from "@/server/studio/document-size";
+import { getVideoDesignGuide, videoKinds, getCompositionRecipes } from "@douga/video/authoring";
+import { estimateVideoResources } from "@douga/video/resource-limits";
 import { registerTypographyTools } from "./typography-tools";
 import {
   McpServer,
@@ -25,29 +29,19 @@ const project = z.object({ projectId: id }).strict();
 const job = z.object({ jobId: id }).strict();
 const displayLimitation =
   "Content is requested explicitly and marked for the assistant. The client can still display tool/resource content; image, audio and video display/playback depends on the external client. video:// URIs require this authenticated MCP connection and are not public HTTP URLs.";
-const createSchema = studio.createStudioProjectFromPresetSchema
-  .partial({ presetId: true })
-  .extend({
-    document: z.unknown().optional(),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    if ((v.document !== undefined) === (v.presetId !== undefined))
-      ctx.addIssue({
-        code: "custom",
-        message: "Supply exactly one of document or presetId",
-      });
-    if (
-      v.document !== undefined &&
-      [v.title, v.sourceId, v.roundCount, v.cardsPerRound].some(
-        (x) => x !== undefined,
-      )
-    )
-      ctx.addIssue({
-        code: "custom",
-        message: "Factory options require presetId",
-      });
-  });
+const createSchema = studio.createStudioProjectFromPresetSchema.partial({ presetId: true }).extend({
+  document: z.unknown().optional(), kind: z.enum(videoKinds).optional(),
+  subject: z.enum(["characters", "anime", "music"]).optional(),
+  format: z.enum(["wide", "vertical", "square"]).optional(),
+  design: studio.videoDesignSchema.optional(),
+}).strict().superRefine((v, ctx) => {
+  if ([v.document !== undefined, v.presetId !== undefined, v.kind !== undefined].filter(Boolean).length !== 1)
+    ctx.addIssue({ code: "custom", message: "Supply exactly one of kind, document or presetId" });
+  if (v.document !== undefined && [v.title, v.sourceId, v.roundCount, v.cardsPerRound, v.subject, v.format, v.design].some(x => x !== undefined))
+    ctx.addIssue({ code: "custom", message: "Factory options require kind or presetId" });
+  if (v.presetId !== undefined && [v.subject, v.format, v.design].some(x => x !== undefined))
+    ctx.addIssue({ code: "custom", message: "Design options require kind" });
+});
 /** MCP accepts object shapes; parse the complete schema again in the handler so
  * refinements and strict unknown-field checks stay authoritative. */
 function rawShape(schema: z.ZodTypeAny): z.ZodRawShape {
@@ -442,7 +436,7 @@ const schemas = () => ({
     review: zodToJsonSchema(studio.studioReviewSchema),
     reviewApply: zodToJsonSchema(studio.applyStudioReviewSchema),
     runtimeConstraints: [
-      "create: exactly one of document/presetId",
+      "create: exactly one of kind/document/presetId; start with kind, choose design after content",
       "draft: exactly one of document/text",
       "presetSave: exactly one of document/preset",
       "Canonical preset rejects catalog personal metadata",
@@ -483,8 +477,8 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         schemaVersion: 2,
         supportedSchemaVersions: [1, 2],
         compilerVersion: "1.0.0",
-        guidedAuthoring: { recipes: 33, styles: 6, gallery: "/studio/recipes", content: "video_content_set", storyboard: "video_storyboard", review: "video_review", apply: "video_review_apply", pageSize: { default: 12, max: 24 }, async: true, originPinned: true },
-        typography: { catalogVersion: 1, fonts: 7, styles: 12, themes: 6, inspect: "video_text_inspect", gallery: "/studio/typography" },
+        guidedAuthoring: { types: ["top", "picker", "tier-list"], designGuide: "video_design_guide", resourceEstimate: "video_resource_estimate", recipes: 12, styles: 0, styleDecision: "agent chooses after content/user direction", gallery: "/studio/recipes", content: "video_content_set", storyboard: "video_storyboard", review: "video_review", apply: "video_review_apply", pageSize: { default: 12, max: 24 }, async: true, originPinned: true },
+        typography: { catalogVersion: 1, fonts: sdk.typographyFonts.length, styles: 12, themes: 6, inspect: "video_text_inspect", gallery: "/studio/typography" },
         interactive: {
           contract: sdk.INTERACTIVE_CONTRACT,
           snapshot: sdk.INTERACTIVE_SNAPSHOT_FORMAT + "@1",
@@ -517,7 +511,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
         permissions: { author: true, render: can(user.role, "render:run") },
         limits: {
           jobs: studio.studioJobLimits,
-          document: studio.videoResourceLimits,
+          document: { ...studio.videoResourceLimits, maxSerializedBytes: studioDocumentMaxBytes },
           inspection: studio.studioInspectionLimits,
         },
         canonical:
@@ -530,6 +524,20 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       };
     },
   );
+  register("video_design_guide", "Start with video type, then choose a coherent graphic style from content/user direction. Typography pairs, palettes, layout/motion rules, content examples and required visual verification.",
+    z.object({ kind: z.enum(videoKinds), subject: z.enum(["characters", "anime", "music"]).default("characters"), format: z.enum(["wide", "vertical", "square"]).default("wide") }).strict(),
+    async ({ kind, subject, format }) => { await freshActor(uid); return getVideoDesignGuide(kind, subject, format); }, true);
+  register("video_resource_estimate", "Read-only technical resource estimate before saving/rendering; reports concrete usage and budget diagnostics, not artistic quality.",
+    z.object({ document: z.unknown() }).strict(), async ({ document }) => {
+      await freshActor(uid);
+      const estimate = estimateVideoResources(document);
+      // Size only after the bounded traversal succeeds; never stringify a cycle/deep tree.
+      const serialized = estimate.complete ? JSON.stringify(document) : undefined;
+      const sizeIssue = serialized === undefined ? undefined : documentSizeDiagnostic(serialized);
+      return { ...estimate, serializedBytes: serialized === undefined ? null : Buffer.byteLength(serialized, "utf8"),
+        limits: { ...estimate.limits, maxSerializedBytes: studioDocumentMaxBytes },
+        diagnostics: [...estimate.diagnostics, ...(sizeIssue ? [sizeIssue] : [])] };
+    }, true);
   const category = z.enum([
     "effect",
     "choreography",
@@ -543,14 +551,15 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     z
       .object({
         category: category.optional(),
+        compatibility: z.boolean().default(false),
         limit: z.number().int().min(1).max(100).default(20),
         cursor: z.string().max(200).optional(),
       })
       .strict(),
-    async ({ category, limit, cursor }) => {
+    async ({ category, limit, cursor, compatibility }) => {
       await freshActor(uid);
       const entries = sdk.motionCatalog.entries.filter(
-        (entry) => !category || entry.category === category,
+        (entry) => (!category || entry.category === category) && (compatibility || isAuthoringMotion(entry)),
       );
       const key = (entry: { category: string; name: string }) =>
         `${entry.category}:${entry.name}`;
@@ -596,6 +605,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       return {
         version: sdk.motionCatalog.version,
         entry,
+        status: isAuthoringMotion(entry) ? "recommended-building-block" : "compatibility",
         exampleKind: "authoring-fragment",
         completeExampleId:
           entry.category === "choreography"
@@ -630,12 +640,12 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
     z.object({ id: id.optional() }),
     async ({ id }) => {
       await freshActor(uid);
-      return examples(id);
+      return id ? examples(id) : { items: getCompositionRecipes().filter(r => r.format === "wide").map(r => ({ id: r.id, document: r.example, contentForm: r.contentForm, nextAction: { tool: "video_project_create", arguments: { kind: r.kind === "board" ? "tier-list" : r.kind, subject: r.id.includes(".music.") ? "music" : "characters" } } })) };
     },
     true,
   );
   const presetListSchema = studio.studioPageSchema.extend({ recipes: z.boolean().default(false),
-    kind: z.enum(["top", "picker", "board"]).optional(), format: z.enum(["wide", "vertical", "square"]).optional(),
+    kind: z.enum(["top", "picker", "board", "tier-list"]).optional(), subject: z.enum(["characters", "anime", "music"]).optional(), format: z.enum(["wide", "vertical", "square"]).optional(),
     style: z.enum(sdk.videoRecipeStyles).optional(), query: z.string().max(500).optional(), preview: z.boolean().default(true) }).strict();
   async function addRecipeImages(output: CallToolResult, ids: string[]) {
     const delivered: string[] = [], states: { recipeId: string; status: string }[] = [];
@@ -661,7 +671,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       const input = presetListSchema.parse(args);
       if (!input.recipes) return text(await studio.listStudioPresetSummaries(uid, { limit: input.limit, cursor: input.cursor }));
       if (input.cursor) throw new studio.StudioError("INVALID_CURSOR");
-      const selected = await studio.selectStudioRecipes(uid, { kind: input.kind, format: input.format, style: input.style, query: input.query, limit: Math.min(3, input.limit) });
+      const selected = await studio.selectStudioRecipes(uid, { kind: input.kind, subject: input.subject, format: input.format, style: input.style, query: input.query, limit: Math.min(3, input.limit) });
       const output = text({ ...selected, previewOrder: selected.items.map(r => r.id), gallery: "/studio/recipes" }, true);
       return input.preview ? await addRecipeImages(output, selected.items.map(r => r.id)) : output;
     } catch (e) { return failure(e); }
@@ -672,7 +682,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       const { presetId, preview } = presetGetSchema.parse(args);
       const recipe = sdk.getVideoRecipe(presetId);
       const output = text({ preset: await studio.getStudioPreset(uid, presetId),
-        ...(recipe ? { recipe, nextAction: { tool: "video_project_create", arguments: { presetId } } } : {}), clientDisplayLimitation: displayLimitation }, true);
+        ...(recipe ? { recipe, status: presetId.startsWith("composition.") ? "curated" : "compatibility", nextAction: presetId.startsWith("composition.") ? { tool: "video_project_create", arguments: { kind: recipe.kind === "board" ? "tier-list" : recipe.kind, subject: presetId.includes(".music.") ? "music" : "characters", format: recipe.format } } : { tool: "video_design_guide", arguments: { kind: recipe.kind === "board" ? "tier-list" : recipe.kind } } } : {}), clientDisplayLimitation: displayLimitation }, true);
       return recipe && preview ? await addRecipeImages(output, [presetId]) : output;
     } catch (e) { return failure(e); }
   });
@@ -700,19 +710,15 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
   );
   register(
     "video_project_create",
-    "Create SDK project from exactly one document or owned/built-in presetId. Preset uses its round/card/group skeleton. sourceId attaches owned tournament ranks. Neutral result.",
+    "Create by kind top/picker/tier-list first; subject selects content, design is chosen by agent from content/user direction. Optional sourceId attaches tournament ranking. Raw document is advanced/compatibility. Retired preset IDs cannot create new catalog projects.",
     createSchema,
     async (input) => {
-      const { document, ...options } = input;
-      const created = options.presetId
-        ? await studio.createStudioProjectFromPreset(uid, {
-            ...options,
-            presetId: options.presetId,
-          })
-        : await studio.createStudioProject(uid, {
-            document,
-            idempotencyKey: input.idempotencyKey,
-          });
+      const { document, presetId, kind, ...options } = input;
+      const created = kind
+        ? await studio.createStudioProjectFromIntent(uid, { ...options, kind })
+        : presetId
+          ? await studio.createStudioProjectFromPreset(uid, { presetId, title: input.title, sourceId: input.sourceId, roundCount: input.roundCount, cardsPerRound: input.cardsPerRound, idempotencyKey: input.idempotencyKey })
+          : await studio.createStudioProject(uid, { document, idempotencyKey: input.idempotencyKey });
       return studio.studioProjectMetadata(created);
     },
   );

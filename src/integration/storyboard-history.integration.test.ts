@@ -39,7 +39,7 @@ async function fixture() {
   const segment = await prisma.tournamentSegment.create({ data: { tournamentId: tournament.id, title: "Saved source", order: 0, status: "completed", topSize: 1 } });
   const track = await prisma.track.create({ data: { tournamentId: tournament.id, segmentId: segment.id, title: "Оригинальный трек / 光", filePath: audioPath, kind: "audio", durationSec: 1, order: 0, coverArtId: covers[0].id } });
   await prisma.ranking.create({ data: { tournamentId: tournament.id, segmentId: segment.id, trackId: track.id, rank: 1, score: 1 } });
-  const project = await createStudioProjectFromPreset(owner, { presetId: "recipe.clean.top.wide", sourceId: tournament.id });
+  const project = await createStudioProjectFromPreset(owner, { presetId: "composition.top.portrait.wide", sourceId: tournament.id });
   const revision = await prisma.studioRevision.findUniqueOrThrow({ where: { projectId_revision: { projectId: project.id, revision: 1 } } });
   const assets = JSON.parse(revision.assetsJson!), plan = JSON.parse(revision.planJson!);
   const coverKey = Object.keys(assets.manifest).find((key) => assets.manifest[key].kind === "image")!;

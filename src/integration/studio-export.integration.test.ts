@@ -180,25 +180,21 @@ describe("html export", () => {
     second.bindings.sound = { kind: "pool", assetId: sound.id };
     second.source.participants[0].media = { visual: "image", audio: "sound" };
     second.settings.top = { ...second.settings.top, durationSec: 0.5 };
-    const blocked = await studio.createStudioProject(owner, {
+    const additional = await studio.createStudioProject(owner, {
       document: second,
       idempotencyKey: randomUUID(),
     });
-    await expect(studio.estimateStudioExport(owner, blocked.id)).rejects.toThrow(
-      "EXPORT_QUOTA_EXCEEDED",
-    );
-    await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
-    await expect(studio.estimateStudioExport(owner, blocked.id)).resolves.toMatchObject({
+    // Legacy registered accounts have the same unlimited export storage as admins.
+    await expect(studio.estimateStudioExport(owner, additional.id)).resolves.toMatchObject({
       bytes: expect.any(Number),
     });
-    await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
 
     await studio.deleteStudioProject(owner, created.id, { idempotencyKey: randomUUID() });
     expect(await prisma.studioExportCache.count({ where: { projectId: created.id } })).toBe(0);
     await expect(readFile(absPath(soundCache!.relativePath))).rejects.toThrow();
   });
 
-  it("lets only one of two simultaneous exports pass a tight quota", async () => {
+  it("serializes simultaneous exports and lets legacy users exceed the former quota", async () => {
     const image = await createArt(owner, { fileName: "race.png", data: png });
     const sound = await createArt(owner, { fileName: "race.wav", data: wav(6) });
     const make = async (title: string) => {
@@ -276,11 +272,7 @@ describe("html export", () => {
       expect(entered).toBe(1);
       releaseFirst.current?.();
       const settled = await pending;
-      const denied = settled.filter((item) => item.status === "rejected");
-      expect(denied).toHaveLength(1);
-      expect(String((denied[0] as PromiseRejectedResult).reason)).toContain(
-        "EXPORT_QUOTA_EXCEEDED",
-      );
+      expect(settled.every((item) => item.status === "fulfilled")).toBe(true);
       const total =
         (
           await prisma.studioExportCache.aggregate({
@@ -288,7 +280,7 @@ describe("html export", () => {
             _sum: { bytes: true },
           })
         )._sum.bytes ?? 0;
-      expect(total).toBeLessThanOrEqual(studioJobLimits.maxResultBytesPerAccount);
+      expect(total).toBeGreaterThan(studioJobLimits.maxResultBytesPerAccount);
     } finally {
       exportCommitGate.wait = null;
       releaseFirst.current?.();

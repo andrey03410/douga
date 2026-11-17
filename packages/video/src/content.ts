@@ -5,6 +5,8 @@ import { interactiveLayerSchema } from "./interactive-schema";
 import type { InteractiveLayer } from "./interactive-types";
 import type {
   Participant,
+  BoardDefinition,
+  BoardSlot,
   PickerRound,
   VideoDocument,
   VideoScene,
@@ -19,6 +21,9 @@ const participant = z
     caption: text.nullable().optional(),
     comment: text.nullable().optional(),
     album: text.nullable().optional(),
+    subtitle: text.nullable().optional(),
+    tier: text.nullable().optional(),
+    kind: z.enum(["audio", "video", "image"]).nullable().optional(),
     rank: z.number().int().positive().optional(),
     visualAssetId: id.nullable().optional(),
     audioAssetId: id.nullable().optional(),
@@ -33,7 +38,23 @@ const round = z
     id,
     prompt: text.optional(),
     cards: z.array(card).max(20000).optional(),
+    groups: z
+      .array(
+        z
+          .object({
+            id,
+            label: text.optional(),
+            cardIds: z.array(id).max(20000).optional(),
+          })
+          .strict(),
+      )
+      .max(20000)
+      .nullable()
+      .optional(),
     answerParticipantIds: z.array(id).max(20000).nullable().optional(),
+    answerGroupIds: z.array(id).max(20000).nullable().optional(),
+    musicAssetId: id.nullable().optional(),
+    backgroundAssetId: id.nullable().optional(),
   })
   .strict();
 /**
@@ -70,6 +91,20 @@ export const videoContentInputSchema = z.discriminatedUnion("kind", [
     .object({
       ...common,
       kind: z.literal("board"),
+      tiers: z
+        .array(
+          z
+            .object({
+              id,
+              label: text.optional(),
+              participantIds: z.array(id).max(20000).optional(),
+              color: text.optional(),
+              background: text.optional(),
+            })
+            .strict(),
+        )
+        .max(2000)
+        .optional(),
       boards: z
         .array(
           z
@@ -108,6 +143,36 @@ function boundedContentId(readable: string, identity: unknown): string {
   for (const byte of new TextEncoder().encode(JSON.stringify(identity)))
     digest = BigInt.asUintN(64, (digest ^ BigInt(byte)) * 0x100000001b3n);
   return `content-generated:${digest.toString(16).padStart(16, "0")}`;
+}
+function contentBinding(
+  doc: VideoDocument,
+  assetId: string,
+  base: string,
+  identity: unknown,
+  previousKey?: string,
+): string {
+  const matches = (key: string) =>
+    doc.bindings[key]?.kind === "pool" &&
+    (doc.bindings[key] as { assetId: string }).assetId === assetId;
+  if (previousKey && matches(previousKey)) return previousKey;
+  let key = boundedContentId(base, identity),
+    suffix = 0;
+  while (doc.bindings[key] && !matches(key))
+    key = boundedContentId(`${base}:${++suffix}`, [identity, suffix]);
+  doc.bindings[key] = { kind: "pool", assetId };
+  return key;
+}
+function uniqueContentId(
+  base: string,
+  identity: unknown,
+  occupied: Set<string>,
+): string {
+  let result = boundedContentId(base, identity),
+    suffix = 0;
+  while (occupied.has(result))
+    result = boundedContentId(`${base}:${++suffix}`, [identity, suffix]);
+  occupied.add(result);
+  return result;
 }
 function mergeById<T extends { id: string }>(
   old: T[],
@@ -161,7 +226,8 @@ export function buildVideoContent(
       input.deleteParticipantIds !== undefined ||
       (input.kind === "picker" &&
         (input.rounds !== undefined || input.deleteRoundIds !== undefined)) ||
-      (input.kind === "board" && input.boards !== undefined))
+      (input.kind === "board" &&
+        (input.boards !== undefined || input.tiers !== undefined)))
   )
     fail("CONTENT_TOURNAMENT_READONLY", "source");
   if (input.mode === "replace" && input.participants === undefined)
@@ -179,7 +245,14 @@ export function buildVideoContent(
           : {}),
       ...fields,
     } as Participant;
-    for (const field of ["caption", "comment", "album"] as const)
+    for (const field of [
+      "caption",
+      "comment",
+      "album",
+      "subtitle",
+      "tier",
+      "kind",
+    ] as const)
       if (p[field] === null) delete p[field];
     if (p.label === undefined)
       fail("CONTENT_LABEL_REQUIRED", `participants.${p.id}.label`);
@@ -197,28 +270,13 @@ export function buildVideoContent(
       }
       // Content-owned keys are allocated independently. Never overwrite a shared
       // binding used by scene media, another participant or a user-authored node.
-      const oldKey = old?.media?.[channel];
-      if (
-        oldKey &&
-        doc.bindings[oldKey]?.kind === "pool" &&
-        (doc.bindings[oldKey] as { assetId: string }).assetId === assetId
-      ) {
-        p.media[channel] = oldKey;
-        continue;
-      }
-      const base = boundedContentId(`content:${p.id}:${channel}`, ["binding", p.id, channel]);
-      let key = base,
-        suffix = 0;
-      while (
-        doc.bindings[key] &&
-        !(
-          doc.bindings[key].kind === "pool" &&
-          (doc.bindings[key] as { assetId: string }).assetId === assetId
-        )
-      )
-        key = boundedContentId(`${base}:${++suffix}`, ["binding", p.id, channel, suffix]);
-      doc.bindings[key] = { kind: "pool", assetId };
-      p.media[channel] = key;
+      p.media[channel] = contentBinding(
+        doc,
+        assetId,
+        `content:${p.id}:${channel}`,
+        ["binding", p.id, channel],
+        old?.media?.[channel],
+      );
     }
     return p;
   });
@@ -258,12 +316,69 @@ export function buildVideoContent(
                 ? { settings: previous.settings }
                 : {}),
             ...c,
-            id: c.id ?? previous?.id ?? boundedContentId(`${update.id}:card:${c.participantId}`, ["card", update.id, c.participantId]),
+            id:
+              c.id ??
+              previous?.id ??
+              boundedContentId(`${update.id}:card:${c.participantId}`, [
+                "card",
+                update.id,
+                c.participantId,
+              ]),
           };
         });
       unique(result.cards, `rounds.${result.id}.cards`);
-      if (update.answerParticipantIds === null) delete result.answer;
-      else if (update.answerParticipantIds !== undefined) {
+      if (update.groups === null) delete result.groups;
+      else if (update.groups !== undefined) {
+        unique(update.groups, `rounds.${result.id}.groups`);
+        const groups = update.groups.map((group) => {
+          const previous = old?.groups?.find((g) => g.id === group.id);
+          const merged = {
+            ...(input.mode === "merge"
+              ? previous
+              : previous?.settings
+                ? { settings: previous.settings }
+                : {}),
+            ...group,
+          };
+          if (merged.cardIds === undefined)
+            fail(
+              "CONTENT_GROUP_CARDS_REQUIRED",
+              `rounds.${result.id}.groups.${group.id}.cardIds`,
+            );
+          return { ...merged, cardIds: merged.cardIds! };
+        });
+        result.groups = mergeById(
+          input.mode === "merge" ? (old?.groups ?? []) : [],
+          groups,
+          input.mode,
+        );
+      }
+      for (const [channel, assetId] of [
+        ["music", update.musicAssetId],
+        ["background", update.backgroundAssetId],
+      ] as const) {
+        if (assetId === undefined) continue;
+        if (assetId === null) {
+          if (channel === "music") result.music = null;
+          else delete result.background;
+        } else
+          result[channel] = contentBinding(
+            doc,
+            assetId,
+            `content:round:${result.id}:${channel}`,
+            ["round-binding", result.id, channel],
+            old?.[channel] ?? undefined,
+          );
+      }
+      // Answer channels are independently authored: clearing a group answer keeps
+      // an existing card answer, and a favourite-group picker invents neither.
+      if (result.answer) result.answer = { ...result.answer };
+      if (update.answerParticipantIds === null && result.answer)
+        delete result.answer.cardIds;
+      else if (
+        update.answerParticipantIds !== undefined &&
+        update.answerParticipantIds !== null
+      ) {
         const ids = update.answerParticipantIds.map((pid) => {
           const candidates = result.cards.filter(
             (c) => c.participantId === pid,
@@ -280,8 +395,29 @@ export function buildVideoContent(
             "CONTENT_ANSWER_INVALID",
             `rounds.${result.id}.answerParticipantIds`,
           );
-        result.answer = { cardIds: ids };
+        result.answer = { ...result.answer, cardIds: ids };
       }
+      if (update.answerGroupIds === null && result.answer)
+        delete result.answer.groupIds;
+      else if (
+        update.answerGroupIds !== undefined &&
+        update.answerGroupIds !== null
+      ) {
+        if (
+          new Set(update.answerGroupIds).size !==
+            update.answerGroupIds.length ||
+          update.answerGroupIds.some(
+            (id) => !result.groups?.some((g) => g.id === id),
+          )
+        )
+          fail(
+            "CONTENT_ANSWER_GROUP_INVALID",
+            `rounds.${result.id}.answerGroupIds`,
+          );
+        result.answer = { ...result.answer, groupIds: update.answerGroupIds };
+      }
+      if (result.answer && !Object.keys(result.answer).length)
+        delete result.answer;
       return result;
     });
     doc.source.rounds = mergeById(
@@ -292,12 +428,28 @@ export function buildVideoContent(
     );
   }
   if (input.kind === "board") {
+    if (input.tiers !== undefined && input.boards !== undefined)
+      fail("CONTENT_TIERS_BOARDS_CONFLICT", "tiers");
+    if (input.tiers !== undefined) {
+      const boardScenes = scenes.filter((scene) => scene.board);
+      if (boardScenes.length !== 1)
+        fail("CONTENT_TIERS_SCENE_AMBIGUOUS", "tiers");
+      const board = boardScenes[0].board!;
+      if (
+        board.mode !== "accumulate" ||
+        board.carry ||
+        board.budget !== undefined
+      )
+        fail("CONTENT_TIERS_BOARD_UNSUPPORTED", "tiers");
+      applyTiers(board, input.tiers, doc.source.participants, input.mode);
+    }
     unique(
       (input.boards ?? []).map((b) => ({ id: b.sceneId })),
       "boards",
     );
     if (
       input.mode === "replace" &&
+      input.tiers === undefined &&
       scenes.some((s) => !input.boards?.some((b) => b.sceneId === s.id))
     )
       fail("CONTENT_REPLACEMENT_REQUIRED", "boards");
@@ -329,6 +481,16 @@ export function buildVideoContent(
   for (const r of doc.source.rounds) {
     if (r.cards.some((c) => !participants.has(c.participantId)))
       fail("CONTENT_REFERENCE_INVALID", `rounds.${r.id}.cards`);
+    const grouped = new Set<string>();
+    for (const group of r.groups ?? [])
+      for (const cardId of group.cardIds) {
+        if (!r.cards.some((card) => card.id === cardId) || grouped.has(cardId))
+          fail(
+            "CONTENT_GROUP_REFERENCE_INVALID",
+            `rounds.${r.id}.groups.${group.id}.cardIds`,
+          );
+        grouped.add(cardId);
+      }
     if (
       r.answer?.cardIds?.some((id) => !r.cards.some((c) => c.id === id)) ||
       r.answer?.groupIds?.some((id) => !r.groups?.some((g) => g.id === id)) ||
@@ -339,12 +501,123 @@ export function buildVideoContent(
       fail("CONTENT_ANSWER_REFERENCE_INVALID", `rounds.${r.id}.answer`);
   }
   if (input.interactive === null) delete doc.interactive;
-  else if (input.interactive) doc.interactive = mergeInteractive(doc.interactive, input.interactive, input.mode);
+  else if (input.interactive)
+    doc.interactive = mergeInteractive(
+      doc.interactive,
+      input.interactive,
+      input.mode,
+    );
   // Existing concrete scene/segment scopes cannot be silently pruned on deletion.
   for (const s of scenes)
     if (s.participantId && !participants.has(s.participantId))
       fail("CONTENT_REFERENCE_INVALID", `scenes.${s.id}.participantId`);
   return parseVideoDocument(doc);
+}
+type TierContent = NonNullable<
+  Extract<VideoContentInput, { kind: "board" }>["tiers"]
+>;
+/** Semantic distribution uses the existing board state machine, never guesses a tier. */
+function applyTiers(
+  board: BoardDefinition,
+  tiers: TierContent,
+  participants: Participant[],
+  mode: "merge" | "replace",
+) {
+  unique(tiers, "tiers");
+  const oldCards = board.rounds.flatMap((round) => round.cards);
+  const oldActions = board.rounds.flatMap((round) => round.actions);
+  const cardIds = new Set(oldCards.map((card) => card.id)),
+    actionIds = new Set(oldActions.map((action) => action.id));
+  const resolution = resolveBoard(board, participants);
+  if (mode === "merge" && resolution.diagnostics.length)
+    fail("CONTENT_TIERS_BOARD_INVALID", "tiers");
+  const oldCardByParticipant = new Map(
+    oldCards.map((card) => [card.participantId, card]),
+  );
+  type Row = { slot: BoardSlot; participantIds: string[] };
+  const previous: Row[] = board.slots.map((slot) => ({
+    slot,
+    participantIds: oldCards
+      .filter((card) => resolution.final.placements[card.id] === slot.id)
+      .map((card) => card.participantId),
+  }));
+  const rows: Row[] = mode === "merge" ? [...previous] : [];
+  for (const tier of tiers) {
+    const old = previous.find((row) => row.slot.id === tier.id);
+    if (
+      (mode === "replace" || !old) &&
+      (tier.label === undefined || tier.participantIds === undefined)
+    )
+      fail("CONTENT_TIERS_REPLACEMENT_REQUIRED", `tiers.${tier.id}`);
+    const slot: BoardSlot = {
+      ...old?.slot,
+      id: tier.id,
+      label: tier.label ?? old!.slot.label,
+    };
+    if (tier.color !== undefined) slot.color = tier.color;
+    if (tier.background !== undefined) slot.background = tier.background;
+    const row = {
+      slot,
+      participantIds: tier.participantIds ?? old!.participantIds,
+    };
+    const index = rows.findIndex((row) => row.slot.id === tier.id);
+    if (index < 0) rows.push(row);
+    else rows[index] = row;
+  }
+  if (!rows.length) fail("CONTENT_TIERS_REQUIRED", "tiers");
+  const known = new Set(participants.map((p) => p.id)),
+    assigned = new Set<string>();
+  for (const row of rows)
+    for (const participantId of row.participantIds) {
+      if (!known.has(participantId))
+        fail(
+          "CONTENT_TIER_PARTICIPANT_UNKNOWN",
+          `tiers.${row.slot.id}.participantIds`,
+        );
+      if (assigned.has(participantId))
+        fail(
+          "CONTENT_TIER_PARTICIPANT_REPEATED",
+          `tiers.${row.slot.id}.participantIds`,
+        );
+      assigned.add(participantId);
+    }
+  board.slots = rows.map((row) => row.slot);
+  board.rounds = rows
+    .filter((row) => row.participantIds.length)
+    .map((row) => {
+      const cards = row.participantIds.map((participantId) => ({
+        ...oldCardByParticipant.get(participantId),
+        id:
+          oldCardByParticipant.get(participantId)?.id ??
+          uniqueContentId(
+            `tiers:card:${participantId}`,
+            ["tier-card", participantId],
+            cardIds,
+          ),
+        participantId,
+      }));
+      return {
+        id: boundedContentId(`tiers:round:${row.slot.id}`, [
+          "tier-round",
+          row.slot.id,
+        ]),
+        cards,
+        actions: cards.map((card) => ({
+          id:
+            oldActions.find(
+              (action) => action.type === "place" && action.cardId === card.id,
+            )?.id ??
+            uniqueContentId(
+              `tiers:place:${card.participantId}`,
+              ["tier-place", card.participantId],
+              actionIds,
+            ),
+          type: "place" as const,
+          cardId: card.id,
+          slotId: row.slot.id,
+        })),
+      };
+    });
 }
 function mergeInteractive(
   old: InteractiveLayer | undefined,
@@ -352,17 +625,32 @@ function mergeInteractive(
   mode: "merge" | "replace",
 ): InteractiveLayer {
   const base: InteractiveLayer =
-    mode === "merge" && old ? structuredClone(old) : { version: 1, moments: [], choices: [], templates: [], sample: {} };
-  const byKey = <T>(list: T[], updates: T[] | undefined, key: (item: T) => string) => {
+    mode === "merge" && old
+      ? structuredClone(old)
+      : { version: 1, moments: [], choices: [], templates: [], sample: {} };
+  const byKey = <T>(
+    list: T[],
+    updates: T[] | undefined,
+    key: (item: T) => string,
+  ) => {
     if (!updates) return list;
-    unique(updates.map((u) => ({ id: key(u) })), "interactive");
+    unique(
+      updates.map((u) => ({ id: key(u) })),
+      "interactive",
+    );
     if (mode === "replace") return updates;
-    const next = list.filter((item) => !updates.some((u) => key(u) === key(item)));
+    const next = list.filter(
+      (item) => !updates.some((u) => key(u) === key(item)),
+    );
     return [...next, ...updates];
   };
   base.moments = byKey(base.moments, part.moments, (m) => m.id);
   base.choices = byKey(base.choices, part.choices, (c) => c.id);
-  base.templates = byKey(base.templates, part.templates, (t) => t.segmentId ?? `scene:${t.sceneId}`);
+  base.templates = byKey(
+    base.templates,
+    part.templates,
+    (t) => t.segmentId ?? `scene:${t.sceneId}`,
+  );
   if (part.sample) base.sample = part.sample;
   return base;
 }

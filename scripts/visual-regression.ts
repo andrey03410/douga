@@ -22,6 +22,8 @@ import { runtime } from "../src/server/studio/assets";
 
 const root = process.cwd();
 export const baselineDirectory = path.join(root, ".ai/features/32-storyboard-reference/baselines");
+const compositionBaselineDirectory = path.join(root, ".ai/features/35-studio-design-quality/baselines");
+export const visualBaselineDirectory = (fixtureId: string) => fixtureId.startsWith("preset.composition.") ? compositionBaselineDirectory : baselineDirectory;
 export const verificationDirectory = path.join(root, "storage/verification/32-storyboard");
 const storageRelative = (absolute: string) => path.relative(path.join(root, "storage"), absolute);
 const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
@@ -178,20 +180,22 @@ async function readVerified(directory: string, record: FrameRecord) {
 }
 export async function checkVisualFixtures(options: ReturnType<typeof parseVisualArguments>) {
   const actual = await readManifest(path.join(verificationDirectory, "actual-manifest.json"));
-  let reference: RunManifest | undefined;
-  try { reference = await readManifest(path.join(baselineDirectory, "manifest.json")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  const references = new Map<string, RunManifest>();
+  for (const directory of [baselineDirectory, compositionBaselineDirectory]) {
+    try { references.set(directory, await readManifest(path.join(directory, "manifest.json"))); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
   const expected = buildVisualFixtures(), full = catalog(expected), current = new Map(expected.map((f) => [f.id, sha256(json(f))]));
   const selectedIds = expected.filter((f) => !options.filter || f.id.includes(options.filter)).slice(0, options.limit).map((f) => f.id);
   if (!selectedIds.length) throw new Error("NO_MATCHING_FIXTURES");
   const results: (VisualFrameResult & { actual?: string; reference?: string; diffFile?: string; reason?: string })[] = [];
   for (const fixtureId of selectedIds) {
-    const fixture = expected.find((f) => f.id === fixtureId)!;
+    const fixture = expected.find((f) => f.id === fixtureId)!, directory = visualBaselineDirectory(fixtureId), reference = references.get(directory);
     for (const frame of [...new Set(fixture.frames.map((f) => f.frame))]) {
       const id = `${fixtureId}@${frame}`, a = actual.frames.find((f) => f.id === id), r = reference?.frames.find((f) => f.id === id);
       if (!a) { results.push({ id, status: "failed", mandatory: true, regions: [], reason: "missing-actual" }); continue; }
       if (a.fixtureHash !== current.get(fixtureId) || (r && r.fixtureHash !== a.fixtureHash)) { results.push({ id, status: "failed", mandatory: true, regions: [], reason: "fixture-mismatch", actual: a.file, reference: r?.file }); continue; }
       let referenceImage: RgbaImage | undefined;
-      try { if (r) referenceImage = await readVerified(baselineDirectory, r); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      try { if (r) referenceImage = await readVerified(directory, r); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       const result = compareCliVisualFrame({ id, actual: await readVerified(verificationDirectory, a), reference: referenceImage, environment: a.environment, referenceEnvironment: r?.environment, engineId: a.engineId, referenceEngineId: r?.engineId, rois: r?.rois ?? a.rois });
       const diffFile = result.diff ? path.join("diff", fixtureId, `${frame}.png`) : undefined;
       if (result.diff && diffFile) await encodeVisualPng(path.join(verificationDirectory, diffFile), result.diff);
@@ -202,31 +206,39 @@ export async function checkVisualFixtures(options: ReturnType<typeof parseVisual
   const summary = summarizeCliVisualFrames(results), complete = selectedIds.length === expected.length && actual.complete && actual.catalogHash === full.catalogHash;
   const report = { version: 1, comparisonPolicy: cliVisualComparisonPolicy, ...full, complete, selectionPassed: summary.passed, ...summary, passed: complete && summary.passed, results };
   await writeFile(path.join(verificationDirectory, "report.json"), json(report));
-  const rows = results.map((r) => `<tr><td>${r.id}<br>${r.status}${r.reason ? `: ${r.reason}` : ""}<br>PSNR ${r.metrics?.psnr ?? "—"}<br>changed pixels ${r.metrics?.changedPixels ?? "—"} / ${r.metrics?.totalPixels ?? "—"}<br>changed ratio ${r.metrics?.changedPixelRatio ?? "—"}<br>max Δ ${r.metrics?.maxDelta ?? "—"}<br>ROI failures: ${r.regions.filter((region) => region.status !== "passed").map((region) => region.id).join(", ")}</td>${[r.reference ? path.relative(verificationDirectory, artifactPath(baselineDirectory, r.reference)) : undefined, r.actual, r.diffFile].map((src) => `<td>${src ? `<a href="${src}"><img src="${src}" loading="lazy" width="320"></a>` : "absent"}</td>`).join("")}</tr>`);
+  const rows = results.map((r) => `<tr><td>${r.id}<br>${r.status}${r.reason ? `: ${r.reason}` : ""}<br>PSNR ${r.metrics?.psnr ?? "—"}<br>changed pixels ${r.metrics?.changedPixels ?? "—"} / ${r.metrics?.totalPixels ?? "—"}<br>changed ratio ${r.metrics?.changedPixelRatio ?? "—"}<br>max Δ ${r.metrics?.maxDelta ?? "—"}<br>ROI failures: ${r.regions.filter((region) => region.status !== "passed").map((region) => region.id).join(", ")}</td>${[r.reference ? path.relative(verificationDirectory, artifactPath(visualBaselineDirectory(r.id.split("@")[0]), r.reference)) : undefined, r.actual, r.diffFile].map((src) => `<td>${src ? `<a href="${src}"><img src="${src}" loading="lazy" width="320"></a>` : "absent"}</td>`).join("")}</tr>`);
   await writeFile(path.join(verificationDirectory, "report.html"), `<!doctype html><meta charset="utf-8"><title>Douga visual regression</title><style>body{font:14px sans-serif;background:#171b24;color:white}td{border:1px solid #777;padding:8px;vertical-align:top}img{max-height:300px;object-fit:contain}a{color:#9cf}</style><h1>Визуальная регрессия: ${report.passed ? "PASS" : "FAIL"}</h1><p>Полнота: ${complete}; выборка: ${selectedIds.length}/${expected.length}; успешная выборка: ${report.selectionPassed}. RGBA без округления, масштаб 1.</p><p>Фиксированный предел измеренного шума: ≤${cliVisualComparisonPolicy.maxChangedPixels} изменённых пикселей И максимальная разница ≤${cliVisualComparisonPolicy.maxDelta} по всем каналам RGBA. Точно совпали: ${report.exactFrames}; в пределах шума: ${report.boundedNoiseFrames}. Исходные метрики сохранены.</p><p>Записанные ROI сравниваются точно. Области построены по исходным прямоугольникам, не учитывают движение и не гарантируют покрытие всего критичного текста. Весь кадр, включая движущиеся области, ограничен тем же пределом 4×1. Исключений для отдельных кадров нет.</p><table><tr><th>Кадр</th><th>Reference</th><th>Actual</th><th>Absolute difference</th></tr>${rows.join("")}</table>`);
   return report;
 }
-export async function acceptVisualFixtures(reason: string, confirm: boolean) {
+export async function acceptVisualFixtures(reason: string, confirm: boolean, filter?: string) {
   if (!confirm || !reason.trim()) throw new Error("ACCEPT_CONFIRMATION_REQUIRED");
   const actual = await readManifest(path.join(verificationDirectory, "actual-manifest.json")), expected = catalog(buildVisualFixtures());
-  if (!actual.complete || actual.catalogHash !== expected.catalogHash || actual.fixtureIds.length !== actual.selectedFixtureIds.length) throw new Error("ACCEPT_REQUIRES_COMPLETE_CURRENT_RUN");
-  const fixtureFrames = buildVisualFixtures().flatMap((f) => [...new Set(f.frames.map((frame) => frame.frame))].map((frame) => `${f.id}@${frame}`));
+  // A reviewed new composition cohort can be accepted without rewriting legacy goldens.
+  if (filter && filter !== "preset.composition.") throw new Error("ACCEPT_REQUIRES_COMPLETE_COHORT");
+  const selected = buildVisualFixtures().filter(f => !filter || f.id.startsWith(filter));
+  if (actual.catalogHash !== expected.catalogHash || (!filter && !actual.complete) ||
+      selected.length !== actual.selectedFixtureIds.length || selected.some(f => !actual.selectedFixtureIds.includes(f.id))) throw new Error("ACCEPT_REQUIRES_COMPLETE_CURRENT_RUN");
+  const fixtureFrames = selected.flatMap((f) => [...new Set(f.frames.map((frame) => frame.frame))].map((frame) => `${f.id}@${frame}`));
   if (actual.frames.length !== fixtureFrames.length || fixtureFrames.some((id) => !actual.frames.some((f) => f.id === id))) throw new Error("ACCEPT_REQUIRES_ALL_FRAMES");
-  const frames: FrameRecord[] = [];
+  const cohorts = new Map<string, FrameRecord[]>();
   for (const record of actual.frames) {
     await readVerified(verificationDirectory, record);
-    const file = path.join("frames", record.fixtureId, `${record.frame}.png`), target = artifactPath(baselineDirectory, file);
+    const file = path.join("frames", record.fixtureId, `${record.frame}.png`), target = artifactPath(visualBaselineDirectory(record.fixtureId), file);
     await mkdir(path.dirname(target), { recursive: true }); await copyFile(artifactPath(verificationDirectory, record.file), target);
-    frames.push({ ...record, file });
+    const directory = visualBaselineDirectory(record.fixtureId);
+    const frames = cohorts.get(directory) ?? [];
+    frames.push({ ...record, file }); cohorts.set(directory, frames);
   }
-  const accepted: RunManifest = { ...actual, frames, accepted: { reason: reason.trim(), at: new Date().toISOString() } };
-  await writeFile(path.join(baselineDirectory, "manifest.json"), json(accepted));
-  return { accepted: frames.length, reason: reason.trim() };
+  for (const [directory, frames] of cohorts) {
+    const accepted: RunManifest = { ...actual, frames, accepted: { reason: reason.trim(), at: new Date().toISOString() } };
+    await writeFile(path.join(directory, "manifest.json"), json(accepted));
+  }
+  return { accepted: actual.frames.length, reason: reason.trim() };
 }
 async function main() {
   const options = parseVisualArguments(process.argv.slice(2));
   if (options.command === "render") console.log(json(await renderVisualFixtures(options)));
-  else if (options.command === "accept") console.log(json(await acceptVisualFixtures(options.reason!, options.confirm)));
+  else if (options.command === "accept") console.log(json(await acceptVisualFixtures(options.reason!, options.confirm, options.filter)));
   else { const report = await checkVisualFixtures(options); console.log(json({ passed: report.passed, selectionPassed: report.selectionPassed, complete: report.complete, total: report.total, exactFrames: report.exactFrames, boundedNoiseFrames: report.boundedNoiseFrames, comparisonPolicy: report.comparisonPolicy, failed: report.failed, report: path.join(verificationDirectory, "report.html") })); if (!report.passed) process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((error) => { console.error(error instanceof Error ? error.message : "VISUAL_REGRESSION_FAILED"); process.exitCode = 1; });

@@ -112,7 +112,7 @@ describe("tournament slot quota", () => {
     for (const t of ts) await deleteTournament(userId, t.id);
   });
 
-  it("registration default role is user", async () => {
+  it("legacy database default remains readable as user", async () => {
     const u = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(u.role).toBe("user");
   });
@@ -259,7 +259,8 @@ describe("cabinet usage summary", () => {
 
     const s = await usageSummary(userId);
     expect(s.role).toBe("user");
-    expect(s.quotas.maxTournaments).toBe(1);
+    expect(s.quotas.maxTournaments).toBeNull();
+    expect(s.quotas.maxPoolBytes).toBeNull();
     // phase 17: the summary carries aggregates, the rows come from listArchiveRows
     expect(s.archives).toEqual({ count: 1, bytes: 250 }); // 100 + 100 + backfilled 50
     expect(s.archiveBytes).toBe(250);
@@ -298,14 +299,26 @@ describe("admin user management", () => {
     await deleteTournament(userId, t.id);
   });
 
+  it("gives an existing user session admin API access without changing its stored role", async () => {
+    const { GET } = await import("@/app/api/admin/users/route");
+    session.id = userId;
+    try {
+      expect((await GET()).status).toBe(200);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).role).toBe("user");
+    } finally {
+      session.id = "";
+    }
+  });
+
   it("setUserRole validates the role and forbids self-change", async () => {
     await expect(setUserRole(adminId, userId, "superuser")).rejects.toThrow("BAD_ROLE");
-    await expect(setUserRole(adminId, adminId, "user")).rejects.toThrow("SELF_CHANGE");
-    await expect(setUserRole(adminId, "missing-id", "user")).rejects.toThrow("NOT_FOUND");
+    await expect(setUserRole(adminId, userId, "user")).rejects.toThrow("BAD_ROLE");
+    await expect(setUserRole(adminId, adminId, "admin")).rejects.toThrow("SELF_CHANGE");
+    await expect(setUserRole(adminId, "missing-id", "admin")).rejects.toThrow("NOT_FOUND");
 
     const updated = await setUserRole(adminId, userId, "admin");
     expect(updated.role).toBe("admin");
-    await setUserRole(adminId, userId, "user"); // restore fixture
+    await prisma.user.update({ where: { id: userId }, data: { role: "user" } }); // legacy fixture
   });
 
   it("deleteUser wipes tournaments and the pool from disk", async () => {
@@ -339,18 +352,18 @@ describe("admin user management", () => {
   });
 });
 
-describe("ADMIN_EMAILS vs. demotion (T07)", () => {
+describe("ADMIN_EMAILS compatibility and the single assignable role", () => {
   const prev = process.env.ADMIN_EMAILS;
   afterEach(async () => {
     process.env.ADMIN_EMAILS = prev;
     await prisma.user.update({ where: { id: userId }, data: { role: "user" } });
   });
 
-  it("refuses to demote an email listed in ADMIN_EMAILS and flags it in listUsers", async () => {
+  it("rejects the retired user role regardless of ADMIN_EMAILS and preserves bootstrap flags", async () => {
     await prisma.user.update({ where: { id: userId }, data: { role: "admin" } });
     process.env.ADMIN_EMAILS = ` other@x.y , ${EMAIL_USER.toUpperCase()} `;
 
-    await expect(setUserRole(adminId, userId, "user")).rejects.toThrow("ADMIN_BOOTSTRAP");
+    await expect(setUserRole(adminId, userId, "user")).rejects.toThrow("BAD_ROLE");
     const kept = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(kept.role).toBe("admin");
     // keeping the admin role is not a demotion
@@ -360,13 +373,13 @@ describe("ADMIN_EMAILS vs. demotion (T07)", () => {
     expect(rows.find((r) => r.id === userId)?.bootstrapAdmin).toBe(true);
     expect(rows.find((r) => r.id === adminId)?.bootstrapAdmin).toBe(false);
 
-    // once the email leaves ADMIN_EMAILS the demotion goes through
+    // Removing ADMIN_EMAILS does not re-enable the retired user role.
     process.env.ADMIN_EMAILS = "other@x.y";
-    expect((await setUserRole(adminId, userId, "user")).role).toBe("user");
+    await expect(setUserRole(adminId, userId, "user")).rejects.toThrow("BAD_ROLE");
     expect((await listUsers()).find((r) => r.id === userId)?.bootstrapAdmin).toBe(false);
   });
 
-  it("the admin API answers 409 ADMIN_BOOTSTRAP with a hint to edit .env", async () => {
+  it("the admin API rejects assignment of the retired user role", async () => {
     const { PATCH } = await import("@/app/api/admin/users/[id]/route");
     await prisma.user.update({ where: { id: userId }, data: { role: "admin" } });
     process.env.ADMIN_EMAILS = EMAIL_USER;
@@ -379,11 +392,9 @@ describe("ADMIN_EMAILS vs. demotion (T07)", () => {
         }),
         { params: { id: userId } },
       );
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.code).toBe("ADMIN_BOOTSTRAP");
-      expect(body.error).toContain("ADMIN_EMAILS");
-      expect(body.error).toContain(".env");
+      expect(body.error).toBe("Неизвестная роль");
       const kept = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
       expect(kept.role).toBe("admin");
     } finally {
@@ -406,7 +417,8 @@ describe("email case (T08)", () => {
   it("registration stores the email lowercased and refuses a case-only duplicate", async () => {
     const created = await registerAccount(`  ${EMAIL_NEW.toUpperCase()} `, "secret1");
     expect(created.email).toBe(EMAIL_NEW);
-    expect(created.role).toBe("user");
+    expect(created.role).toBe("admin");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: created.id } })).role).toBe("admin");
     expect(await bcrypt.compare("secret1", created.passwordHash)).toBe(true);
 
     await expect(registerAccount(EMAIL_NEW, "secret2")).rejects.toThrow("EMAIL_TAKEN");

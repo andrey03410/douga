@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function RecipesPage({
   searchParams,
 }: {
-  searchParams?: { project?: string; sourceId?: string };
+  searchParams?: { project?: string; sourceId?: string; kind?: string };
 }) {
   if (!(await currentUser())) redirect("/login");
   return (
@@ -15,6 +15,7 @@ export default async function RecipesPage({
       <RecipeGallery
         projectId={searchParams?.project}
         sourceId={searchParams?.sourceId}
+        initialKind={searchParams?.kind}
       />
     </main>
   );

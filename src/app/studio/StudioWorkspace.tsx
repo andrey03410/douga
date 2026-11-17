@@ -72,7 +72,10 @@ export async function studioRequest<T>(
         }),
   });
   const value = await response.json();
-  if (!response.ok) throw Error(value.error ?? "Ошибка запроса");
+  if (!response.ok) {
+    const detail = value.diagnostics?.find((d: { code?: string; message?: string }) => d.code === "RESOURCE_BUDGET_EXCEEDED")?.message;
+    throw Error(`${value.error ?? "Ошибка запроса"}${detail ? `: ${detail}` : ""}`);
+  }
   return value;
 }
 function metadata(p: StudioProjectView): Metadata {

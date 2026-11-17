@@ -12,6 +12,40 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
 
 Карточка о том, как поднять Douga локально, где лежат база и файлы и чем проверять изменения. Сайт (`next dev`), очередь SDK (`studio:worker`) и MCP-сервер (`mcp`) — это отдельные процессы. Все три работают с одной SQLite-базой `prisma/dev.db` и одним каталогом `storage/`.
 
+## Авторинг и проверка композиций (задача 35)
+
+На `/studio/new` и в MCP сначала выбирают тип top/picker/tier-list, затем состав,
+формат и оформление. `video_design_guide` направляет выбор стиля по пожеланию
+автора; новый factory — `createVideoFromIntent`. 12 `composition.*` используют
+общие schema/compiler/renderer; прежний raw SDK/default builder, документы и
+версии пресетов сохранены для совместимости. Основные файлы и границы —
+[studio-sdk.md](studio-sdk.md), [render.md](render.md), [mcp.md](mcp.md).
+
+Документ допускает 2 000 000 authored values и 100 000 expanded nodes;
+JSON serialize и text-save ограничены одинаковыми 32 МиБ UTF-8.
+`video_resource_estimate` — предварительная оценка с resource/used/limit/path,
+а не отдельная компиляция или проверка художественного качества. Scene/depth/audio,
+длительность, память worker и HTML-бюджет сохраняют прежние guards.
+
+Для целевых DB-проверок используй SQLite backup и явный `TEST_DATABASE_URL` копии;
+это не требует останавливать процессы владельца. Адресный worker/MCP-драйвер
+должен получить ту же копию через `DATABASE_URL`. Не запускай обычный worker
+на этой копии одновременно с тестами её очереди. Реальные PNG/MP4/звук, frozen
+inputs и частные референсы задачи 35 хранятся в `storage/feature-35-implementation/`.
+Принятые публичные synthetic baseline хранятся отдельно в `.ai/features/` после
+просмотра, с manifest/средой; наличие файла или зелёный unit не означает приёмку.
+Все фактически выполненные проверки и пропуски записывай в verify.md задачи.
+
+Новая визуальная когорта хранит 129 принятых native PNG в
+[baseline задачи 35](../features/35-studio-design-quality/baselines/).
+`npm run visual:render -- --filter preset.composition.` →
+`npm run visual:check -- --filter preset.composition.` проверяет только эти 12
+композиций: `selectionPassed:true`, `complete:false` означает успешную частичную
+проверку; общий passed остаётся false и CLI возвращает 1 из-за неполноты каталога.
+Check читает cohorts 35 и legacy 32;
+accept с этим фильтром требует всю новую когорту и сохраняет legacy отдельно.
+Подробности и команда принятия — [render.md](render.md).
+
 ## Где код
 
 - [`package.json`](../../package.json) — скрипты:
@@ -36,7 +70,7 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
 
 ## Переменные `.env`
 
-- База и вход: `DATABASE_URL` (путь `file:./dev.db` отсчитывается от `prisma/`, как в Prisma 5: так считает `database-url.ts`, сама Prisma 7 считала бы от корня; без переменной — `prisma/dev.db`), `AUTH_SECRET`, `AUTH_TRUST_HOST`, `ADMIN_EMAILS` ([roles.md](roles.md)).
+- База и вход: `DATABASE_URL` (путь `file:./dev.db` отсчитывается от `prisma/`, как в Prisma 5: так считает `database-url.ts`, сама Prisma 7 считала бы от корня; без переменной — `prisma/dev.db`), `AUTH_SECRET`, `AUTH_TRUST_HOST`, `ADMIN_EMAILS` ([roles.md](roles.md)). Все зарегистрированные уже имеют права admin; ADMIN_EMAILS сохранён для совместимости.
 - Рендер: `REMOTION_BROWSER_EXECUTABLE` — путь к Chrome или Chromium.
 - Импорт по ссылке:
   - `YTDLP_PATH`;
@@ -65,7 +99,7 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
 - Первый запуск: `npm install` (сам генерирует клиент), `cp .env.example .env`, `npm run db:push`, `npm run dev`.
 - Схема: после правки `schema.prisma` выполни `npm run db:push` (push и generate) и перезапусти dev-сервер. Если запущены `studio:worker` и `mcp`, их тоже. Сам `npm run dev` делает только `generate`.
 - Сегменты (задача 27) применяются аддитивно: новая `TournamentSegment`, nullable `segmentId` у Track/ComparisonBatch/Ranking и metadata трека. `db push` добавляет схему, а содержимое старых турниров лениво получает «Все треки» через `ensureTournamentSegments` при чтении турнира/источника Studio. Отдельного массового пересчёта сравнений и рейтингов нет. `coverArtId`/`posterArtId` защищены FK Restrict к Art.
-- Для изолированного целевого прогона сначала скопируй `prisma/dev.db` в `storage/verification/<задача>/…db`, примени новую схему к этой копии явным `DATABASE_URL=file:/abs/copy.db npx prisma db push`, затем используй `TEST_DATABASE_URL=file:/abs/copy.db npx vitest run <файлы>`. `prisma generate` обновляет клиент этого чекаута (`src/generated/prisma`) даже при работе с копией БД; согласуй это с агентом, который держит dev, убедись, что рабочая БД тоже обновлена, и перезапусти активные процессы.
+- Для изолированного целевого прогона сделай SQLite backup `prisma/dev.db` в `storage/verification/<задача>/…db` (при WAL обычное копирование файла может потерять изменения). Если схема менялась, примени её к копии явным `DATABASE_URL=file:/abs/copy.db npx prisma db push`, затем используй `TEST_DATABASE_URL=file:/abs/copy.db npx vitest run <файлы>`. `prisma generate` обновляет клиент этого чекаута (`src/generated/prisma`) даже при работе с копией БД; согласуй это с агентом, который держит dev, убедись, что рабочая БД тоже обновлена, и согласуй перезапуск владельческих процессов.
 - Устаревший клиент Prisma падает с `Unknown argument <поле>`. `serverError` превращает это в ответ 500 с текстом `staleClientHint`, а [`prisma-client.test.ts`](../../src/lib/prisma-client.test.ts) ловит забытый `generate` в `npm test`.
 - Рендер MP4 (Remotion) берёт браузер из `REMOTION_BROWSER_EXECUTABLE`. Без переменной Remotion скачивает chrome-headless-shell из сети; скачать заранее можно командой `npx remotion browser ensure`. Без браузера работает всё, кроме рендера.
 - Очередь SDK: сайт и MCP только ставят задание, выполняет его `npm run studio:worker`. В разработке нужны два терминала: `dev` и воркер. Тяжёлый слот один на всех (`StudioWorkerLease`). Одно задание отдельно: `npm run studio:worker -- --once --job JOB_ID`.
@@ -85,7 +119,7 @@ actual/HTML reports/frozen inputs — только storage/verification/32-story
 
 ## Грабли
 
-- Порт 3000. Перед `npm run dev` выполни `lsof -nP -iTCP:3000 -sTCP:LISTEN`: у владельца часто уже работает свой сервер, тогда пользуйся им. Второй Next уйдёт на 3001, но каталог `.next` у них общий. Процессы перетирают друг другу CSS-чанки, и вёрстка ломается. Если серверы всё же пересеклись: останови все процессы `next`, выполни `rm -rf .next`, подними один сервер и проверь, что CSS-чанк из HTML отдаёт 200.
+- Порт 3000. Перед `npm run dev` выполни `lsof -nP -iTCP:3000 -sTCP:LISTEN`: у владельца часто уже работает свой сервер, тогда пользуйся им. Второй Next уйдёт на 3001, но каталог `.next` у них общий. Процессы перетирают друг другу CSS-чанки, и вёрстка ломается. Если серверы пересеклись, сначала согласуй остановку владельческого сервера; останови свои процессы, пересоздай `.next` и подними один согласованный сервер. Проверь, что CSS-чанк из HTML отдаёт 200.
 - `npm run build` пишет в тот же `.next`, поэтому после сборки dev-сервер нужно перезапустить. `npx tsc --noEmit` запускай, когда build закончится: пока `.next/types` пересоздаётся, tsc падает с TS6053 (журнал фазы 21).
 - Не держи общий `studio:worker` запущенным во время интеграционных тестов и `verify-studio.mjs`: он перехватывает их задания.
 - Клиент базы — Prisma 7 через адаптер `better-sqlite3`, одно соединение на процесс ([`sqlite-adapter.ts`](../../src/lib/sqlite-adapter.ts)):

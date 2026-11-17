@@ -1,4 +1,5 @@
 "use client";
+import { isAuthoringMotion } from "@douga/video/authoring-motion";
 import { useMemo, useState } from "react";
 import {
   compileVideo,
@@ -24,13 +25,14 @@ const categories: { id: MotionCatalogCategory; label: string; note: string }[] =
   ];
 export default function MotionGallery() {
   const [category, setCategory] = useState<MotionCatalogCategory>("effect");
-  const [name, setName] = useState("pop");
+  const [name, setName] = useState("fade");
+  const [compatibility, setCompatibility] = useState(false);
   const [profile, setProfile] = useState<MotionProfile>("smooth");
   const [intensity, setIntensity] = useState<MotionIntensity>("normal");
   const [variant, setVariant] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const entries = motionCatalog.entries.filter(
-    (entry) => entry.category === category,
+    (entry) => entry.category === category && (compatibility || isAuthoringMotion(entry)),
   );
   const entry: MotionCatalogEntry =
     entries.find((entry) => entry.name === name) ?? entries[0];
@@ -70,6 +72,7 @@ export default function MotionGallery() {
   }
   return (
     <div data-motion-gallery className="motion-gallery">
+      <p><label><input type="checkbox" checked={compatibility} onChange={e=>setCompatibility(e.target.checked)}/> Показать прежние эффекты</label></p>
       <nav className="motion-categories" aria-label="Категория моушена">
         {categories.map((item) => (
           <button
@@ -82,7 +85,7 @@ export default function MotionGallery() {
             <small>
               {
                 motionCatalog.entries.filter(
-                  (entry) => entry.category === item.id,
+                  (entry) => entry.category === item.id && (compatibility || isAuthoringMotion(entry)),
                 ).length
               }
             </small>

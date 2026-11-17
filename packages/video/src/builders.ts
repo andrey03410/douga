@@ -17,7 +17,7 @@ import {
 } from "./schema";
 import { getBuiltinPreset, applyVideoPreset } from "./presets";
 import { createBoardDocument } from "./board-presets";
-import { videoResourceLimits } from "./resource-limits";
+import { resourceBudgetDiagnostic, VideoResourceBudgetError, videoResourceLimits } from "./resource-limits";
 export interface CreateVideoOptions {
   kind: "top" | "picker" | "board";
   board?: BoardDefinition;
@@ -72,11 +72,12 @@ export function createVideoDocument(
       throw new Error(
         "Round and card counts must be nonnegative/positive integers",
       );
-    if (
-      count > videoResourceLimits.maxExpandedScenes ||
-      count * perRound > videoResourceLimits.maxExpandedNodes
-    )
-      throw new Error("RESOURCE_BUDGET_EXCEEDED");
+    if (count > videoResourceLimits.maxExpandedScenes)
+      throw new VideoResourceBudgetError(resourceBudgetDiagnostic("expandedScenes", count,
+        videoResourceLimits.maxExpandedScenes, "roundCount"));
+    if (count * perRound > videoResourceLimits.maxExpandedNodes)
+      throw new VideoResourceBudgetError(resourceBudgetDiagnostic("expandedNodes", count * perRound,
+        videoResourceLimits.maxExpandedNodes, "cardsPerRound"));
     rounds = Array.from({ length: count }, (_, ri) => {
       const cards = Array.from({ length: perRound }, (_, ci) => {
         const pid = `participant-${ri + 1}-${ci + 1}`;

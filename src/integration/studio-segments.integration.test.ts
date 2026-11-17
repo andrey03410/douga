@@ -543,7 +543,7 @@ describe("tournament source bridge for segmented documents", () => {
     )!;
     expect(listed.segments.map((s) => s.id)).toEqual([f.first.id]);
     const project = await createStudioProjectFromPreset(owner, {
-      presetId: "top.classic.wide",
+      presetId: "composition.top.music.wide",
       sourceId: f.tournament.id,
       title: "Видео",
     });

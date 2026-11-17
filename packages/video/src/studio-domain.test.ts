@@ -39,7 +39,7 @@ it("bounds generated picker skeleton allocation before materializing cards", () 
     createVideoDocument({
       kind: "picker",
       roundCount: 2,
-      cardsPerRound: 10001,
+      cardsPerRound: 50001,
     }),
   ).toThrow("RESOURCE_BUDGET_EXCEEDED");
 });

@@ -3,6 +3,7 @@ export * from "./errors";
 export {
   createStudioProject,
   createStudioProjectFromPreset,
+  createStudioProjectFromIntent,
   listStudioProjects,
   getStudioProject,
   saveStudioDraft,
@@ -59,3 +60,5 @@ export {
   interactiveManifestUrl,
   type InteractivePublicationView,
 } from "./interactive";
+
+export * from "./authoring-schema";

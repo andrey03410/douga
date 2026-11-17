@@ -5,6 +5,58 @@
 кадров того же renderer. Очередь, бюджеты и воркер описаны в [studio-sdk.md](studio-sdk.md).
 Нарезка офлайн-`.html` живёт отдельно.
 
+## Новые композиции (задача 35)
+
+Новый authoring начинается с типа top/picker/tier-list и решения о стиле по
+`video_design_guide`, затем использует 12 композиций (четыре адаптации × три формата).
+Versioned `settings.composition` включает отдельную ветку
+[`composition-compiler.ts`](../../packages/video/src/composition-compiler.ts)
+из прежних blocks. Без marker/null старый IR сохраняется; копии, история и raw SDK
+не мигрируют автоматически.
+
+- Portrait top разделяет вертикальный арт, место, имя и subtitle; music top —
+  затемнённый backdrop, отдельные место/название/метаданные. Расчёт source/snippet,
+  offset, длительности и аудио остаётся общим.
+- Picker 3×2 заполняет кадр равными высокими карточками: wide — три группы
+  с парой рядом, square — три колонки с парой друг над другом, vertical — три ряда.
+  Маска/каскад заканчиваются до окна выбора; номерная шторка уходит диагонально.
+  Separate answer сохраняет защитные слои, подписи и parent IDs, без второго enter.
+- Tier-list показывает заданное распределение: обзор → непустые тиры → итог.
+  Это обычные board placements с row focus, без новой игры. Плотность и конфликт
+  свободной геометрии дают адресные diagnostics вместо мелких нечитаемых элементов.
+- `CompiledNode.rankDraw` задаёт scene-local from/durationInFrames.
+  [`TypographyText.tsx`](../../packages/render/src/TypographyText.tsx) рисует
+  контур и заполнение числа детерминированно по кадру, закреплённому font face и box;
+  старым узлам поле не добавляется. Cinzel normal и Cormorant Garamond normal/italic
+  закреплены в [`font-manifest.ts`](../../packages/video/src/font-manifest.ts)
+  с OFL/SHA-256. Cinzel — числа/латиница, русский serif — Cormorant, JP — Noto fallback.
+  Шрифты проходят общий snapshot/fontFiles/HTTP/offline ledger, без runtime сети.
+
+Для художественной приёмки смотри настоящие PNG и clip начала/середины/конца,
+вход/settled/переход, длинные RU/JP подписи и декодированный звук. Все страницы
+storyboard обязательны; технический ready и unit snapshots не заменяют просмотра.
+После исправлений повторяй проверку. Доказательства и границы сделанного просмотра
+записываются в [verify.md задачи 35](../features/35-studio-design-quality/verify.md).
+
+Для 12 новых композиций root принял **129 native lossless PNG** в
+[baseline задачи 35](../features/35-studio-design-quality/baselines/).
+`scripts/visual-regression.ts` читает этот cohort вместе с legacy baseline задачи 32.
+Целевой прогон новых композиций:
+
+```sh
+npm run visual:render -- --filter preset.composition.
+npm run visual:check -- --filter preset.composition.
+```
+
+Фильтр проверяет только выбранную когорту: `selectionPassed:true` и 129 exact frames
+означают её успех; `complete:false` честно сообщает, что весь прежний каталог в
+этом прогоне не проверялся. Общий `passed` и CLI exit остаются false/1 при таком
+частичном прогоне; оценивай `selectionPassed` вместе с полнотой. Полный `test:visual`
+остаётся отдельным прогоном.
+`npm run visual:accept -- --filter preset.composition. --confirm --reason "…"`
+допускает только полную когорту из 12 композиций после просмотра и не переписывает
+legacy baseline. Частную картинку/MP4 владельца в эталоны не включают.
+
 ## Раскадровка и pixel regression (задача 32)
 
 [`render-frames.ts`](../../src/server/studio/render-frames.ts) — общая подготовка
@@ -21,7 +73,7 @@ missing/dimensions явно notComparable. Считает суммарные out
 ошибки, не объявляет плавность доказанной.
 
 [`visual-fixtures.ts`](../../packages/video/src/visual-fixtures.ts) содержит непустые fixed
-fixtures всех 54 прежних пресетов,33 рецептов,67 motion entries и типографики:
+fixtures прежних пресетов/рецептов, новых composition IDs, motion entries и типографики:
 локальные SVG/PCM, RU/JP, границы, dense/empty. Матрица хранит available/selected
 events и честно отмечает representative sampling (≤12 кадров/fixture).
 [`visual-regression.ts`](../../packages/video/src/visual-regression.ts) считает PSNR,
@@ -94,14 +146,14 @@ ROI остаются exact0,но построены по compiled rect и не �
 
 ## Как устроено
 - Сайт и MCP только ставят задание. Выполняет его отдельный процесс `npm run studio:worker`
-- Финальный `kind:"render"` требует право `render:run` (только админ). Клип, still и audio доступны автору
+- Финальный `kind:"render"` требует право `render:run` (все зарегистрированные, включая прежний `user`). Клип, still и audio доступны автору
 - Браузер берётся из `REMOTION_BROWSER_EXECUTABLE`. Без переменной Remotion пытается скачать chrome-headless-shell
 - Нарезка офлайн-`.html` не перекодирует звук теми же фейдами, что раньше делал отдельный конвейер: плеер читает исходные файлы
 
 ## Грабли
 - Правка `src/remotion` или `package-lock.json` меняет `engineId`, и первое студийное задание пересобирает бандл
 - Осмотр картинки через ffmpeg — без input seek (`-ss`), даже к нулю: крупный JPEG теряет единственный кадр ([`studio/inspection.ts`](../../src/server/studio/inspection.ts))
-- Финальный рендер только для админа. У роли user кнопка скрыта, а `video_job_start kind:"render"` отвечает `FORBIDDEN`
+- Финальный рендер доступен всем зарегистрированным. Сохранённая роль `user` имеет права `admin`: кнопка видна и `video_job_start kind:"render"` разрешён. Гость/неизвестная роль получают `FORBIDDEN`
 - Системных ffmpeg и ffprobe может не быть. Кадры и громкость снимает бинарник `node_modules/ffmpeg-static/ffmpeg`
 
 ## Пакет `@douga/render` (задача 34)
@@ -109,7 +161,7 @@ ROI остаются exact0,но построены по compiled rect и не �
 `StudioVideo`, кадровая математика и типографика переехали в [`packages/render/src/`](../../packages/render/src/),
 точка входа Remotion — в [`src/remotion-entry/`](../../src/remotion-entry/). Новое: [`hit-test.ts`](../../packages/render/src/hit-test.ts)
 находит нажатую карточку на анимированном кадре. Его зовёт `InteractivePlayer` ([`@douga/player`](../../packages/player/src/)).
-Рендер финального MP4 не изменился и остаётся у админа.
+Рендер финального MP4 доступен всем зарегистрированным, включая прежний `user`.
 
 ## Как проверить
 - Юниты пробы и RMS: `npx vitest run src/lib/audio-probe.test.ts src/lib/domain/rms.test.ts src/lib/domain/download-name.test.ts`

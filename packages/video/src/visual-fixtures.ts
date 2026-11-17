@@ -103,7 +103,7 @@ function fixture(id: string, document: VideoDocument, coverage: VisualFixture["c
   return { id, document, manifest, coverage, frames: available.filter((f) => selected.has(f.frame)), sampling: { strategy: "representative-events-v1", sampled: timeline.length > selectedFrames.length, available, selected: selectedFrames } };
 }
 function base(kind: VideoDocument["kind"] = "picker", presetId?: string): VideoDocument {
-  return createVideoDocument({ kind, ...(presetId ? { presetId } : {}), roundCount: kind === "top" ? undefined : 2, cardsPerRound: kind === "board" ? undefined : 3, ...(kind === "top" ? { participants: [1, 2, 3].map((rank) => ({ id: `p${rank}`, label: `Герой ${rank}`, rank })) } : {}) });
+  return createVideoDocument({ kind, ...(presetId ? { presetId } : {}), roundCount: kind === "top" ? undefined : 2, cardsPerRound: kind === "board" ? undefined : presetId?.startsWith("composition.picker.") ? 6 : 3, ...(kind === "top" ? { participants: [1, 2, 3].map((rank) => ({ id: `p${rank}`, label: `Герой ${rank}`, rank })) } : {}) });
 }
 export function buildVisualFixtures(): VisualFixture[] {
   const fixtures = getBuiltinPresets().map((preset) => fixture(`preset.${preset.id}`, base(preset.kind, preset.id), preset.id.startsWith("recipe.") ? { recipes: [preset.id] } : { presets: [preset.id] }));
