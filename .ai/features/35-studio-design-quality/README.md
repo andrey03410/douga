@@ -2,11 +2,11 @@
 id: 35
 title: Качество оформления и вместимость студии
 track: product
-stage: review
+stage: merged
 branch: feat/35-studio-design-quality
 pr: https://github.com/andrey03410/douga/pull/16
 started: 2026-11-17
-merged:
+merged: 2026-11-17
 ---
 
 # 35. Качество оформления и вместимость студии
@@ -24,7 +24,7 @@ merged:
 - [x] План — [plan.md](plan.md)
 - [x] Реализация и QG
 - [x] Проверка владельцем — гейт пропущен по автономному режиму; свежее ревью пройдено
-- [ ] Влито
+- [x] Влито
 
 ## Материалы
 

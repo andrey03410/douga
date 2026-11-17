@@ -103,7 +103,7 @@ src/app/studio/{new,recipes,StudioWorkspace.tsx}; соответствующие
 
 - [x] Обновить .ai/map/{studio-sdk,render,mcp,dev-env}.md, README/SDK-guide при нужде.
 - [x] verify.md: команды, числа, файлы доказательств и что посмотреть руками.
-- [ ] Push ветки, PR «35: …», stage review; затем запись history, stage merged,
+- [x] Push ветки, PR «35: …», stage review; затем запись history, stage merged,
   merge PR --merge, main pull/push и проверка remote SHA.
 
 Готово: фича в origin/main, карточки соответствуют коду, рабочее дерево чистое.
