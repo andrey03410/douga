@@ -2,7 +2,7 @@
 id: 35
 title: Качество оформления и вместимость студии
 track: product
-stage: tech
+stage: plan
 branch: feat/35-studio-design-quality
 pr:
 started: 2026-11-17
@@ -20,7 +20,7 @@ merged:
 
 - [x] Бриф — [brief.md](brief.md)
 - [x] Продукт — [product.md](product.md): подтверждён владельцем 2026-11-17
-- [ ] Техника
+- [x] Техника — [tech.md](tech.md), решения приняты автономно
 - [ ] План
 - [ ] Реализация и QG
 - [ ] Проверка владельцем
