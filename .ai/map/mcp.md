@@ -161,7 +161,7 @@ preview:true отдаёт image block diagnostic PNG (≤12 MiB), без base64 
 Тяжёлый слот занят — JOB_ACTIVE. Новые шрифты не требуют внешней сети/шрифтов ОС.
 
 Применение темы через существующий video_draft_patch + CAS, затем inspect/validate
-и штатные commit/jobs. Финальный render по-прежнему только admin. SDK/сайт также
+и штатные commit/jobs. Финальный render доступен всем зарегистрированным: старый `user` имеет права `admin`. SDK/сайт также
 дают preserve/replace и scopes; dirty buffer не теряется. Настоящий stdio и
 реальные кадры/офлайн проверяются по verify.md задачи 31.
 

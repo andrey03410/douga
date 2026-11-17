@@ -975,11 +975,11 @@ it("returns real image/audio inspection and scoped preview jobs; neutral status 
     "canceled",
   );
   await prisma.user.update({ where: { id: owner }, data: { role: "user" } });
-  await error(
-    "video_job_start",
-    { projectId: p.id, kind: "render" },
-    "FORBIDDEN",
-  );
+  const final = await call("video_job_start", { projectId: p.id, kind: "render" });
+  expect(final.status).toBe("queued");
+  await call("video_job_cancel", { jobId: final.id });
+  await prisma.user.update({ where: { id: owner }, data: { role: "guest" } });
+  await error("video_job_start", { projectId: p.id, kind: "render" }, "FORBIDDEN");
   await prisma.user.update({ where: { id: owner }, data: { role: "admin" } });
 }, 240_000);
 

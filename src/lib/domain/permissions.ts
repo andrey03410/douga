@@ -27,6 +27,12 @@ export interface RoleDef {
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
+const ADMIN: RoleDef = {
+  label: "Администратор",
+  permissions: ["tournament:create", "media:upload", "render:run", "admin:users"],
+  quotas: { maxTournaments: null, maxArchiveBytes: 10 * GB, maxPoolBytes: null },
+};
+
 // "guest" is virtual: no DB row ever holds it, it models the absence of a
 // session (and is the fallback for unknown role strings).
 export const ROLES: Record<string, RoleDef> = {
@@ -35,23 +41,18 @@ export const ROLES: Record<string, RoleDef> = {
     permissions: [],
     quotas: { maxTournaments: 0, maxArchiveBytes: 0, maxPoolBytes: 0 },
   },
-  user: {
-    label: "Пользователь",
-    permissions: ["tournament:create", "media:upload"],
-    quotas: { maxTournaments: 1, maxArchiveBytes: 100 * MB, maxPoolBytes: 100 * MB },
-  },
-  admin: {
-    label: "Администратор",
-    permissions: ["tournament:create", "media:upload", "render:run", "admin:users"],
-    quotas: { maxTournaments: null, maxArchiveBytes: 10 * GB, maxPoolBytes: null },
-  },
+  // Legacy database rows and already-open sessions have the same rights now.
+  user: ADMIN,
+  admin: ADMIN,
 };
 
-/** Roles assignable to accounts (everything except the virtual guest). */
-export const ASSIGNABLE_ROLES = Object.keys(ROLES).filter((r) => r !== "guest");
+/** All registered accounts are admins; `user` is only a legacy read alias. */
+export const ASSIGNABLE_ROLES = ["admin"];
 
 function roleDef(role: string | null | undefined): RoleDef {
-  return ROLES[role ?? "guest"] ?? ROLES.guest;
+  return Object.prototype.hasOwnProperty.call(ROLES, role ?? "guest")
+    ? ROLES[role ?? "guest"]
+    : ROLES.guest;
 }
 
 export function can(role: string | null | undefined, permission: Permission): boolean {
@@ -63,7 +64,9 @@ export function quotasFor(role: string | null | undefined): Quotas {
 }
 
 export function roleLabel(role: string | null | undefined): string {
-  return ROLES[role ?? ""] ? ROLES[role ?? ""].label : role || "Гость";
+  return Object.prototype.hasOwnProperty.call(ROLES, role ?? "")
+    ? roleDef(role).label
+    : role || "Гость";
 }
 
 export function isAssignableRole(role: string): boolean {

@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/auth";
+import { can } from "@/lib/domain/permissions";
 import {
   getStudioProject,
   studioProjectMetadata,
@@ -27,7 +28,7 @@ export default async function StudioPage({
   }
   return (
     <main className="container studio-workspace">
-      <StudioWorkspace initial={metadata} isAdmin={user.role === "admin"} />
+      <StudioWorkspace initial={metadata} isAdmin={can(user.role, "render:run")} />
       <StudioSetup email={user.email} />
     </main>
   );

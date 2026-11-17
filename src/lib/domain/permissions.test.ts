@@ -21,11 +21,11 @@ describe("permissions matrix", () => {
     }
   });
 
-  it("user can create tournaments and upload media, but not render or administer", () => {
+  it("legacy user can render and administer immediately", () => {
     expect(can("user", "tournament:create")).toBe(true);
     expect(can("user", "media:upload")).toBe(true);
-    expect(can("user", "render:run")).toBe(false);
-    expect(can("user", "admin:users")).toBe(false);
+    expect(can("user", "render:run")).toBe(true);
+    expect(can("user", "admin:users")).toBe(true);
   });
 
   it("admin can do everything", () => {
@@ -35,25 +35,27 @@ describe("permissions matrix", () => {
     expect(can("admin", "admin:users")).toBe(true);
   });
 
-  it("unknown role degrades to guest, not to a crash or full access", () => {
-    expect(can("superuser", "render:run")).toBe(false);
-    expect(quotasFor("superuser").maxTournaments).toBe(0);
+  it.each(["superuser", "constructor", "__proto__", "toString"])("unknown role %s fails closed", (role) => {
+    for (const permission of ["tournament:create", "render:run", "media:upload", "admin:users"] as const) {
+      expect(can(role, permission)).toBe(false);
+    }
+    expect(quotasFor(role)).toEqual({ maxTournaments: 0, maxArchiveBytes: 0, maxPoolBytes: 0 });
   });
 
-  it("guest is not assignable to accounts", () => {
+  it("only admin is assignable to accounts; legacy user remains read-compatible", () => {
     expect(isAssignableRole("guest")).toBe(false);
-    expect(isAssignableRole("user")).toBe(true);
+    expect(isAssignableRole("user")).toBe(false);
     expect(isAssignableRole("admin")).toBe(true);
-    expect(ASSIGNABLE_ROLES).not.toContain("guest");
+    expect(ASSIGNABLE_ROLES).toEqual(["admin"]);
   });
 });
 
 describe("quotas", () => {
-  it("user: 1 tournament, 100 MB archive, 100 MB pool", () => {
+  it("legacy user has unlimited tournaments and pool, 10 GB archives", () => {
     const q = quotasFor("user");
-    expect(q.maxTournaments).toBe(1);
-    expect(q.maxArchiveBytes).toBe(100 * MB);
-    expect(q.maxPoolBytes).toBe(100 * MB);
+    expect(q.maxTournaments).toBeNull();
+    expect(q.maxArchiveBytes).toBe(10 * 1024 * MB);
+    expect(q.maxPoolBytes).toBeNull();
   });
 
   it("admin: unlimited tournaments and pool, 10 GB archive", () => {
@@ -63,17 +65,16 @@ describe("quotas", () => {
     expect(q.maxArchiveBytes).toBe(10 * 1024 * MB);
   });
 
-  it("canCreateTournament enforces the slot count", () => {
+  it("registered accounts have unlimited tournament slots and guests cannot create", () => {
     expect(canCreateTournament("user", 0)).toBe(true);
-    expect(canCreateTournament("user", 1)).toBe(false);
+    expect(canCreateTournament("user", 999)).toBe(true);
     expect(canCreateTournament("admin", 999)).toBe(true);
     expect(canCreateTournament("guest", 0)).toBe(false);
   });
 
-  it("fitsPoolQuota checks the running total, boundary inclusive", () => {
-    expect(fitsPoolQuota("user", 0, 100 * MB)).toBe(true); // exactly at the limit
-    expect(fitsPoolQuota("user", 1, 100 * MB)).toBe(false);
-    expect(fitsPoolQuota("user", 99 * MB, MB)).toBe(true);
+  it("registered accounts have unlimited pools while guests have no storage", () => {
+    expect(fitsPoolQuota("user", 10 * 1024 * MB, 10 * 1024 * MB)).toBe(true);
+    expect(fitsPoolQuota("guest", 0, 1)).toBe(false);
     expect(fitsPoolQuota("admin", 10 * 1024 * MB, 10 * 1024 * MB)).toBe(true);
   });
 });
@@ -81,7 +82,7 @@ describe("quotas", () => {
 describe("labels & formatting", () => {
   it("roleLabel maps known roles and falls back to the raw string", () => {
     expect(roleLabel("admin")).toBe("Администратор");
-    expect(roleLabel("user")).toBe("Пользователь");
+    expect(roleLabel("user")).toBe("Администратор");
     expect(roleLabel(null)).toBe("Гость");
     expect(roleLabel("moderator")).toBe("moderator");
   });

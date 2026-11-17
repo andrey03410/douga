@@ -44,7 +44,7 @@ export async function findUserByEmail(email: string): Promise<User | null> {
 }
 
 /**
- * Create an account with the default role (ADMIN_EMAILS bootstrap applied).
+ * Create an administrator account (ADMIN_EMAILS remains backward compatible).
  * Throws EMAIL_TAKEN when an account with the same email in any case exists.
  */
 export async function registerAccount(email: string, password: string): Promise<User> {
@@ -53,7 +53,7 @@ export async function registerAccount(email: string, password: string): Promise<
   const passwordHash = await bcrypt.hash(password, 10);
   let user: User;
   try {
-    user = await prisma.user.create({ data: { email: normalized, passwordHash } });
+    user = await prisma.user.create({ data: { email: normalized, passwordHash, role: "admin" } });
   } catch (e) {
     // a concurrent registration of the same email won the unique index
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

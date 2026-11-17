@@ -94,14 +94,14 @@ ROI остаются exact0,но построены по compiled rect и не �
 
 ## Как устроено
 - Сайт и MCP только ставят задание. Выполняет его отдельный процесс `npm run studio:worker`
-- Финальный `kind:"render"` требует право `render:run` (только админ). Клип, still и audio доступны автору
+- Финальный `kind:"render"` требует право `render:run` (все зарегистрированные, включая прежний `user`). Клип, still и audio доступны автору
 - Браузер берётся из `REMOTION_BROWSER_EXECUTABLE`. Без переменной Remotion пытается скачать chrome-headless-shell
 - Нарезка офлайн-`.html` не перекодирует звук теми же фейдами, что раньше делал отдельный конвейер: плеер читает исходные файлы
 
 ## Грабли
 - Правка `src/remotion` или `package-lock.json` меняет `engineId`, и первое студийное задание пересобирает бандл
 - Осмотр картинки через ffmpeg — без input seek (`-ss`), даже к нулю: крупный JPEG теряет единственный кадр ([`studio/inspection.ts`](../../src/server/studio/inspection.ts))
-- Финальный рендер только для админа. У роли user кнопка скрыта, а `video_job_start kind:"render"` отвечает `FORBIDDEN`
+- Финальный рендер доступен всем зарегистрированным. Сохранённая роль `user` имеет права `admin`: кнопка видна и `video_job_start kind:"render"` разрешён. Гость/неизвестная роль получают `FORBIDDEN`
 - Системных ffmpeg и ffprobe может не быть. Кадры и громкость снимает бинарник `node_modules/ffmpeg-static/ffmpeg`
 
 ## Пакет `@douga/render` (задача 34)

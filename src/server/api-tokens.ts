@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { can } from "@/lib/domain/permissions";
 
 /** Personal tokens for MCP over HTTP: `dga_` + 32 random bytes; only the SHA-256 is stored. */
 export const API_TOKEN_PREFIX = "dga_";
@@ -42,7 +43,7 @@ const view = (row: {
 export async function issueApiToken(userId: string, raw: z.input<typeof issueApiTokenSchema>) {
   const { name } = issueApiTokenSchema.parse(raw);
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (!user || user.role === "guest") throw new ApiTokenError("FORBIDDEN");
+  if (!user || !can(user.role, "media:upload")) throw new ApiTokenError("FORBIDDEN");
   const token = `${API_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   // Count and create in one transaction: parallel requests cannot pass the limit together.
   const row = await prisma.$transaction(async (tx) => {
@@ -73,7 +74,7 @@ export async function resolveApiToken(token: string | null | undefined) {
     where: { tokenHash: digest(token) },
     include: { user: { select: { id: true, email: true, role: true } } },
   });
-  if (!row || row.revokedAt || row.user.role === "guest") return null;
+  if (!row || row.revokedAt || !can(row.user.role, "media:upload")) return null;
   // A coarse stamp is enough and keeps writes rare.
   if (!row.lastUsedAt || Date.now() - row.lastUsedAt.getTime() > 60_000)
     await prisma.apiToken.update({ where: { id: row.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
