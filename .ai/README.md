@@ -7,6 +7,7 @@
 | [`map/`](map/) | Карточки зон кода: где лежит, как устроено, грабли, как проверить | живое — правится вместе с кодом |
 | [`features/`](features/) | Задачи с 22-й: папка на задачу, файл на стадию | живое, пока задача не влита |
 | [`features/32-storyboard-reference/baselines/`](features/32-storyboard-reference/baselines/) | Версионируемые PNG и manifest визуальной регрессии; обновляются явным accept после просмотра | эталоны |
+| [`features/35-studio-design-quality/baselines/`](features/35-studio-design-quality/baselines/) | Synthetic PNG и manifest новых композиций; принятие/обновление — после фактического просмотра, частные медиа остаются в storage | эталоны |
 | [`history.md`](history.md) | Строка на каждую фазу/фичу со ссылками | дописывается при вливании |
 | [`specs/`](specs/) | Спеки фаз 1–21; контракты SDK 22–25 ещё актуальны | архив (кроме контрактов) |
 | [`phases/`](phases/) | Планы и журналы приёмки фаз 1–21 | архив |

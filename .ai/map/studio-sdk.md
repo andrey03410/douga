@@ -1,6 +1,63 @@
 # AI Video SDK (студия)
 
-Это единственная точка входа в видео Douga. Ролик (топ, пикер или доска) описывается каноническим версионированным JSON `VideoDocument`. Его правят на сайте и через MCP, проверяют, ведут историю и рендерят через устойчивую очередь.
+Это единственная точка входа в видео Douga. Ролик (топ, пикер или тир-лист;
+низкоуровневый SDK также поддерживает доски) описывается каноническим
+версионированным JSON `VideoDocument`. Его правят на сайте и через MCP,
+проверяют, ведут историю и рендерят через устойчивую очередь.
+
+## Создание и дизайн (задача 35)
+
+- Начинай с `video_design_guide({kind,subject,format})`: `kind` — `top`, `picker`
+  или `tier-list`; `subject` — characters/anime/music. После состава и пожелания
+  владельца агент выбирает палитру, пару шрифтов и движение. `video_project_create`
+  принимает kind/subject/format/design, sourceId для топа из турнира и factory counts;
+  обязательного styleId нет. На сайте `/studio/new` тот же порядок: тип →
+  содержимое/формат → оформление. Топ из турнира может выбрать subject по составу.
+- [`authoring.ts`](../../packages/video/src/authoring.ts) содержит
+  `createVideoFromIntent`, `getVideoDesignGuide`, `getCompositionRecipes`.
+  [`composition-presets.ts`](../../packages/video/src/composition-presets.ts)
+  отдаёт 12 новых композиций: `composition.top.portrait.<format>`,
+  `composition.top.music.<format>`, `composition.picker.<format>`,
+  `composition.tier-list.<format>`, где format — wide/vertical/square.
+  Галерея и обычное discovery предлагают эти композиции и личные оформления.
+- Полный совместимый SDK registry сохраняет старые IDs/версии.
+  `video_preset_get` читает их явно, raw document/edit/copy/restore поддерживаются.
+  Обычный create по retired presetId даёт `PRESET_RETIRED` после receipt replay.
+  Default `createVideoDocument` сохранён для старых callers/asobiba;
+  новый авторинг использует `createVideoFromIntent`. Документ без
+  `settings.composition` либо с null не получает новую геометрию.
+- `design` задаёт accent/palette и существующие typography/motion/backdrop.
+  В versioned `settings.composition` хранятся variant и палитра; геометрию
+  создаёт [`composition-compiler.ts`](../../packages/video/src/composition-compiler.ts).
+  Free layout конфликтует с ней (`COMPOSITION_GEOMETRY_CONFLICT`), плотность
+  диагностируется адресно (`COMPOSITION_DENSITY_EXCEEDED`). Схема остаётся закрытой.
+- Короткая форма content: participant subtitle/kind/tier; groups с label/cardIds,
+  answerGroupIds; musicAssetId/backgroundAssetId на раунд. Явный null выключает
+  музыку раунда, включая наследуемую, либо снимает назначение фона раунда.
+  `kind:"tier-list"` при создании становится техническим board; content
+  `{kind:"board",tiers:[{id,label,participantIds}]}` генерирует обычные placements.
+  Merge/replace/null и stable IDs сохраняются; ownership/media kind проверяются
+  до атомарной записи, включая участников вне показанных сцен.
+- Guide предлагает Oswald/Manrope либо Cinzel/Cormorant Garamond и Noto fallback
+  для JP. Это исходная рекомендация: пользовательские указания и фактический
+  состав определяют оформление. Все страницы `video_storyboard`, длинные RU/JP
+  имена через `video_text_inspect`, `video_review` и фактический deep/clip со звуком
+  обязательны; после правок просмотр повторяется. `ready=true` не оценивает красоту.
+
+Бюджеты в [`resource-limits.ts`](../../packages/video/src/resource-limits.ts):
+2 000 000 authored values, 100 000 expanded nodes; остальные пределы сохранены:
+node depth 32 (структурный guard 96), 2 000 scenes, 20 000 cues,
+200 000 audio-policy windows и 7 200 с. Серверные JSON serialize и text-save
+используют один предел 32 МиБ UTF-8 из
+[`document-size.ts`](../../src/server/studio/document-size.ts), включая кириллицу
+и surrogate pairs/escaping. Ошибка `RESOURCE_BUDGET_EXCEEDED` называет
+resource/used/limit и path; серверный size error сохраняет `DOCUMENT_TOO_LARGE`.
+`video_resource_estimate({document})` — pure read-only preflight: complete=false
+при раннем отказе. Это консервативная оценка, authored audio.cues без неявной
+музыки/playlist; фактические timeline/audio budgets проверяет compiler с manifest.
+32 МиБ документа не повышают прежний потолок offline HTML 400 МиБ или память worker.
+
+Техника и локальные доказательства реализации — [задача 35](../features/35-studio-design-quality/README.md).
 
 ## Интерактивные ролики для asobiba (задача 34)
 
@@ -37,8 +94,9 @@
 
 ## Рецепты, раскадровка и проверка (задача 32)
 
-- Каталог содержит 54 прежних пресета и 33 `recipe.<style>.<kind>.<format>`:
-  шесть направлений, три формата, только совместимые виды роликов.
+- Совместимый SDK-каталог сохраняет 54 прежних пресета и 33
+  `recipe.<style>.<kind>.<format>`. Они относятся к прежнему authoring;
+  текущий вход и 12 композиций описаны выше.
   [`recipes.ts`](../../packages/video/src/recipes.ts) и [`content.ts`](../../packages/video/src/content.ts)
   дают metadata/contentForm/examples и предметное заполнение без ручных nodes/bindings.
   `merge` обновляет именованные части, `replace` явно заменяет содержимое;
@@ -118,12 +176,12 @@
   проверка задачи 30 сравнивает полный JSON всех 54 пресетов × 5 FPS.
 
 ## Где код
-- [`packages/video/src/`](../../packages/video/src/) (`@douga/video`) — домен SDK без I/O. Публичный вход — [`index.ts`](../../packages/video/src/index.ts) (types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
+- [`packages/video/src/`](../../packages/video/src/) (`@douga/video`) — домен SDK без I/O. Публичный вход — [`index.ts`](../../packages/video/src/index.ts) (authoring, types, schema, builders, compiler, layout, presets, patches, assets); сервер напрямую берёт ещё `resource-limits.ts` и `settings.ts`
   - [`schema.ts`](../../packages/video/src/schema.ts) / [`types.ts`](../../packages/video/src/types.ts) — строгие Zod-схемы (v1 и v2, неизвестные поля отвергаются), JSON Schema через `getVideoDocumentJsonSchema()`
   - [`builders.ts`](../../packages/video/src/builders.ts) — `createVideoDocument`, `scene`/`textNode`/`containerNode`/`time`/`frame`: строят тот же JSON
   - [`compiler.ts`](../../packages/video/src/compiler.ts) + `blocks.ts`/`nodes.ts`/`audio.ts` — `compileVideo(doc, manifest)` → `{plan, diagnostics, ready}`; план — чистый JSON без замыканий
   - [`layout.ts`](../../packages/video/src/layout.ts) — размеры форматов (`OUTPUT_DIMENSIONS`) и раскладки `grid`/`arc`/`free`
-  - [`presets.ts`](../../packages/video/src/presets.ts) — 87 встроенных пресетов (54 прежних +33 рецепта), `extractVideoPreset`/`applyVideoPreset`
+  - [`presets.ts`](../../packages/video/src/presets.ts) — совместимый registry прежних IDs и новых композиций, `extractVideoPreset`/`applyVideoPreset`
   - [`board-state.ts`](../../packages/video/src/board-state.ts) — чистые атомарные правила доски; [`board-compiler.ts`](../../packages/video/src/board-compiler.ts) — действия в обычный план; [`board-presets.ts`](../../packages/video/src/board-presets.ts) — 8 семейств и factory
   - [`patches.ts`](../../packages/video/src/patches.ts) — `patchVideoDocument`: атомарные `set`/`unset` по стабильным ID (document/segment/participant/round/card/group/scene/node)
   - [`resource-limits.ts`](../../packages/video/src/resource-limits.ts) — технические бюджеты (глубина, развёртка сцен/узлов/звука, ≤ 7200 с)
@@ -226,13 +284,16 @@
 - [`sources.ts`](../../src/server/studio/sources.ts): участник-картинка называется по имени (без «artist —»), аниме идёт в `subtitle`, ссылка Shikimori — в `link`, `tier` — название корзины, пока сегмент — тир-лист. Звуковой привязки `source:<id>` у картинки нет, только `source:<id>:cover`; `hasAudio` ложно.
 - `listStudioSources` ([`queries.ts`](../../src/server/studio/queries.ts)) отдаёт `kinds` (виды участников) у источника и сегментов и `needsMusic` (все участники — картинки). Тогда агент добавляет `audio.playlist` с треком пула, иначе ролик немой. Громкость плейлиста по умолчанию 0,35.
 - `video_examples` `top-images`: три участника-картинки с subtitle и link, музыка плейлистом, сцена reveal с карточкой, местом, именем и подписью.
-- Портретные постеры персонажей `top.classic.wide` режет под 16:9 во весь кадр. Схема уже даёт `settings.card {orientation:"portrait", fit:"contain"}`: проверено реальным клипом, лица целы. Подпись пресета лежит поверх карточки, на светлом постере её не видно — это свойство пресета, а не новой фичи.
+- У прежнего `top.classic.wide` портрет режется под 16:9; это совместимый шаблон.
+  Новое создание использует `composition.top.portrait.*` с отдельными арт/ранг/имя/subtitle.
+  Старые документы автоматически не мигрируют; им остаётся прежнее
+  `settings.card {orientation:"portrait", fit:"contain"}` либо осознанная примерка.
 - Тесты: `packages/video/src/segments.test.ts` (binds), `src/integration/studio-images.integration.test.ts` (тир-лист → источник без звука, evaluate ready). Живой маршрут — [гид агента](../features/33-image-tournament/sdk-guide.md), приёмка — [verify.md](../features/33-image-tournament/verify.md).
 
 ## Типографика (задача 31)
 
 - `packages/video/src/typography-{types,schema,catalog,compiler,layout,examples}.ts` —
-  7 семейств, 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
+  9 семейств (с Cinzel/Cormorant Garamond), 12 стилей, 6 тем, 8 ролей; строгие поля `settings.typography` и
   `node.typography`, плоские text/bind runs. [SDK-гид](../features/31-typography/sdk-guide.md).
 - `compileVideo(doc, manifest, {measureText})` остаётся чистым; серверный
   `typography-fonts.ts` измеряет Fontkit по локальным pinned TTF. Без провайдера
@@ -244,8 +305,8 @@
 - `applyTypographyTheme`/`applyTypographyStyle` immutable, scopes document/segment/scene/node;
   preserve сохраняет authored color/fontSize, replace сбрасывает текстовые overrides.
   Источник/ранги/таймлайн/медиа не меняются; личные пресеты сохраняют оформление runs.
-- `public/fonts/typography-v1` содержит 10 variable TTF + OFL (25 635 784 байта
-  бинарников), 400/700 normal; italic Arimo/Rubik/Roboto Mono. Каталог не встраивает
+- `public/fonts/typography-v1` содержит 13 pinned variable TTF + OFL,
+  400/700 normal; italic Arimo/Rubik/Roboto Mono/Cormorant Garamond. Каталог не встраивает
   шрифты в клиентский JS. Полные JP-файлы могут заметно увеличить offline HTML.
 - Снимок копирует selected font/OFL в `fontFiles`; public watch, engine и offline
   используют pinned ресурсы, байты входят в квоты/оценку HTML. Дедупликация по hash.
