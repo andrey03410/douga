@@ -2,9 +2,9 @@
 id: 35
 title: Качество оформления и вместимость студии
 track: product
-stage: build
+stage: review
 branch: feat/35-studio-design-quality
-pr:
+pr: https://github.com/andrey03410/douga/pull/16
 started: 2026-11-17
 merged:
 ---
