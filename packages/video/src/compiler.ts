@@ -7,6 +7,7 @@ import {
 import { applySceneMotion } from "./motion-compiler";
 import {
   preflightVideoResources,
+  resourceBudgetDiagnostic,
   videoResourceLimits,
 } from "./resource-limits";
 import type {
@@ -111,20 +112,14 @@ function compileDocument(
     const active = (document.segments ?? []).filter((s) => s.enabled !== false);
     let cursor = 0;
     let policyWindows = 0;
-    const exhausted = (): CompileResult => ({
+    const exhausted = (diagnostics: CompileResult["diagnostics"]): CompileResult => ({
       plan: { ...plan, scenes: [], audio: [], segments: [] },
       ready: false,
-      diagnostics: [
-        {
-          severity: "error",
-          code: "RESOURCE_BUDGET_EXCEEDED",
-          path: "segments",
-          message: "Aggregate segment timeline exceeds resource budgets.",
-        },
-      ],
+      diagnostics,
     });
     const diagnostics = [] as CompileResult["diagnostics"];
     for (const [index, segment] of active.entries()) {
+      const segmentIndex = document.segments!.indexOf(segment);
       const sourceSegment = document.source.segments?.find(
         (s) => s.id === segment.sourceSegmentId,
       );
@@ -182,17 +177,17 @@ function compileDocument(
       for (const diagnostic of local.diagnostics)
         diagnostics.push({
           ...diagnostic,
-          path: `segments.${segment.id}.${diagnostic.path}`,
+          path: `segments.${diagnostic.code === "RESOURCE_BUDGET_EXCEEDED" ? segmentIndex : segment.id}.${diagnostic.path}`,
         });
       policyWindows += local.plan.audio.reduce(
         (sum, cue) => sum + cue.duckWindows.length + cue.muteWindows.length,
         0,
       );
-      if (
-        policyWindows > videoResourceLimits.maxAudioPolicyWindows ||
-        local.diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED")
-      )
-        return exhausted();
+      const localBudgets = diagnostics.filter((d) => d.code === "RESOURCE_BUDGET_EXCEEDED");
+      if (localBudgets.length) return exhausted(localBudgets);
+      if (policyWindows > videoResourceLimits.maxAudioPolicyWindows)
+        return exhausted([resourceBudgetDiagnostic("audioPolicyWindows", policyWindows,
+          videoResourceLimits.maxAudioPolicyWindows, `segments.${segmentIndex}.audio`)]);
       const length = local.plan.scenes.length ? local.plan.durationInFrames : 0;
       if (length)
         plan.segments.push({
@@ -220,15 +215,19 @@ function compileDocument(
           muteWindows: shift(cue.muteWindows),
         });
       cursor += length;
-      if (
-        cursor > videoResourceLimits.maxDurationSeconds * plan.fps ||
-        plan.scenes.length > videoResourceLimits.maxExpandedScenes ||
-        plan.scenes.reduce((sum, s) => sum + s.nodes.length, 0) >
-          videoResourceLimits.maxExpandedNodes ||
-        plan.audio.length > videoResourceLimits.maxAudioCues
-      ) {
-        return exhausted();
-      }
+      if (cursor > videoResourceLimits.maxDurationSeconds * plan.fps)
+        return exhausted([resourceBudgetDiagnostic("durationSeconds", cursor / plan.fps,
+          videoResourceLimits.maxDurationSeconds, `segments.${segmentIndex}.scenes`)]);
+      if (plan.scenes.length > videoResourceLimits.maxExpandedScenes)
+        return exhausted([resourceBudgetDiagnostic("expandedScenes", plan.scenes.length,
+          videoResourceLimits.maxExpandedScenes, `segments.${segmentIndex}.scenes`)]);
+      const expandedNodes = plan.scenes.reduce((sum, s) => sum + s.nodes.length, 0);
+      if (expandedNodes > videoResourceLimits.maxExpandedNodes)
+        return exhausted([resourceBudgetDiagnostic("expandedNodes", expandedNodes,
+          videoResourceLimits.maxExpandedNodes, `segments.${segmentIndex}.scenes`)]);
+      if (plan.audio.length > videoResourceLimits.maxAudioCues)
+        return exhausted([resourceBudgetDiagnostic("audioCues", plan.audio.length,
+          videoResourceLimits.maxAudioCues, `segments.${segmentIndex}.audio`)]);
     }
     plan.durationInFrames = Math.max(1, cursor);
     for (const scene of plan.scenes)
@@ -274,14 +273,13 @@ function compileDocument(
     compileGlobalAudio(ctx, plan.durationInFrames, muteWindows, plan.scenes);
     // Global audio retains segment mute policies while adding document policies.
     // Check the final retained arrays together, not each compilation scope alone.
-    if (
-      diagnostics.some((d) => d.code === "RESOURCE_BUDGET_EXCEEDED") ||
-      plan.audio.reduce(
-        (sum, cue) => sum + cue.duckWindows.length + cue.muteWindows.length,
-        0,
-      ) > videoResourceLimits.maxAudioPolicyWindows
-    )
-      return exhausted();
+    const audioBudgets = diagnostics.filter((d) => d.code === "RESOURCE_BUDGET_EXCEEDED");
+    if (audioBudgets.length) return exhausted(audioBudgets);
+    const retainedPolicies = plan.audio.reduce(
+      (sum, cue) => sum + cue.duckWindows.length + cue.muteWindows.length, 0);
+    if (retainedPolicies > videoResourceLimits.maxAudioPolicyWindows)
+      return exhausted([resourceBudgetDiagnostic("audioPolicyWindows", retainedPolicies,
+        videoResourceLimits.maxAudioPolicyWindows, "audio")]);
     if (!plan.scenes.length)
       diagnostic(
         ctx,
@@ -319,7 +317,7 @@ function compileDocument(
   };
   const muteWindows: Window[] = [];
   let cursor = 0;
-  let budgetExceeded = false;
+  let budgetExceeded: CompileResult["diagnostics"][number] | undefined;
   function emit(
     template: VideoScene,
     participant?: Participant,
@@ -463,7 +461,9 @@ function compileDocument(
         cursor > videoResourceLimits.maxDurationSeconds * ctx.fps ||
         plan.audio.length > videoResourceLimits.maxAudioCues
       ) {
-        budgetExceeded = true;
+        budgetExceeded = cursor > videoResourceLimits.maxDurationSeconds * ctx.fps || !Number.isSafeInteger(cursor)
+          ? resourceBudgetDiagnostic("durationSeconds", cursor / ctx.fps, videoResourceLimits.maxDurationSeconds, `scenes.${document.scenes.indexOf(template)}.duration`)
+          : resourceBudgetDiagnostic("audioCues", plan.audio.length, videoResourceLimits.maxAudioCues, `scenes.${document.scenes.indexOf(template)}.audio`);
         return;
       }
     }
@@ -496,14 +496,7 @@ function compileDocument(
     return {
       plan: { ...plan, scenes: [], audio: [] },
       ready: false,
-      diagnostics: [
-        {
-          severity: "error",
-          code: "RESOURCE_BUDGET_EXCEEDED",
-          path: "scenes",
-          message: "Expanded timeline exceeds duration or audio budgets.",
-        },
-      ],
+      diagnostics: [budgetExceeded],
     };
   if (!plan.scenes.length)
     diagnostic(

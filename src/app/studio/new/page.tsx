@@ -13,10 +13,10 @@ export default async function NewStudioPage({
   return (
     <main className="container studio-workspace">
       <a href="/projects">← Мои видео</a>
-      <h1>Создать через SDK</h1>
+      <h1>Создать видео</h1>
       <p className="muted">
-        Опишите видео каноническим JSON или создайте его через внешний MCP.
-        Примеры используют тот же SDK и renderer.
+        Сначала выберите тип ролика и состав. Затем настройте оформление
+        и проверьте кадры — через студию или внешнего агента.
       </p>
       <p>
         <a href="/studio/motion">Посмотреть моушен-кит →</a>
@@ -25,7 +25,7 @@ export default async function NewStudioPage({
       <section className="panel">
         <h2>Начать с готового рецепта</h2>
         <p className="muted">
-          Топы, пикеры и доски с живыми примерами, формой заполнения и
+          Топы, пикеры и тир-листы с живыми примерами, формой заполнения и
           оформлением для трёх форматов.
         </p>
         <a

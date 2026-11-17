@@ -7,9 +7,12 @@ import { makeScene } from "./blocks";
 import { compileMedia } from "./media";
 import { addAudio } from "./audio";
 import { mergeSettings } from "./settings";
+import { prepareTierComposition, tierTileRects, styleTierCard, settleTierScene } from "./composition-compiler";
 
 /** Board data compiles to the same nodes and audio used by every existing output. */
 export function compileBoard(ctx: CompileContext, template: VideoScene, from: number, settings: Settings): CompiledScene[] {
+  const composition = settings.composition?.variant === "tier-list";
+  if (settings.composition) prepareTierComposition(ctx, settings, template);
   const b = template.board!;
   const resolution = resolveBoard(b, ctx.document.source.participants);
   ctx.diagnostics.push(...resolution.diagnostics.map((d) => ({ ...d, path: `scenes.${template.id}.${d.path}` })));
@@ -22,7 +25,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
   let cursor = from, serial = 0;
   const allCards = new Map(b.rounds.flatMap((r) => r.cards).map((c) => [c.id, c]));
   const participant = (c: BoardCard) => ctx.document.source.participants.find((p) => p.id === c.participantId)!;
-  const area: Rect = { x: ctx.width * .04, y: ctx.height * .18, width: ctx.width * .92, height: ctx.height * .66 };
+  const area: Rect = { x: ctx.width * .04, y: ctx.height * .18, width: ctx.width * .92, height: ctx.height * (composition ? .70 : .66) };
   const candidateArea: Rect = { x: ctx.width * .12, y: ctx.height * .22, width: ctx.width * .76, height: ctx.height * .50 };
   const slotRects = (focus?: string): Map<string, Rect> => {
     if (focus) return new Map([[focus, area]]);
@@ -37,6 +40,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
     }]));
   };
   const tileRects = (count: number, rect: Rect): Rect[] => {
+    if (composition) return tierTileRects(ctx,count,rect,settings,`scenes.${template.id}.board.slots`);
     if (!count) return [];
     const gap = Math.min(ctx.width, ctx.height) * .009;
     // Fixed aspect ratio lets the existing scalar transform animate both reveal and placement.
@@ -53,7 +57,7 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
     }));
   };
   const contentRect = (rect: Rect): Rect => b.layout === "rows" || !b.layout ? {
-    x: rect.x + rect.width * .21, y: rect.y + rect.height * .08, width: rect.width * .77, height: rect.height * .84,
+    x: rect.x + rect.width * (composition ? .15 : .21), y: rect.y + rect.height * .08, width: rect.width * (composition ? .83 : .77), height: rect.height * .84,
   } : { x: rect.x + rect.width * .04, y: rect.y + rect.height * .23, width: rect.width * .92, height: rect.height * .73 };
   const placements = (state: BoardState, focus?: string): Map<string, Rect> => {
     const result = new Map<string, Rect>();
@@ -86,21 +90,37 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
       const asset = resolveAsset(ctx, person.media?.visual, `source.participants.${person.id}.media.visual`, "visual");
       if (asset) n.media = compileMedia(ctx, asset, { ...local.card, offsetSec: person.bestMomentSec ?? local.card?.offsetSec }, `source.participants.${person.id}.media.visual`);
     }
-    scene.nodes.push(n); return n;
+    scene.nodes.push(n);
+    if (composition) styleTierCard(ctx,scene,n,local);
+    return n;
   };
   const scene = (suffix: string, duration: number, state: BoardState, prompt?: string, focus?: string): CompiledScene => {
     const s = makeScene(ctx, template, `${encodeURIComponent(template.id)}/${++serial}/${suffix}`, "board", cursor, Math.max(1, duration), settings);
     s.boardState = structuredClone(state); s.boardEvents = [];
+    if (composition) {
+      const ambient=baseNode(`${s.id}/ambient`,"shape",{x:0,y:0,width:ctx.width,height:ctx.height},s.durationInFrames,{gradient:{type:"linear",angle:135,stops:[{at:0,color:"#182334"},{at:1,color:"#090d15"}]}});
+      ambient.shape="rect";ambient.fill="transparent";ambient.layer=-20;s.nodes.push(ambient);
+    }
     text(s, "title", ctx.segment?.title ?? ctx.document.title, { x: ctx.width * .04, y: ctx.height * .025, width: ctx.width * .92, height: ctx.height * .065 }, Math.min(48, ctx.width * .045));
     if (prompt) text(s, "prompt", prompt, { x: ctx.width * .04, y: ctx.height * .095, width: ctx.width * .92, height: ctx.height * .065 }, Math.min(34, ctx.width * .032));
     for (const [slotId, rect] of slotRects(focus)) {
       const slot = b.slots.find((s) => s.id === slotId)!;
       const bg = baseNode(`${s.id}/slot/${encodeURIComponent(slotId)}`, "shape", rect, s.durationInFrames, slot.style);
       bg.shape = "rect"; bg.fill = slot.background ?? "#202b40"; bg.layer = 0; s.nodes.push(bg);
+      if (composition) {
+        const color=slot.background??settings.composition?.accent??"#d9b971";
+        bg.fill="#131d2c";bg.style={...bg.style,borderRadius:12,borderWidth:1,borderColor:"#344054"};
+        const stripe=baseNode(`${s.id}/tier-accent/${encodeURIComponent(slotId)}`,"shape",{x:rect.x,y:rect.y,width:4,height:rect.height},s.durationInFrames);
+        stripe.shape="rect";stripe.fill=color;stripe.layer=2;s.nodes.push(stripe);
+      }
       mediaNode(s, `slot-bg/${slotId}`, slot.backgroundAsset, rect, 1);
       const labelRect: Rect = b.layout === "rows" || !b.layout ? { x: rect.x + rect.width * .015, y: rect.y + rect.height * .08, width: rect.width * .18, height: rect.height * .84 } : { x: rect.x + rect.width * .04, y: rect.y + rect.height * .02, width: rect.width * .92, height: rect.height * .18 };
       const labelNode = text(s, `slot-label/${slotId}`, slot.label, labelRect, Math.min(38, labelRect.height * .6), slot.color);
       setNodeTypography(labelNode, settings, slot.typography, "label", slot.color ? { color:slot.color } : undefined);
+      if (composition) {
+        labelNode.rect={x:rect.x+rect.width*.015,y:rect.y+rect.height*.08,width:rect.width*.12,height:rect.height*.84};
+        setNodeTypography(labelNode,settings,{fontSize:Math.min(58,rect.height*.45),minFontSize:26,maxLines:3,wrap:"word",align:"center",verticalAlign:"middle",...(slot.typography??{})},"rank",slot.color?{color:slot.color}:undefined);
+      }
       if (slot.image) mediaNode(s, `slot-icon/${slotId}`, slot.image, { ...labelRect, width: labelRect.width * .35, height: labelRect.height * .35 }, 9);
     }
     for (const [id, rect] of placements(state, focus)) { const c = allCards.get(id); if (c) cardNode(s, c, rect, true); }
@@ -167,6 +187,21 @@ export function compileBoard(ctx: CompileContext, template: VideoScene, from: nu
     const duration = holdFrames;
     if (duration) scene(`round/${resolved.round.id}/result`, duration, resolved.final, resolved.round.prompt).roundId = resolved.round.id;
   };
+  if (composition) {
+    const overview = scene("distribution", f(p.leadSec, .8, 1), resolution.final);
+    overview.boardEvents!.push({event:"board.summary",frame:0});
+    settleTierScene(overview,settings,resolution.final);
+    for (const slot of b.slots) {
+      if (!Object.values(resolution.final.placements).includes(slot.id)) continue;
+      const focus=scene(`focus/${encodeURIComponent(slot.id)}`,f(p.rowFocusSec,2.5,1),resolution.final,slot.label,slot.id);
+      focus.boardEvents!.push({event:"board.summary",frame:0,slotId:slot.id});
+      settleTierScene(focus,settings,resolution.final);
+    }
+    const final=scene("summary-final",f(p.finalSec,3,1),resolution.final);
+    final.boardEvents!.push({event:"board.summary",frame:0});
+    settleTierScene(final,settings,resolution.final);
+    return scenes;
+  }
   const lead = f(p.leadSec, .4);
   if (lead) scene("empty", lead, createBoardState());
   for (const [index, resolved] of resolution.rounds.entries()) {

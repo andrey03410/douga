@@ -25,9 +25,27 @@ const call = async (name: string, args = {}) => {
   return { ...result.structuredContent, isError: result.isError };
 };
 describe("motion discovery", () => {
+  it("includes the actual UTF-8 storage budget in the resource estimate", async () => {
+    const document = { title: "я".repeat(17 * 1024 * 1024) };
+    const estimate = await call("video_resource_estimate", { document });
+    const bytes = Buffer.byteLength(JSON.stringify(document), "utf8");
+    expect(estimate.serializedBytes).toBe(bytes);
+    expect(estimate.limits.maxSerializedBytes).toBe(32 * 1024 * 1024);
+    expect(estimate.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: `resource=serializedBytes; used=${bytes}; limit=33554432` }),
+    ]));
+  });
+  it("defaults to restrained authoring motion and keeps the full catalog explicit", async () => {
+    const curated = await call("video_motion_list", { limit: 100 });
+    expect(curated.items.some((x: any) => x.name === "spin" || x.name === "shake")).toBe(false);
+    expect(curated.items.some((x: any) => x.name === "blur-reveal")).toBe(true);
+    const compatibility = await call("video_motion_list", { limit: 100, compatibility: true });
+    expect(compatibility.items.some((x: any) => x.name === "spin")).toBe(true);
+  });
   it("lists bounded filtered summaries and paginates without fragments", async () => {
     const first = await call("video_motion_list", {
       category: "effect",
+      compatibility: true,
       limit: 3,
     });
     expect(first.version).toBe(1);
@@ -38,6 +56,7 @@ describe("motion discovery", () => {
     ).toBe(true);
     const next = await call("video_motion_list", {
       category: "effect",
+      compatibility: true,
       limit: 3,
       cursor: first.nextCursor,
     });

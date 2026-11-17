@@ -17,6 +17,7 @@ import {
 import { preflightVideoResources } from "./resource-limits";
 import { interactiveLayerSchema } from "./interactive-schema";
 import { z } from "zod";
+import { compositionSettingsSchema } from "./composition-settings";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { VideoDocument, VideoNode, VideoPreset } from "./types";
 const n = z
@@ -119,6 +120,7 @@ export const layoutSchema = z
   .strict();
 export const settingsSchema = z
   .object({
+    composition: opt(compositionSettingsSchema.nullable()),
     typography: opt(typographySettingsSchema.nullable()),
     background: opt(color),
     motion: opt(motionSettingsSchema),

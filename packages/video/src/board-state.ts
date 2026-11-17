@@ -1,7 +1,7 @@
 import type {
   BoardAction, BoardCard, BoardDefinition, BoardResolution, BoardState, Participant,
 } from "./types";
-import { videoResourceLimits } from "./resource-limits";
+import { resourceBudgetDiagnostic, videoResourceLimits } from "./resource-limits";
 
 export class BoardRuleError extends Error {
   constructor(public code: string, message: string) {
@@ -85,7 +85,7 @@ export function resolveBoard(board: BoardDefinition, participants: Participant[]
   let state = createBoardState();
   const estimate = (board.rounds.length + board.rounds.reduce((n, r) => n + r.cards.length + r.actions.length, 0) + 1) * (board.slots.length * 4 + board.rounds.reduce((n, r) => n + r.cards.length, 0) * 2 + 10);
   if (estimate > videoResourceLimits.maxExpandedNodes) {
-    report("RESOURCE_BUDGET_EXCEEDED", "Board state expansion exceeds node budget.", "board"); return result;
+    result.diagnostics.push(resourceBudgetDiagnostic("expandedNodes", estimate, videoResourceLimits.maxExpandedNodes, "board")); return result;
   }
   for (const round of board.rounds) {
     const path = `board.rounds.${round.id}`;

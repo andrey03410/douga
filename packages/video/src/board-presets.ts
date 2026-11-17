@@ -1,6 +1,7 @@
 import type { BoardDefinition, BoardRound, Participant, VideoDocument, VideoFormat, VideoPreset } from "./types";
 import { parseVideoDocument } from "./schema";
 import { resolveBoard } from "./board-state";
+import { resourceBudgetDiagnostic, VideoResourceBudgetError } from "./resource-limits";
 
 export const boardFamilies = ["tier", "kmk", "smash-pass", "blind-rank", "draft", "sort-quiz", "alignment", "budget-draft"] as const;
 export function getBoardPresets(): VideoPreset[] {
@@ -47,7 +48,11 @@ export function createBoardDocument(options: {
     const skeleton = preset.skeleton.boards?.find((b) => b.sceneId === scene.id) ?? preset.skeleton;
     const perRound = options.cardsPerRound ?? skeleton.cardsPerRound;
     const count = options.roundCount ?? (options.participants ? Math.ceil(options.participants.length / perRound) : skeleton.roundCount);
-    if (!Number.isInteger(count) || count < 0 || !Number.isInteger(perRound) || perRound < 1 || (total += count * perRound) > 20000) throw new Error("RESOURCE_BUDGET_EXCEEDED: Invalid board factory counts");
+    if (!Number.isInteger(count) || count < 0 || !Number.isInteger(perRound) || perRound < 1)
+      throw new Error(`RESOURCE_BUDGET_EXCEEDED: resource=boardFactoryCounts; used=roundCount:${count},cardsPerRound:${perRound}; limit=nonnegative integer rounds and positive integer cards; path=${!Number.isInteger(count) || count < 0 ? "roundCount" : "cardsPerRound"}`);
+    if ((total += count * perRound) > 20000)
+      throw new VideoResourceBudgetError(resourceBudgetDiagnostic("boardFactoryParticipants", total, 20000,
+        count > 20000 ? "roundCount" : "cardsPerRound"));
     const board = structuredClone(sceneIndex === 0 && options.board ? options.board : scene.board!);
     const prefix = `board-${sceneIndex + 1}`;
     const participants = structuredClone(options.participants ?? (sceneIndex === 0 && options.board ?

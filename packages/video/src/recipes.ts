@@ -1,3 +1,4 @@
+import { getCompositionRecipes } from "./authoring";
 import type {
   Settings,
   VideoDocument,
@@ -387,7 +388,7 @@ export function getVideoRecipes(): VideoRecipe[] {
   );
 }
 export function getVideoRecipe(id: string): VideoRecipe | undefined {
-  return getVideoRecipes().find((r) => r.id === id);
+  return [...getVideoRecipes(), ...getCompositionRecipes()].find((r) => r.id === id);
 }
 export function getRecipePresets(): VideoPreset[] {
   return videoRecipeStyles.flatMap((style) =>

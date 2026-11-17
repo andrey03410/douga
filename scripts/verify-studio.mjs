@@ -118,11 +118,8 @@ async function main() {
     if (input.kind === "render" && !capabilities.permissions.render) throw new Error("Final render requires an admin actor");
     for (const name of ["document", "services", "preset"])
       await save(`schema-${name}.json`, await call("video_schema_get", { name }));
-    const expected = [
-      ...["classic", "minimal", "cinematic"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `top.${name}.${format}`)),
-      ...["classic", "portrait", "memory", "arc", "two-groups", "three-groups", "separate-answer"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `picker.${name}.${format}`)),
-    ];
-    expected.push(...["tier", "kmk", "smash-pass", "blind-rank", "draft", "sort-quiz", "alignment", "budget-draft"].flatMap((name) => ["wide", "vertical", "square"].map((format) => `board.${name}.${format}`)));
+    const expected = ["top.portrait", "top.music", "picker", "tier-list"].flatMap((name) =>
+      ["wide", "vertical", "square"].map((format) => `composition.${name}.${format}`));
     const presets = [];
     let cursor;
     do {

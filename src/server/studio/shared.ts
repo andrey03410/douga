@@ -3,19 +3,32 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { can } from "@/lib/domain/permissions";
+import { preflightVideoResources, resourceBudgetDiagnostic } from "@douga/video/resource-limits";
 import { StudioError } from "./errors";
+import { documentSizeDiagnostic } from "./document-size";
 export type Db = Prisma.TransactionClient;
 export const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 export function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.entries(value)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
-      .join(",")}}`;
-  return JSON.stringify(value) ?? "null";
+  const ancestors = new WeakSet<object>();
+  const serialize = (input: unknown, path: string): string => {
+    if (input && typeof input === "object") {
+      if (ancestors.has(input))
+        throw new StudioError("DOCUMENT_TOO_LARGE", [resourceBudgetDiagnostic("cycles", 1, 0, path)]);
+      ancestors.add(input);
+      const result = Array.isArray(input)
+        ? `[${input.map((child, index) => serialize(child, path ? `${path}.${index}` : String(index))).join(",")}]`
+        : `{${Object.entries(input)
+          .filter(([, child]) => child !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, child]) => `${JSON.stringify(key)}:${serialize(child, path ? `${path}.${key}` : key)}`)
+          .join(",")}}`;
+      ancestors.delete(input);
+      return result;
+    }
+    return JSON.stringify(input) ?? "null";
+  };
+  return serialize(value, "");
 }
 export async function actor(userId: string, db: Db = prisma) {
   const user = await db.user.findUnique({ where: { id: userId } });
@@ -65,8 +78,17 @@ export async function receipt(
     });
 }
 export function jsonText(value: unknown): string {
-  const text = JSON.stringify(value);
-  if (!text || text.length > 2_000_000)
-    throw new StudioError("DOCUMENT_TOO_LARGE");
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    const diagnostics = preflightVideoResources(value);
+    throw new StudioError("DOCUMENT_TOO_LARGE", diagnostics.length ? diagnostics : [
+      resourceBudgetDiagnostic("serializableValues", 1, 0, "document"),
+    ]);
+  }
+  if (!text) throw new StudioError("DOCUMENT_TOO_LARGE");
+  const diagnostic = documentSizeDiagnostic(text);
+  if (diagnostic) throw new StudioError("DOCUMENT_TOO_LARGE", [diagnostic]);
   return text;
 }

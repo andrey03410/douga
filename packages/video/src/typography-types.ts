@@ -8,6 +8,8 @@ export const fontIds = [
   "roboto-mono",
   "noto-sans-jp",
   "noto-serif-jp",
+  "cinzel",
+  "cormorant-garamond",
 ] as const;
 export type FontId = (typeof fontIds)[number];
 export const typographyStyleIds = [

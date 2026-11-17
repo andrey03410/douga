@@ -1,4 +1,5 @@
 import React from "react";
+import { RankDrawText } from "./RankDrawText";
 import {
   AbsoluteFill,
   Audio,
@@ -197,7 +198,7 @@ const MeasuredNodeText: React.FC<{
   frame: number;
   fps: number;
 }> = ({ node, frame, fps }) => {
-  const text = <TypographyText node={node} frame={frame} fps={fps} />;
+  const text = node.rankDraw ? <RankDrawText node={node} frame={frame} /> : <TypographyText node={node} frame={frame} fps={fps} />;
   if (node.type === "timer")
     return (
       <MotionTimer

@@ -1,3 +1,4 @@
+import { getCompositionPresets } from "@douga/video/composition-presets";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
@@ -25,7 +26,7 @@ export async function listStudioPresets(
     orderBy: { createdAt: "desc" },
   });
   return [
-    ...getBuiltinPresets(),
+    ...getCompositionPresets(),
     ...rows.map((p) => ({ ...JSON.parse(p.presetJson), personal: true })),
   ];
 }

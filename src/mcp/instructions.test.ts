@@ -9,12 +9,12 @@ describe("MCP instructions", () => {
       3072,
     );
     expect(MCP_INSTRUCTIONS).toContain("video_source_list");
-    // sourceId is a factory option: video_project_create refuses it without presetId
-    expect(MCP_INSTRUCTIONS).toMatch(/presetId[^\n]*sourceId/);
+    // Source attaches after choosing the semantic video type.
+    expect(MCP_INSTRUCTIONS).toMatch(/kind:\"top\"[^\n]*sourceId/);
     expect(getBuiltinPreset("top.classic.wide")?.kind).toBe("top");
     expect(MCP_INSTRUCTIONS).toContain('source.kind:"manual"');
-    expect(MCP_INSTRUCTIONS).toContain("picker.*");
-    expect(new Set(MCP_TOOL_NAMES).size).toBe(70);
+    expect(MCP_INSTRUCTIONS).toContain("video_design_guide");
+    expect(new Set(MCP_TOOL_NAMES).size).toBe(72);
   });
 });
 

@@ -1,3 +1,7 @@
+import { VideoResourceBudgetError, preflightVideoResources } from "@douga/video/resource-limits";
+import { createStudioProjectFromIntentSchema, type CreateStudioProjectFromIntentInput } from "./authoring-schema";
+import { createVideoFromIntent } from "@douga/video/authoring";
+import { getBuiltinPreset } from "@douga/video/presets";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { StudioProject } from "@/generated/prisma/client";
@@ -285,6 +289,8 @@ export async function createStudioProjectFromPreset(
     requestHash("create-from-preset", input),
     async () => {
       const preset = await getStudioPreset(userId, input.presetId);
+      if (getBuiltinPreset(input.presetId) && !input.presetId.startsWith("composition.") && !input.presetId.startsWith("recipe.interactive."))
+        throw new StudioError("PRESET_RETIRED", [{ severity: "error", code: "PRESET_RETIRED", path: "presetId", message: "Start with kind top/picker/tier-list and choose a design after content. Legacy documents remain editable through the raw SDK." }]);
       const document = createVideoDocument({
         kind: preset.kind,
         preset,
@@ -314,6 +320,24 @@ export async function createStudioProjectFromPreset(
     },
   );
 }
+/** Type first; the agent chooses design after inspecting content and user direction. */
+export async function createStudioProjectFromIntent(userId: string, raw: CreateStudioProjectFromIntentInput) {
+  const input = createStudioProjectFromIntentSchema.parse(raw);
+  return createFromDocument(userId, input, requestHash("create-from-intent", input), async () => {
+    let subject = input.subject;
+    if (!subject && input.sourceId) {
+      const track = await prisma.track.findFirst({ where: { tournamentId: input.sourceId, tournament: { userId } }, select: { kind: true } });
+      subject = track?.kind === "image" ? "characters" : "music";
+    }
+    const document = createVideoFromIntent({ ...input, subject });
+    if (input.sourceId) {
+      document.source = { kind: "tournament", tournamentId: input.sourceId, participants: [], rounds: [] };
+      document.schemaVersion = 2; document.scenes = []; document.segments = [];
+      if (document.audio) { delete document.audio.cues; if (!document.audio.playlist) delete document.audio; }
+    }
+    return document;
+  });
+}
 /** The factory resolves mutable owned inputs only after checking its semantic receipt. */
 async function createFromDocument(
   userId: string,
@@ -329,7 +353,13 @@ async function createFromDocument(
     request,
   );
   if (old) return old;
-  const rawDocument = await makeDocument();
+  let rawDocument: unknown;
+  try { rawDocument = await makeDocument(); } catch (error) {
+    if (error instanceof VideoResourceBudgetError) throw new StudioError(error.code, error.diagnostics);
+    throw error;
+  }
+  const budget = preflightVideoResources(rawDocument);
+  if (budget.length) throw new StudioError("RESOURCE_BUDGET_EXCEEDED", budget);
   jsonText(rawDocument);
   const id = randomUUID();
   const directory = directoryFor(userId, id);
@@ -460,7 +490,7 @@ export async function applyStudioPreset(
       try {
         const document = editableDocument(current);
         const preset = await getStudioPreset(userId, input.presetId);
-        if (!preset.id.startsWith("recipe.")) {
+        if (!preset.id.startsWith("recipe.") && !preset.id.startsWith("composition.")) {
           if (input.mode !== undefined) throw new StudioError("PRESET_MODE_UNSUPPORTED");
           return { document: applyVideoPreset(document, preset) };
         }
@@ -506,9 +536,11 @@ export async function applyStudioContentDraft(
   id: string,
   input: { expectedVersion: number; idempotencyKey?: string; content: VideoContentInput },
 ) {
-  return writeDraft(userId, id, input, requestHash(`content:${id}`, input), current => ({
-    document: buildVideoContent(editableDocument(current), input.content),
-  }), { reconcile: false, requireReady: true });
+  return writeDraft(userId, id, input, requestHash(`content:${id}`, input), async current => {
+    const { validateStudioContentAssets } = await import("./content-assets");
+    await validateStudioContentAssets(userId, input.content);
+    return { document: buildVideoContent(editableDocument(current), input.content) };
+  }, { reconcile: false, requireReady: true });
 }
 /** Internal server adapter. Identity must contain all trusted transform inputs. */
 export async function transformStudioDraft(

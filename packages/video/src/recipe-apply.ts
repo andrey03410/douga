@@ -194,7 +194,7 @@ export function applyVideoRecipe(
 ): VideoDocument {
   const doc = structuredClone(parseVideoDocument(document)),
     target = videoPresetSchema.parse(preset);
-  if (!target.id.startsWith("recipe."))
+  if (!target.id.startsWith("recipe.") && !target.id.startsWith("composition."))
     throw new RecipeApplyError("RECIPE_REQUIRED");
   if (target.kind !== doc.kind)
     throw new RecipeApplyError("PRESET_KIND_MISMATCH");

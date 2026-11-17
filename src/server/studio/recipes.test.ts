@@ -2,12 +2,14 @@ import { expect, it, vi } from "vitest";
 vi.mock("./shared", () => ({ actor: async () => ({ id: "u", role: "user" }) }));
 import { selectStudioRecipes } from "./recipes";
 it.each([
-  ["Хочу энергичный пикер с ярким раскрытием", "anime-impact"],
-  ["Спокойный музыкальный OST топ", "cinematic"],
-  ["Длинные имена, главное чтобы читалось", "clean"],
-  ["Неоновый свет и свечение", "neon"],
-])("recommends a compatible direction from a short author request: %s", async (query, style) => {
-  const result = await selectStudioRecipes("u", { kind: "picker", format: "vertical", query });
-  expect(result.recommended).toBe(`recipe.${style}.picker.vertical`);
-  expect(result.items.length).toBeLessThanOrEqual(3);
+  ["top", "characters", "composition.top.portrait.wide"],
+  ["top", "music", "composition.top.music.wide"],
+  ["picker", "characters", "composition.picker.wide"],
+  ["tier-list", "characters", "composition.tier-list.wide"],
+] as const)("selects by type and content before graphic style: %s/%s", async(kind,subject,id)=>{
+ const result=await selectStudioRecipes("u",{kind,subject,format:"wide"});
+ expect(result.recommended).toBe(id);
+ expect(result.items.length).toBeLessThanOrEqual(3);
+ expect(result.items.every(r=>r.id.startsWith("composition."))).toBe(true);
+ expect(result.designGuide?.decisionOrder[0]).toBe("type");
 });

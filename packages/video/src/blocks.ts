@@ -20,6 +20,8 @@ import { layoutCards, resolveRect } from "./layout";
 import { compileMedia } from "./media";
 import { addAudio } from "./audio";
 import { baseNode, labelWindows } from "./nodes";
+import { composeTop, composePicker } from "./composition-compiler";
+import { setNodeMotion } from "./motion-compiler";
 export function makeScene(
   ctx: CompileContext,
   template: VideoScene,
@@ -78,6 +80,10 @@ export function addBackground(
     { fit: "cover", loop: true },
     `scenes.${scene.id}.background`,
   );
+  // Composition lighting must reveal explicitly assigned media, including scene backgrounds.
+  for (const light of scene.nodes.filter(n => n.type === "shape" &&
+    /\/(?:picker-ambient|ambient)(?:\/answer)?$/.test(n.id)))
+    light.opacity = Math.min(light.opacity ?? 1, .42);
   scene.nodes.unshift(node);
 }
 export function compileTop(
@@ -233,6 +239,7 @@ export function compileTop(
       volume: s.card.volume,
       loop: s.card.loop,
     });
+  if (s.composition) composeTop(ctx, scene, p, s);
   return scene;
 }
 export function compilePicker(
@@ -623,6 +630,7 @@ export function compilePicker(
           durationInFrames: Math.min(ctx.fps, timer - i),
         });
   }
+  if (s.composition) composePicker(ctx, main, r, s);
   const result = [main];
   if (separate) {
     const answer = makeScene(
@@ -662,6 +670,17 @@ export function compilePicker(
         copyNodeTypography(n, clone);
         return clone;
       });
+    if (s.composition) {
+      const included=main.nodes.filter(node=>node.type!=="timer"&&!/(?:round-wipe|wipe-accent|round-number)$/.test(node.id));
+      const ids=new Map(included.map(node=>[node.id,`${node.id}/answer`]));
+      answer.nodes=included.map(node=>{
+        const clone: CompiledNode={...structuredClone(node),id:ids.get(node.id)!,...(node.parentId?{parentId:ids.get(node.parentId)}:{}),from:0,durationInFrames:answerDuration,visible:[{from:0,to:answerDuration}],activeWindow:undefined,answerFrom:0};
+        copyNodeTypography(node,clone);
+        const motion={choreography:null,enter:null,exit:null,loop:null,emphasis:null,stagger:null};
+        setNodeMotion(clone,motion,motion);
+        return clone;
+      });
+    }
     result.push(answer);
   }
   if (r.music) {
