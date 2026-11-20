@@ -2,7 +2,7 @@
 id: 36
 title: Деплой douga на VPS
 track: tech
-stage: tech
+stage: plan
 branch: chore/36-docker-deploy
 pr:
 started: 2026-11-20
@@ -18,7 +18,7 @@ merged:
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
-- [ ] Техника — [tech.md](tech.md)
+- [x] Техника — [tech.md](tech.md)
 - [ ] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Влито
