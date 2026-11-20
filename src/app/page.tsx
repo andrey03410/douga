@@ -51,9 +51,9 @@ export default async function Home() {
           <a className="btn" href="/login">
             Войти
           </a>
-          <a className="btn ghost" href="/login?mode=register">
-            Зарегистрироваться
-          </a>
+          {process.env.PROVISIONED_ACCOUNTS_ONLY !== "1" && (
+            <a className="btn ghost" href="/login?mode=register">Зарегистрироваться</a>
+          )}
         </div>
       </section>
 

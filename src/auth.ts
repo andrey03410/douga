@@ -3,10 +3,13 @@ import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 
+import { provisionedAccountEmail } from "@/lib/domain/account-login";
 import { verifyCredentials } from "@/server/accounts";
 
 const credsSchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim()
+    .transform((value) => process.env.PROVISIONED_ACCOUNTS_ONLY === "1" ? provisionedAccountEmail(value) : value)
+    .pipe(z.string().email()),
   password: z.string().min(1),
 });
 

@@ -44,6 +44,11 @@ export const ROLES: Record<string, RoleDef> = {
   // Legacy database rows and already-open sessions have the same rights now.
   user: ADMIN,
   admin: ADMIN,
+  member: {
+    label: "Участник",
+    permissions: ["tournament:create", "media:upload"],
+    quotas: ADMIN.quotas,
+  },
 };
 
 /** All registered accounts are admins; `user` is only a legacy read alias. */

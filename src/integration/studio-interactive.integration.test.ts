@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { removePath } from "@/lib/storage";
@@ -103,6 +103,22 @@ describe("interactive publication", () => {
     const game = await studio.createStudioProject(owner, { document: archetypes(), idempotencyKey: randomUUID() });
     await expect(studio.publishInteractive(other, game.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(studio.copyStudioProject(other, game.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("publishes a playable snapshot without a worker in HTML-only deployments", async () => {
+    vi.stubEnv("DOUGA_INTERACTIVE_STILLS", "0");
+    interactiveTestHooks.stills = true;
+    try {
+      const game = await studio.createStudioProject(owner, { document: archetypes() });
+      const published = await studio.publishInteractive(owner, game.id);
+      expect(published.status).toBe("ready");
+      expect(published.stills).toBe("missing");
+      expect(await prisma.studioJob.count({ where: { projectId: game.id } })).toBe(0);
+      expect((await interactiveManifestResponse(published.token)).status).toBe(200);
+    } finally {
+      interactiveTestHooks.stills = false;
+      vi.unstubAllEnvs();
+    }
   });
 
   it("answers 409 while scene stills are prepared", async () => {
