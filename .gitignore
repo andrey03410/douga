@@ -14,3 +14,6 @@ tsconfig.tsbuildinfo
 /assets/
 /.ai/production/
 src/generated/
+
+.env.*
+!.env.example

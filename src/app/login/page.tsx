@@ -15,9 +15,10 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 function LoginForm() {
+  const registrationEnabled = process.env.NEXT_PUBLIC_PROVISIONED_ACCOUNTS_ONLY !== "1";
   const params = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">(
-    params.get("mode") === "register" ? "register" : "login",
+    registrationEnabled && params.get("mode") === "register" ? "register" : "login",
   );
   const action = mode === "login" ? loginAction : registerAction;
   const [state, formAction] = useFormState<AuthState, FormData>(action, undefined);
@@ -27,8 +28,8 @@ function LoginForm() {
       <h1>{mode === "login" ? "Вход" : "Регистрация"}</h1>
       <div className="panel">
         <form action={formAction}>
-          <label>Email</label>
-          <input name="email" type="email" autoComplete="email" required />
+          <label>{registrationEnabled ? "Email" : "Логин"}</label>
+          <input name="email" type={registrationEnabled ? "email" : "text"} autoComplete="username" required />
           <label>Пароль</label>
           <input
             name="password"
@@ -40,7 +41,7 @@ function LoginForm() {
           <SubmitButton label={mode === "login" ? "Войти" : "Создать аккаунт"} />
         </form>
       </div>
-      <p className="muted">
+      {registrationEnabled && <p className="muted">
         {mode === "login" ? "Нет аккаунта? " : "Уже есть аккаунт? "}
         <a
           href="#"
@@ -51,7 +52,7 @@ function LoginForm() {
         >
           {mode === "login" ? "Зарегистрироваться" : "Войти"}
         </a>
-      </p>
+      </p>}
     </div>
   );
 }

@@ -21,7 +21,7 @@ export async function loginAction(
   try {
     await signIn("credentials", { email, password, redirectTo: "/projects" });
   } catch (error) {
-    if (error instanceof AuthError) return { error: "Неверный email или пароль" };
+    if (error instanceof AuthError) return { error: "Неверные данные для входа" };
     throw error; // redirect on success
   }
   return undefined;
@@ -31,6 +31,7 @@ export async function registerAction(
   _prev: AuthState,
   formData: FormData,
 ): Promise<AuthState> {
+  if (process.env.PROVISIONED_ACCOUNTS_ONLY === "1") return { error: "Аккаунты создаёт администратор" };
   const parsed = schema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),

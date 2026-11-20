@@ -8,3 +8,5 @@ Next.js, Prisma SQLite и HTML-экспорт с esbuild при первом з�
 - **T04. Состояние.** Схемы SQLite обновляются с резервной копией базы. Записываем активный SHA и результат HTTP-проверки. Файлы среды и ключи остаются вне Git и слоёв образа.
 
 [Docker Compose в продакшене](https://docs.docker.com/compose/how-tos/production/) · [Caddy и порты](https://caddyserver.com/docs/caddyfile/concepts) · [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+
+- **T05. Учётные записи.** `PROVISIONED_ACCOUNTS_ONLY=1` закрывает создание аккаунтов через HTTP, включая гостевые варианты. Серверный скрипт создаёт их из stdin и хранит только хеши. Общий пароль Caddy ограничивает браузерный доступ во время использования временных паролей приложений.

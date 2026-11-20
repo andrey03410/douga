@@ -1,7 +1,7 @@
 ---
 id: 36
 title: Деплой douga на VPS
-track: tech
+track: product
 stage: build
 branch: chore/36-docker-deploy
 pr:
@@ -18,8 +18,9 @@ merged:
 ## Стадии
 
 - [x] Бриф — [brief.md](brief.md)
+- [x] Продукт — [product.md](product.md)
 - [x] Техника — [tech.md](tech.md)
 - [x] План — [plan.md](plan.md)
 - [ ] Реализация и QG — [verify.md](verify.md)
 - [ ] Влито
-- [ ] Выложено на VPS
+- Деплой — статус среды `production` в GitHub Actions.

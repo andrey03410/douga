@@ -28,6 +28,12 @@ describe("permissions matrix", () => {
     expect(can("user", "admin:users")).toBe(true);
   });
 
+  it("grants provisioned members project tools without user administration", () => {
+    expect(can("member", "tournament:create")).toBe(true);
+    expect(can("member", "media:upload")).toBe(true);
+    expect(can("member", "admin:users")).toBe(false);
+  });
+
   it("admin can do everything", () => {
     expect(can("admin", "tournament:create")).toBe(true);
     expect(can("admin", "media:upload")).toBe(true);
