@@ -16,7 +16,7 @@ RUN npm ci && npm run build
 FROM base AS runtime
 COPY --from=build --chown=node:node /app /app
 RUN install -d -o node -g node storage
-ENV NODE_ENV=production PROVISIONED_ACCOUNTS_ONLY=1
+ENV NODE_ENV=production PROVISIONED_ACCOUNTS_ONLY=1 DOUGA_INTERACTIVE_STILLS=0
 ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_PROVISIONED_ACCOUNTS_ONLY=1
 USER node
 EXPOSE 3000

@@ -79,7 +79,10 @@ async function stillState(db: Db, row: Pick<Row, "stillJobId">) {
   if (!row.stillJobId) return { stills: "missing" as const, job: null };
   const job = await db.studioJob.findUnique({ where: { id: row.stillJobId } });
   if (!job) return { stills: "missing" as const, job: null };
-  if (job.status === "queued" || job.status === "running") return { stills: "pending" as const, job };
+  if (job.status === "queued" || job.status === "running") {
+    if (process.env.DOUGA_INTERACTIVE_STILLS === "0") return { stills: "missing" as const, job: null };
+    return { stills: "pending" as const, job };
+  }
   if (job.status === "done" && job.resultJson && job.leaseToken) return { stills: "ready" as const, job };
   return { stills: "missing" as const, job: null };
 }
@@ -137,7 +140,7 @@ export const interactiveTestHooks: { stills: boolean } = { stills: true };
 
 /** Stills of interactive scenes come from one storyboard page of the frozen revision. */
 async function startStills(userId: string, projectId: string, revision: number): Promise<string | null> {
-  if (!interactiveTestHooks.stills) return null;
+  if (process.env.DOUGA_INTERACTIVE_STILLS === "0" || !interactiveTestHooks.stills) return null;
   try {
     const job = await startStudioStoryboard(userId, projectId, { revision, pageSize: 24 });
     return job.id;
