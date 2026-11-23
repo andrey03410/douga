@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { frozenWithMatchData } from "./match-data";
 import { randomUUID } from "node:crypto";
@@ -144,6 +145,7 @@ export async function runStudioWorkerOnce(
     if (heartbeating) return;
     heartbeating = true;
     try {
+      await requireHeavy(job.userId);
       if (!(await heartbeatStudioJob(job.id, token, progress))) abort.abort();
     } catch {
       abort.abort();

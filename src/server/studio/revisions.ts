@@ -280,7 +280,7 @@ export async function deleteStudioRevision(
     });
     await db.studioRevision.delete({ where: { id: old.id } });
     const result = { deleted: true as const, revision };
-    await receipt(db, userId, input.idempotencyKey, request, result);
+    await receipt(db, userId, input.idempotencyKey, request, result, true);
     return result;
   });
   if (old.assetsJson) {

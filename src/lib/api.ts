@@ -14,7 +14,10 @@ export async function userOr401(): Promise<
   try {
     const user = await requireUser();
     return { userId: user.id, user };
-  } catch {
+  } catch (error) {
+    const code = (error as Error).message;
+    if (code === "KANAME_UNAVAILABLE" || code === "FORBIDDEN")
+      return { response: NextResponse.json({ error: code }, { status: code === "FORBIDDEN" ? 403 : 503 }) };
     return { response: NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 }) };
   }
 }

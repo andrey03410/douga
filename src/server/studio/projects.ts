@@ -1,3 +1,4 @@
+import { assertStorage, assertRoom } from "@/server/kaname-usage";
 import { VideoResourceBudgetError, preflightVideoResources } from "@douga/video/resource-limits";
 import { createStudioProjectFromIntentSchema, type CreateStudioProjectFromIntentInput } from "./authoring-schema";
 import { createVideoFromIntent } from "@douga/video/authoring";
@@ -127,6 +128,7 @@ export async function addRevision(
       }),
     },
   });
+  await assertStorage(userId, db);
   await setReferences(db, userId, projectId, `revision:${revision}`, document);
   return saved;
 }
@@ -379,6 +381,7 @@ async function createFromDocument(
       );
       if (old) return old;
       await assertSourceUnchanged(userId, document, db);
+      await assertRoom(userId, "projects", db);
       await db.studioProject.create({
         data: {
           id,
@@ -800,7 +803,7 @@ export async function deleteStudioProject(
     await deleteStudioReviewBackups(db, userId, id);
     await db.studioProject.delete({ where: { id } });
     const result = { deleted: true as const, id };
-    await receipt(db, userId, input.idempotencyKey, request, result);
+    await receipt(db, userId, input.idempotencyKey, request, result, true);
     return result;
   });
   await cleanupDirectory(`studio/${userId}/${id}`);

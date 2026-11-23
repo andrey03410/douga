@@ -29,9 +29,9 @@ export default async function RootLayout({
             {user ? (
               <nav className="row" style={{ gap: 14 }}>
                 <a href="/projects">Мои видео</a>
-                <a href="/tournaments">Мои топы</a>
+                {can(user.role, "tournament:create") && <a href="/tournaments">Мои топы</a>}
                 <a href="/account">Личный кабинет</a>
-                {can(user.role, "admin:users") ? <a href="/admin">Админка</a> : null}
+                {(can(user.role, "admin:users") || can(user.role, "site:moderate")) ? <a href="/admin">Админка</a> : null}
               </nav>
             ) : null}
           </div>

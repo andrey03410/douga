@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import type {
   VideoDocument,
   Participant,
@@ -113,6 +114,7 @@ export async function reconcileSource(
 ): Promise<VideoDocument> {
   const document = structuredClone(input);
   if (document.source.kind !== "tournament") return document;
+  await requireHeavy(userId, db);
   const tournamentId = document.source.tournamentId!;
   const tournament =
     db === prisma

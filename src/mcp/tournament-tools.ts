@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -92,7 +93,7 @@ export function assertSourcesAllowed(sources: ItemSource[], local: boolean): voi
 export function registerTournamentTools(server: McpServer, actor: Actor, options: { local: boolean } = { local: true }) {
   const guard = (fn: (role: string) => Promise<unknown>) =>
     authorizeActor(actor.userId)
-      .then((user) => fn(user.role))
+      .then(async (user) => { await requireHeavy(actor.userId); return fn(user.role); })
       .then((data) => ({
         content: [{ type: "text" as const, text: JSON.stringify(data) }],
       }))

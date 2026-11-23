@@ -43,6 +43,9 @@ type Asset = {
 type Page<T> = { items: T[]; nextCursor: string | null };
 /** Codes the «Ролик без рендера» block can meet, in words the author can act on. */
 const ERROR_TEXT: Record<string, string> = {
+  FORBIDDEN: "Для этой операции нужны права на серверную обработку. Ролик можно смотреть по опубликованной ссылке.",
+  PUBLICATION_LIMIT: "Достигнут лимит публикаций. Снимите одну ссылку в кабинете.",
+  POOL_QUOTA: "Закончилось место в Douga.",
   EXPORT_TOO_LARGE:
     "Файл .html вышел бы больше 400 МБ. Сократите ролик или сделайте MP4-рендер.",
   EXPORT_QUOTA_EXCEEDED:
@@ -101,9 +104,11 @@ function metadata(p: StudioProjectView): Metadata {
 export function StudioWorkspace({
   initial,
   isAdmin,
+  htmlOnly = false,
 }: {
   initial: Metadata;
   isAdmin: boolean;
+  htmlOnly?: boolean;
 }) {
   const id = initial.id,
     base = `projects/${id}`;
@@ -369,14 +374,14 @@ export function StudioWorkspace({
         действия.
       </p>
       <div className="studio-toolbar">
-        <a
+        {!htmlOnly && <a
           className="btn secondary"
           href={`/studio/${encodeURIComponent(id)}/storyboard`}
           target="_blank"
           rel="noopener"
         >
           Раскадровка и замечания ↗
-        </a>
+        </a>}
         <a
           className="btn ghost"
           href={`/studio/recipes?project=${encodeURIComponent(id)}`}
@@ -1157,7 +1162,7 @@ export function StudioWorkspace({
             /watch/{publication.token} · ревизия {publication.revision}
           </p>
         ) : null}
-        <details>
+        {!htmlOnly && <details>
           <summary>Создать задание из сохранённого кода</summary>
           <p className="muted">
             Сначала сохраните локальные изменения. Задание фиксирует корректный
@@ -1229,7 +1234,7 @@ export function StudioWorkspace({
               </button>
             ))}
           </div>
-        </details>
+        </details>}
         <ul className="studio-list">
           {jobs.items.length === 0 ? (
             <li className="muted">Заданий пока нет.</li>

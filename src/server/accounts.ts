@@ -1,4 +1,5 @@
 import "server-only";
+import { kanameEnabled } from "./kaname";
 import bcrypt from "bcryptjs";
 import { Prisma, type User } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
@@ -48,6 +49,7 @@ export async function findUserByEmail(email: string): Promise<User | null> {
  * Throws EMAIL_TAKEN when an account with the same email in any case exists.
  */
 export async function registerAccount(email: string, password: string): Promise<User> {
+  if (kanameEnabled()) throw new Error("FORBIDDEN");
   const normalized = normalizeEmail(email);
   if (await findUserByEmail(normalized)) throw new Error("EMAIL_TAKEN");
   const passwordHash = await bcrypt.hash(password, 10);
@@ -70,6 +72,7 @@ export async function registerAccount(email: string, password: string): Promise<
  * Applies the ADMIN_EMAILS bootstrap on success. Null on any mismatch.
  */
 export async function verifyCredentials(email: string, password: string): Promise<User | null> {
+  if (kanameEnabled()) return null;
   // Legacy rows may differ only in case (`Bob@x` and `bob@x`): the password
   // decides which of them is signing in.
   for (const user of await findUsersByEmail(email)) {

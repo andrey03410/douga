@@ -18,7 +18,15 @@ const unauthorized = () =>
  */
 async function handle(req: Request): Promise<Response> {
   const header = req.headers.get("authorization") ?? "";
-  const actor = await resolveApiToken(header.startsWith("Bearer ") ? header.slice(7).trim() : null);
+  let actor;
+  try {
+    actor = await resolveApiToken(header.startsWith("Bearer ") ? header.slice(7).trim() : null, true);
+  } catch (error) {
+    const code = (error as Error).message;
+    if (code === "FORBIDDEN" || code === "KANAME_UNAVAILABLE")
+      return Response.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: code } }, { status: code === "FORBIDDEN" ? 403 : 503 });
+    throw error;
+  }
   if (!actor) return unauthorized();
   const server = createMcpServer(actor, { local: false });
   const transport = new WebStandardStreamableHTTPServerTransport({

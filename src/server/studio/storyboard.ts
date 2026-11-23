@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -210,6 +211,7 @@ async function copyFrozen(frozen: StudioFrozenRevision, directory: string) {
 
 /** One durable operation for an entire page; cached retries return current job status. */
 export async function startStudioStoryboard(userId: string, projectId: string, raw: StoryboardInput = {}): Promise<StudioJobView> {
+  await requireHeavy(userId);
   let input = storyboardSchema.parse(raw);
   await owned(userId, projectId);
   const request = requestHash(`storyboard:${projectId}`, input);
@@ -321,6 +323,7 @@ export async function enqueueInspection(userId: string, projectId: string,
           return jobView(row, db);
         }
       }
+      await requireHeavy(userId, db);
       const freshUser = await actor(userId, db);
       await assertStudioJobQuota(userId, freshUser.role, db);
       if (await db.studioJob.count({ where: { userId, status: { in: activeJobStatuses } } }) >= studioJobLimits.maxActivePerAccount) throw new StudioError("JOB_QUOTA_EXCEEDED");

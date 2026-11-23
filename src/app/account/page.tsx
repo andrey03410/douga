@@ -1,3 +1,5 @@
+import { kanameEnabled } from "@/server/kaname";
+import { KanameUsage } from "./KanameUsage";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { roleLabel } from "@/lib/domain/permissions";
@@ -14,6 +16,7 @@ export default async function AccountPage() {
         <h1 style={{ margin: 0 }}>Личный кабинет</h1>
         <span className="tag">{roleLabel(user.role)}</span>
       </div>
+      {kanameEnabled() && <KanameUsage userId={user.id} />}
       <AccountManager />
       <ApiTokens />
     </div>

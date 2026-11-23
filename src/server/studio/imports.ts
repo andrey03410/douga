@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
@@ -34,6 +35,7 @@ export async function startStudioImport(
   userId: string,
   raw: StartStudioImportInput,
 ): Promise<StudioJobView> {
+  await requireHeavy(userId);
   const input = startStudioImportSchema.parse(raw);
   // SSRF: a loopback/LAN target never becomes a job. DNS trouble is not ours to
   // judge here: the worker re-checks before yt-dlp and retries like any fetch.
@@ -43,6 +45,7 @@ export async function startStudioImport(
   const request = requestHash("import", input);
   const enqueue = () =>
     prisma.$transaction(async (db) => {
+      await requireHeavy(userId, db);
       await actor(userId, db);
       const old = await replay<StudioJobView>(
         db,

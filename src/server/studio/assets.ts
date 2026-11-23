@@ -1,3 +1,5 @@
+import { originalMetadata } from "./original-metadata";
+import { kanameEnabled } from "@/server/kaname";
 import { preflightVideoResources } from "@douga/video/resource-limits";
 import "server-only";
 import path from "node:path";
@@ -10,6 +12,7 @@ import {
   rename,
   rm,
   readdir,
+  writeFile,
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -81,7 +84,21 @@ export async function builtin(name: string) {
   } catch {
     await mkdir(path.dirname(absPath(relative)), { recursive: true });
     const tmp = absPath(`studio/builtin/${randomUUID()}.wav`);
-    await ffmpeg([
+    if (kanameEnabled()) {
+      const rate = 22050;
+      const samples = Math.round(rate * (name === "tick" ? 0.12 : 0.4));
+      const data = Buffer.alloc(44 + samples * 2);
+      data.write("RIFF"); data.writeUInt32LE(data.length - 8, 4);
+      data.write("WAVEfmt ", 8); data.writeUInt32LE(16, 16);
+      data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22);
+      data.writeUInt32LE(rate, 24); data.writeUInt32LE(rate * 2, 28);
+      data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34);
+      data.write("data", 36); data.writeUInt32LE(samples * 2, 40);
+      const hz = name === "tick" ? 1300 : name === "reveal" ? 880 : 660;
+      for (let n = 0; n < samples; n++)
+        data.writeInt16LE(Math.round(4096 * (1 - n / samples) * Math.sin(2 * Math.PI * hz * n / rate)), 44 + 2 * n);
+      await writeFile(tmp, data);
+    } else await ffmpeg([
       "-y",
       "-f",
       "lavfi",
@@ -229,7 +246,8 @@ export async function resolveAssets(
   mode: StudioManifestMode = "url",
   directory?: string,
 ) {
-  await actor(userId);
+  const { grant } = await actor(userId);
+  const light = !!grant && !grant.permissions.heavy;
   await references(userId, document);
   const manifest: AssetManifest = {};
   const files: Record<string, StudioFile> = {};
@@ -252,20 +270,21 @@ export async function resolveAssets(
           throw new StudioError("ASSET_CHANGED_DURING_FREEZE");
       }
       const file = await safeFile(relative);
-      const metadata = await probeMediaInfo(file);
-      const output = await ffmpeg(["-i", file]);
-      const videoLine = output
-        .split("\n")
-        .find((l) => /Stream #.*Video:/.test(l));
-      const dimensions = videoLine
-        ? /(?:,|\s)(\d{1,6})x(\d{1,6})(?:[\s,\[])/.exec(videoLine)
-        : null;
-      if (
-        (row.kind === "image" && !dimensions) ||
-        (row.kind === "video" &&
-          (!metadata.hasVideo || !metadata.durationSec)) ||
-        (row.kind === "audio" && (!metadata.hasAudio || !metadata.durationSec))
-      )
+      let metadata, width, height;
+      if (light) {
+        const original = await originalMetadata(file, row.kind);
+        metadata = original;
+        width = original.width;
+        height = original.height;
+      } else {
+        metadata = await probeMediaInfo(file);
+        const output = await ffmpeg(["-i", file]);
+        const line = output.split("\n").find(l => /Stream #.*Video:/.test(l));
+        const dimensions = line && /(?:,|\s)(\d{1,6})x(\d{1,6})(?:[\s,\[])/.exec(line);
+        if (dimensions) { width = Number(dimensions[1]); height = Number(dimensions[2]); }
+      }
+      if ((row.kind === "image" && !width) || (row.kind === "video" && !metadata.hasVideo) ||
+          (row.kind === "audio" && !metadata.hasAudio) || (!light && row.kind !== "image" && !metadata.durationSec))
         throw new StudioError("ASSET_MEDIA_INVALID");
       const url = directory
         ? `/api/studio/media?path=${encodeURIComponent(relative)}`
@@ -281,9 +300,7 @@ export async function resolveAssets(
         hash: digest,
         ...(metadata.durationSec ? { durationSec: metadata.durationSec } : {}),
         hasAudio: metadata.hasAudio,
-        ...(dimensions
-          ? { width: Number(dimensions[1]), height: Number(dimensions[2]) }
-          : {}),
+        ...(width && height ? { width, height } : {}),
       };
       files[key] = {
         path: relative,
@@ -334,7 +351,7 @@ export async function resolveAssets(
       }
     }
   }
-  return { manifest, files, diagnostics };
+  return { manifest, files, diagnostics, light };
 }
 export async function getStudioManifest(
   userId: string,
@@ -545,7 +562,7 @@ export async function evaluate(
   const assets = await resolveAssets(userId, parsed.data, "url", directory);
   let resolvedDocument = parsed.data;
   try {
-    resolvedDocument = await activeDocument(
+    if (!assets.light) resolvedDocument = await activeDocument(
       parsed.data,
       assets.manifest,
       assets.files,

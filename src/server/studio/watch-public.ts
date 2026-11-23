@@ -1,3 +1,4 @@
+import { kanameEnabled, freshUser } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
@@ -53,9 +54,9 @@ function indexSnapshot(frozen: StudioFrozenRevision): SnapshotIndex {
 async function indexByToken(token: string): Promise<SnapshotIndex | null> {
   const row = await prisma.studioPublication.findUnique({
     where: { token },
-    select: { snapshotId: true },
+    select: { snapshotId: true, userId: true },
   });
-  if (!row) return null;
+  if (!row || (kanameEnabled() && !(await freshUser(row.userId).catch(() => null)))) return null;
   const cached = indexes.get(row.snapshotId);
   if (cached) return cached;
   const snapshot = await prisma.studioSnapshot.findUnique({
@@ -93,7 +94,7 @@ export async function publicWatchMedia(
       path: await safeFile(file.path),
       mimeType: studioMimeType(fileName),
       hash: file.hash,
-      immutable: true,
+      immutable: !kanameEnabled(),
     });
   } catch {
     return new Response(null, { status: 404 });

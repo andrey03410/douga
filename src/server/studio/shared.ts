@@ -1,4 +1,6 @@
+import { assertStorage } from "@/server/kaname-usage";
 import "server-only";
+import { freshUser, kanameEnabled } from "@/server/kaname";
 import { createHash } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
@@ -31,7 +33,7 @@ export function canonical(value: unknown): string {
   return serialize(value, "");
 }
 export async function actor(userId: string, db: Db = prisma) {
-  const user = await db.user.findUnique({ where: { id: userId } });
+  const user = await freshUser(userId, db);
   if (!user) throw new StudioError("NOT_FOUND");
   if (!can(user.role, "media:upload")) throw new StudioError("FORBIDDEN");
   return user;
@@ -56,6 +58,7 @@ export async function replay<T>(
     where: { userId_key: { userId, key } },
   });
   if (!receipt) return;
+  if (kanameEnabled()) await freshUser(userId, db);
   if (receipt.requestHash !== request)
     throw new StudioError("IDEMPOTENCY_CONFLICT");
   return JSON.parse(receipt.resultJson) as T;
@@ -66,16 +69,22 @@ export async function receipt(
   key: string | undefined,
   request: string,
   result: unknown,
+  release = false,
 ) {
-  if (key)
-    await db.studioMutation.create({
-      data: {
-        userId,
-        key,
-        requestHash: request,
-        resultJson: JSON.stringify(result),
-      },
-    });
+  const resultJson = key ? JSON.stringify(result) : undefined;
+  if (release && kanameEnabled()) {
+    // A smaller centrally assigned cap must not trap users above quota. A
+    // cleanup receipt is optional when even its metadata would exceed it.
+    if (!resultJson) return;
+    try { await assertStorage(userId, db, Buffer.byteLength(resultJson)); }
+    catch (error) {
+      if (error instanceof StudioError && error.code === "POOL_QUOTA") return;
+      throw error;
+    }
+  }
+  if (key && resultJson !== undefined)
+    await db.studioMutation.create({ data: { userId, key, requestHash: request, resultJson } });
+  if (!release) await assertStorage(userId, db);
 }
 export function jsonText(value: unknown): string {
   let text: string | undefined;

@@ -1,3 +1,4 @@
+import { freshUser } from "./kaname";
 import "server-only";
 import path from "node:path";
 import { stat } from "node:fs/promises";
@@ -80,10 +81,7 @@ export interface UsageSummary {
 export async function usageSummary(userId: string): Promise<UsageSummary> {
   await backfillSizes(userId);
 
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    select: { role: true },
-  });
+  const user = await freshUser(userId);
 
   const poolByKind = await prisma.art.groupBy({
     by: ["kind"],

@@ -33,6 +33,7 @@ export const jobDirectory = (userId: string, id: string) =>
   `studio-jobs/${userId}/${id}`;
 export async function jobActor(userId: string, kind: string, db: Db = prisma) {
   const user = await actor(userId, db);
+  if (user.grant && !user.grant.permissions.heavy) throw new StudioError("FORBIDDEN");
   if (kind === "render" && !can(user.role, "render:run"))
     throw new StudioError("FORBIDDEN");
   return user;

@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { rm } from "node:fs/promises";
@@ -50,6 +51,7 @@ export interface StartDownloadInput {
  * BLOCKED_HOST, HOST_UNRESOLVED, TOO_MANY_ACTIVE (see describeStartRefusal).
  */
 export async function startDownload(userId: string, input: StartDownloadInput) {
+  await requireHeavy(userId);
   let url: URL;
   try {
     url = new URL(input.url.trim());
@@ -95,6 +97,7 @@ async function runDownload(jobId: string, maxPoolBytes: number | null): Promise<
   const mode = job.mode as DownloadMode;
   const attempt = async () => {
     // 1) metadata: title + honest refusal when the estimate can't fit
+    await requireHeavy(job.userId);
     const probe = await probeUrl(job.url, mode, job.quality);
     await setJob(jobId, { title: probe.title, progress: 0.05 });
 
@@ -137,6 +140,7 @@ async function runDownload(jobId: string, maxPoolBytes: number | null): Promise<
     // 3) absorb into the pool (transactional quota + probe + poster)
     await setJob(jobId, { progress: 0.92 });
     const ext = path.extname(filePath) || (mode === "audio" ? ".m4a" : ".mp4");
+    await requireHeavy(job.userId);
     const art = await createArtFromFile(job.userId, {
       sourcePath: filePath,
       fileName: `download${ext}`,

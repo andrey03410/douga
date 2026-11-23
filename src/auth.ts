@@ -1,4 +1,6 @@
 import NextAuth from "next-auth";
+import Keycloak from "next-auth/providers/keycloak";
+import { bindIdentity, freshUser, kanameEnabled, recordActivity } from "@/server/kaname";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -16,7 +18,12 @@ const credsSchema = z.object({
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
-  providers: [
+  providers: kanameEnabled() ? [Keycloak({
+    issuer: process.env.KANAME_OIDC_ISSUER,
+    clientId: process.env.KANAME_OIDC_CLIENT_ID,
+    clientSecret: process.env.KANAME_OIDC_CLIENT_SECRET,
+    checks: ["pkce", "state", "nonce"],
+  })] : [
     Credentials({
       credentials: { email: {}, password: {} },
       authorize: async (raw) => {
@@ -30,12 +37,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  events: {
+    async signOut(event) {
+      if ("token" in event && typeof event.token?.kanameSession === "string")
+        await prisma.kanameSession.deleteMany({ where: { id: event.token.kanameSession } });
+    },
+  },
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user, account, profile }) {
+      if (kanameEnabled() && user) {
+        if (account?.provider !== "keycloak" || !profile?.sub || profile.iss !== process.env.KANAME_OIDC_ISSUER)
+          return null;
+        const id = await bindIdentity(profile.sub);
+        const session = await prisma.kanameSession.create({ data: { userId: id, expires: new Date(Date.now() + 30 * 86400000) } });
+        token.id = id;
+        token.kanameSession = session.id;
+        return token;
+      }
       if (user) token.id = (user as { id: string }).id;
       return token;
     },
-    session({ session, token }) {
+    async session({ session, token }) {
+      if (kanameEnabled()) {
+        const sid = typeof token.kanameSession === "string" ? token.kanameSession : "";
+        const row = sid && await prisma.kanameSession.findUnique({ where: { id: sid } });
+        if (!row || row.expires <= new Date() || row.userId !== token.id) return { ...session, user: { ...session.user, id: "" } };
+      }
       if (token.id && session.user) {
         (session.user as { id: string }).id = token.id as string;
       }
@@ -59,12 +86,8 @@ export async function requireUser(): Promise<SessionUser> {
   const session = await auth();
   const id = (session?.user as { id?: string } | undefined)?.id;
   if (!id) throw new Error("UNAUTHENTICATED");
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, role: true },
-  });
-  if (!user) throw new Error("UNAUTHENTICATED"); // deleted while session alive
-  return user;
+  const user = await freshUser(id);
+  return { id: user.id, email: user.email, role: user.role };
 }
 
 /** Resolve the current user id, or throw if unauthenticated. */
@@ -75,7 +98,9 @@ export async function requireUserId(): Promise<string> {
 /** Like requireUser, but returns null instead of throwing (for pages). */
 export async function currentUser(): Promise<SessionUser | null> {
   try {
-    return await requireUser();
+    const user = await requireUser();
+    await recordActivity(user.id);
+    return user;
   } catch {
     return null;
   }
