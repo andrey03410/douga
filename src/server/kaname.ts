@@ -35,6 +35,7 @@ export async function fetchGrant(subject: string): Promise<Grant> {
   const data = await response.json().catch(() => { throw new StudioError("KANAME_UNAVAILABLE"); });
   const parsed = grantSchema.safeParse(data);
   if (!parsed.success || parsed.data.subject !== subject || !parsed.data.permissions.html ||
+      (parsed.data.role === "overlord" && subject !== process.env.KANAME_OWNER_SUBJECT) ||
       (parsed.data.permissions.heavy && parsed.data.role !== "overlord")) throw new StudioError("FORBIDDEN");
   return parsed.data;
 }

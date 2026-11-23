@@ -36,3 +36,17 @@ it("distinguishes an unavailable central service from a revoked grant", async ()
     await expect(fetchGrant("friend")).rejects.toThrow(code);
   }
 });
+
+it("accepts an overlord grant only for the locally pinned owner subject", async () => {
+  vi.stubEnv("KANAME_URL", "http://kaname.test");
+  vi.stubEnv("KANAME_SERVICE_TOKEN", "fixture");
+  vi.stubGlobal("fetch", vi.fn(async (url: URL) => Response.json({
+    service: "douga", subject: url.pathname.split("/").at(-1), login: "owner", role: "overlord",
+    permissions: { html: true, heavy: true }, limits: { storageBytes: null, projects: null, publications: null },
+  })));
+  vi.stubEnv("KANAME_OWNER_SUBJECT", "");
+  await expect(fetchGrant("owner")).rejects.toThrow("FORBIDDEN");
+  vi.stubEnv("KANAME_OWNER_SUBJECT", "owner");
+  await expect(fetchGrant("another")).rejects.toThrow("FORBIDDEN");
+  expect((await fetchGrant("owner")).permissions.heavy).toBe(true);
+});

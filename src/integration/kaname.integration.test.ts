@@ -29,6 +29,7 @@ it("enforces the same live identity, limits and moderation across project, publi
   vi.stubEnv("KANAME_ENABLED", "1");
   vi.stubEnv("KANAME_URL", "http://kaname.fixture");
   vi.stubEnv("KANAME_SERVICE_TOKEN", "service");
+  vi.stubEnv("KANAME_OWNER_SUBJECT", "owner");
   vi.stubEnv("KANAME_OIDC_ISSUER", "https://id.fixture/"+randomUUID());
   let revoked = false, storage = 1_000_000_000, projectCap = 3;
   vi.stubGlobal("fetch", vi.fn(async (u: URL) => {
