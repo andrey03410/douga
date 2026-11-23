@@ -3,9 +3,9 @@ id: 37
 title: Центральный доступ Kaname в Douga
 started: 2026-11-23
 track: product
-stage: build
+stage: review
 branch: feat/37-kaname
-pr: null
+pr: https://github.com/andrey03410/douga/pull/19
 ---
 # Kaname в Douga
 
