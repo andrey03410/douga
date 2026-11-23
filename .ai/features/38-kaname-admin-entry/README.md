@@ -2,7 +2,7 @@
 id: 38
 title: Переход в управление Douga из Kaname
 track: product
-stage: plan
+stage: build
 branch: fix/38-kaname-admin-entry
 pr: null
 started: 2026-11-23
@@ -14,5 +14,5 @@ started: 2026-11-23
 - [x] Бриф
 - [x] Продукт
 - [x] Техника
-- [ ] План
+- [x] План
 - [ ] Реализация и проверка
