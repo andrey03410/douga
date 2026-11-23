@@ -2,7 +2,7 @@
 id: 38
 title: Переход в управление Douga из Kaname
 track: product
-stage: product
+stage: tech
 branch: fix/38-kaname-admin-entry
 pr: null
 started: 2026-11-23
@@ -12,7 +12,7 @@ started: 2026-11-23
 Автономный режим в составе внедрения Kaname.
 
 - [x] Бриф
-- [ ] Продукт
+- [x] Продукт
 - [ ] Техника
 - [ ] План
 - [ ] Реализация и проверка
