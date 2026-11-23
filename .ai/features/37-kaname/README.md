@@ -1,4 +1,7 @@
 ---
+id: 37
+title: Центральный доступ Kaname в Douga
+started: 2026-11-23
 track: product
 stage: build
 branch: feat/37-kaname
@@ -12,4 +15,4 @@ pr: null
 - [x] Продукт
 - [x] Техника
 - [x] План
-- [ ] Реализация и проверка
+- [x] Реализация и проверка
