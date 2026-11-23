@@ -2,9 +2,9 @@
 id: 38
 title: Переход в управление Douga из Kaname
 track: product
-stage: build
+stage: review
 branch: fix/38-kaname-admin-entry
-pr: null
+pr: https://github.com/andrey03410/douga/pull/21
 started: 2026-11-23
 ---
 # Переход в управление Douga
