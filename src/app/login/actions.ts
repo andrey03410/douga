@@ -31,7 +31,7 @@ export async function registerAction(
   _prev: AuthState,
   formData: FormData,
 ): Promise<AuthState> {
-  if (process.env.PROVISIONED_ACCOUNTS_ONLY === "1") return { error: "Аккаунты создаёт администратор" };
+  if (process.env.KANAME_ENABLED === "1" || process.env.PROVISIONED_ACCOUNTS_ONLY === "1") return { error: "Аккаунты создаёт администратор" };
   const parsed = schema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),

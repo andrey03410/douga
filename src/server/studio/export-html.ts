@@ -1,3 +1,4 @@
+import { freshUser, kanameEnabled } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { open, readFile } from "node:fs/promises";
@@ -178,6 +179,7 @@ async function* base64Chunks(filePath: string) {
 }
 
 async function prepare(userId: string, projectId: string) {
+  const light = kanameEnabled() && !(await freshUser(userId)).grant?.permissions.heavy;
   const project = await getStudioProject(userId, projectId);
   const revision = await prisma.studioRevision.findUnique({
     where: { projectId_revision: { projectId, revision: project.revision } },
@@ -198,7 +200,7 @@ async function prepare(userId: string, projectId: string) {
     files: stored.files ?? {},
   });
   try {
-    return await assemble(projectId, project.document.title, sliced, stored.fontFiles);
+    return await assemble(projectId, project.document.title, sliced, stored.fontFiles, light);
   } catch (error) {
     sliced.release();
     throw error;
@@ -210,6 +212,7 @@ async function assemble(
   title: string,
   sliced: Awaited<ReturnType<typeof materializeSlices>>,
   fontFiles: Record<string, StudioFile> = {},
+  light = false,
 ) {
   await verifyTypographyFonts(sliced.plan.fonts, fontFiles);
   const fontAssets: ExportAsset[] = [];
@@ -229,7 +232,7 @@ async function assemble(
   const legacy = sliced.plan.scenes.some((scene) => scene.nodes.some((node) =>
     !node.typography && (["text", "timer", "versus", "badge", "progress"].includes(node.type) || !!node.label),
   ));
-  const [bundle, css] = await Promise.all([playerBundle(), fontCss(legacy)]);
+  const [bundle, css] = await Promise.all([light ? readFile("node_modules/.cache/douga-html/player.js", "utf8") : playerBundle(), fontCss(legacy)]);
   const prefix = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>${css}</style></head><body><div class="watch-root"><div id="root"><p class="watch-boot" role="status">Загрузка…</p></div></div><script type="application/json" id="douga-plan">${jsonForScript(sliced.plan)}</script>`;
   // A function replacer: a title with "$&" or "$1" must stay as typed.
   const boot = BOOT.replace("__TITLE__", () => jsonForScript(title));

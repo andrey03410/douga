@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { currentUser } from "@/auth";
 
 const FEATURES = [
   {
@@ -35,8 +35,8 @@ const FEATURES = [
 ];
 
 export default async function Home() {
-  const session = await auth();
-  if (session?.user) redirect("/projects");
+  const user = await currentUser();
+  if (user) redirect("/projects");
 
   return (
     <div className="container">
@@ -51,7 +51,7 @@ export default async function Home() {
           <a className="btn" href="/login">
             Войти
           </a>
-          {process.env.PROVISIONED_ACCOUNTS_ONLY !== "1" && (
+          {process.env.KANAME_ENABLED !== "1" && process.env.PROVISIONED_ACCOUNTS_ONLY !== "1" && (
             <a className="btn ghost" href="/login?mode=register">Зарегистрироваться</a>
           )}
         </div>
@@ -68,8 +68,7 @@ export default async function Home() {
       </section>
 
       <p className="muted" style={{ textAlign: "center", margin: "24px 0" }}>
-        Контент виден только после входа. Зарегистрируйтесь — это бесплатно —
-        и соберите свой первый ролик за вечер.
+        {process.env.KANAME_ENABLED === "1" ? "Войдите через Kaname, чтобы открыть свои композиции." : "Контент виден только после входа. Зарегистрируйтесь — это бесплатно — и соберите свой первый ролик за вечер."}
       </p>
     </div>
   );

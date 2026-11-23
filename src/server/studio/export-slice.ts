@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -283,6 +284,7 @@ export function materializeSlices(input: {
       return { slice, source, cut: { input: cut, key: cutKey(cut) } };
     });
     const keys = slices.flatMap(({ cut }) => (cut ? [cut.key] : []));
+    if (keys.length) await requireHeavy(input.userId);
     // Old cuts go first, so they never count against the quota of the new ones.
     await pruneCuts(input.projectId, new Set(keys));
     const release = hold(keys);

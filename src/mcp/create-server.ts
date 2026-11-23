@@ -1,3 +1,4 @@
+import { requireHeavy, recordActivity } from "@/server/kaname";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Actor } from "@/mcp/actor";
@@ -58,7 +59,7 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
     fn: (current: Actor) => Promise<unknown>,
   ): Promise<ToolResult> {
     return authorizeActor(uid)
-      .then((user) => fn({ ...actor, role: user.role }))
+      .then(async (user) => { await recordActivity(uid); return fn({ ...actor, role: user.role }); })
       .then(ok)
       .catch((e) => fail((e as Error)?.message ?? String(e)));
   }
@@ -265,6 +266,10 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
       }),
   );
   // Local disk and yt-dlp belong to the machine of a stdio session, never to HTTP.
+  const localGuard = (fn: (current: Actor) => Promise<unknown>) => guard(async current => {
+    await requireHeavy(uid);
+    return fn(current);
+  });
   if (options.local) {
   server.registerTool(
     "list_local_media",
@@ -276,7 +281,7 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
       inputSchema: { dir: z.string() },
     },
     ({ dir }) =>
-      guard(async () => ({
+      localGuard(async () => ({
         ...(await listLocalMedia(dir)),
         roots: mediaDirs(),
       })),
@@ -292,7 +297,7 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
       inputSchema: { paths: z.array(z.string()) },
     },
     ({ paths }) =>
-      guard((current) =>
+      localGuard((current) =>
         importLocalMedia(uid, {
           paths,
           maxPoolBytes: quotasFor(current.role).maxPoolBytes,
@@ -307,7 +312,7 @@ export function createMcpServer(actor: Actor, options: McpServerOptions): McpSer
       inputSchema: { url: z.string() },
     },
     ({ url }) =>
-      guard((current) =>
+      localGuard((current) =>
         importYoutubeAudio(uid, {
           url,
           maxPoolBytes: quotasFor(current.role).maxPoolBytes,

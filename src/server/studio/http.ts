@@ -1,4 +1,5 @@
 import "server-only";
+import { recordActivity } from "@/server/kaname";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { userOr401 } from "@/lib/api";
@@ -22,7 +23,7 @@ export function studioHttpError(error: unknown): Response {
     return json({ error: "MALFORMED_JSON" }, 400);
   if (error instanceof studio.StudioError) {
     const code = error.code;
-    const status =
+    const status = code === "KANAME_UNAVAILABLE" ? 503 :
       code === "FORBIDDEN"
         ? 403
         : /NOT_FOUND$/.test(code)
@@ -66,6 +67,7 @@ export async function studioHttp(
     if (!read && !isStudioMutationOriginAllowed(req))
       return json({ error: "FORBIDDEN_ORIGIN" }, 403);
     await actor(uid);
+    if (!read) await recordActivity(uid);
     if (collection === "recipes") {
       if (id === "media" && action && read)
         return streamStudioFile(req, await studio.getStudioRecipeMedia(uid, action));

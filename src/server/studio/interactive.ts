@@ -1,3 +1,5 @@
+import { assertRoom } from "@/server/kaname-usage";
+import { freshUser, kanameEnabled } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
@@ -68,7 +70,7 @@ interface Row {
 }
 
 export function interactiveBaseUrl(): string {
-  return (process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  return ((kanameEnabled() ? process.env.KANAME_SITE_URL : undefined) ?? process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 }
 
 export function interactiveManifestUrl(token: string): string {
@@ -140,6 +142,7 @@ export const interactiveTestHooks: { stills: boolean } = { stills: true };
 
 /** Stills of interactive scenes come from one storyboard page of the frozen revision. */
 async function startStills(userId: string, projectId: string, revision: number): Promise<string | null> {
+  if (kanameEnabled() && !(await freshUser(userId)).grant?.permissions.heavy) return null;
   if (process.env.DOUGA_INTERACTIVE_STILLS === "0" || !interactiveTestHooks.stills) return null;
   try {
     const job = await startStudioStoryboard(userId, projectId, { revision, pageSize: 24 });
@@ -218,6 +221,7 @@ export async function publishInteractive(
         });
         if (current.snapshotId !== frozen.snapshotId) await releaseSnapshotIfFree(current.snapshotId, db);
       } else {
+        await assertRoom(userId, "publications", db);
         row = await db.studioInteractivePublication.create({
           data: {
             projectId,
@@ -399,6 +403,7 @@ async function indexByToken(token: string): Promise<SnapshotIndex | null> {
   if (!token || token.length > 64) return null;
   const row = await prisma.studioInteractivePublication.findUnique({ where: { token } });
   if (!row) return null;
+  if (kanameEnabled() && !(await freshUser(row.userId).catch(() => null))) return null;
   const key = `${row.snapshotId}:${row.stillJobId ?? ""}`;
   const cached = indexes.get(key);
   if (cached) return cached;
@@ -439,7 +444,7 @@ export async function interactiveFileResponse(token: string, fileName: string, r
       path: file.absolute ? file.path : await safeFile(file.path),
       mimeType: name.endsWith(".ttf") ? "font/ttf" : name.endsWith(".txt") ? "text/plain; charset=utf-8" : studioMimeType(name),
       hash: file.hash,
-      immutable: true,
+      immutable: !kanameEnabled(),
     });
   } catch {
     return new Response(null, { status: 404 });

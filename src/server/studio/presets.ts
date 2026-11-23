@@ -103,7 +103,7 @@ export async function deleteStudioPreset(
     if (!row) throw new StudioError("NOT_FOUND");
     await db.studioPreset.delete({ where: { id } });
     const result = { deleted: true as const, id };
-    await receipt(db, userId, input.idempotencyKey, request, result);
+    await receipt(db, userId, input.idempotencyKey, request, result, true);
     return result;
   });
 }

@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -57,6 +58,7 @@ async function effectiveSuggestions(prepared: Awaited<ReturnType<typeof loadInsp
 
 export async function reviewStudioVideo(userId: string, projectId: string, raw: z.input<typeof studioReviewSchema> = {}) {
   const input = studioReviewSchema.parse(raw);
+  if (input.mode === "deep") await requireHeavy(userId);
   if (input.mode !== "deep" && (input.sceneId !== undefined || input.segmentId !== undefined || input.frame !== undefined))
     throw new StudioError("REVIEW_SCOPE_REQUIRES_DEEP");
   const pinned = input.sourceJobId ? await loadPinnedInspectionProject(userId, projectId, input.sourceJobId,
@@ -124,6 +126,7 @@ async function deepReviewJobs(userId: string, projectId: string, prepared: Await
   const chosen = [...new Set([0, Math.floor(scenes.length / 2), scenes.length - 1])]
     .filter(i => i >= 0 && scenes[i]).flatMap(i => selectStoryboard(prepared.plan,
       { sceneId: scenes[i].id, segmentId: scenes[i].segmentId, pageSize: 1 }).tiles);
+  await requireHeavy(userId);
   const engine = pinnedEngineId ?? await prepareStudioEngine();
   const jobs = [];
   // Leave one account slot free for another storyboard. Each clip includes audio.

@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -56,6 +57,7 @@ async function inspect(
   raw: InspectStudioAssetInput,
   includeClip: boolean,
 ) {
+  await requireHeavy(userId);
   const input = inspectStudioAssetSchema.parse(raw);
   await actor(userId);
   const art = await prisma.art.findFirst({ where: { id: assetId, userId } });

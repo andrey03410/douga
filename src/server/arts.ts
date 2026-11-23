@@ -1,3 +1,6 @@
+import { freshUser, kanameEnabled } from "./kaname";
+import { assertStorage } from "./kaname-usage";
+import { originalMetadata } from "./studio/original-metadata";
 import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
@@ -138,6 +141,7 @@ export async function createArt(userId: string, input: CreateArtInput) {
   // set immediately), so two concurrent uploads can't both fit into the last
   // free megabytes.
   const art = await prisma.$transaction(async (tx) => {
+    await assertStorage(userId, tx, input.data.length);
     const max = input.maxPoolBytes ?? null;
     if (max !== null) {
       const agg = await tx.art.aggregate({
@@ -151,30 +155,39 @@ export async function createArt(userId: string, input: CreateArtInput) {
       data: { userId, filePath: "", label, kind, sizeBytes: input.data.length },
     });
   });
-  const rel = await saveFile(artPath(userId, art.id, ext), input.data);
+  const rel = artPath(userId, art.id, ext);
+  try {
+    await saveFile(rel, input.data);
 
-  let durationSec: number | null = null;
-  let hasAudio = false;
-  let posterPath: string | null = null;
-  if (kind === "video" || kind === "audio") {
-    const info = await probeMediaInfo(absPath(rel));
-    durationSec = info.durationSec;
-    hasAudio = info.hasAudio;
-  }
-  if (kind === "video") {
-    const posterRel = artPath(userId, `${art.id}.poster`, ".jpg");
-    try {
-      await extractPoster(absPath(rel), absPath(posterRel));
-      posterPath = posterRel;
-    } catch {
-      // no extractable frame -> cards fall back to a generic tile
+    let durationSec: number | null = null;
+    let hasAudio = false;
+    let posterPath: string | null = null;
+    const light = kanameEnabled() && !(await freshUser(userId)).grant?.permissions.heavy;
+    if (kind === "video" || kind === "audio") {
+      const info = light ? await originalMetadata(absPath(rel), kind) : await probeMediaInfo(absPath(rel));
+      durationSec = info.durationSec;
+      hasAudio = info.hasAudio;
     }
-  }
+    if (!light && kind === "video") {
+      const posterRel = artPath(userId, `${art.id}.poster`, ".jpg");
+      try {
+        await extractPoster(absPath(rel), absPath(posterRel));
+        posterPath = posterRel;
+      } catch {
+        // no extractable frame -> cards fall back to a generic tile
+      }
+    }
 
-  return prisma.art.update({
-    where: { id: art.id },
-    data: { filePath: rel, durationSec, hasAudio, posterPath },
-  });
+    return await prisma.art.update({
+      where: { id: art.id },
+      data: { filePath: rel, durationSec, hasAudio, posterPath },
+    });
+  } catch (error) {
+    await prisma.art.deleteMany({ where: { id: art.id, filePath: "" } });
+    await removePath(rel);
+    await removePath(artPath(userId, `${art.id}.poster`, ".jpg"));
+    throw error;
+  }
 }
 
 export interface CreateArtFromFileInput {
@@ -217,6 +230,7 @@ export async function createArtFromFile(
     null;
 
   const art = await prisma.$transaction(async (tx) => {
+    await assertStorage(userId, tx, sizeBytes);
     const max = input.maxPoolBytes ?? null;
     if (max !== null) {
       const agg = await tx.art.aggregate({
@@ -232,39 +246,47 @@ export async function createArtFromFile(
   });
 
   const rel = artPath(userId, art.id, ext);
-  const dest = absPath(rel);
-  await (
-    await import("node:fs/promises")
-  ).mkdir(path.dirname(dest), { recursive: true });
   try {
-    await rename(input.sourcePath, dest); // same volume: cheap move
-  } catch {
-    await copyFile(input.sourcePath, dest);
-    await unlink(input.sourcePath).catch(() => {});
-  }
-
-  let durationSec: number | null = null;
-  let hasAudio = false;
-  let posterPath: string | null = null;
-  if (kind === "video" || kind === "audio") {
-    const info = await probeMediaInfo(dest);
-    durationSec = info.durationSec;
-    hasAudio = info.hasAudio;
-  }
-  if (kind === "video") {
-    const posterRel = artPath(userId, `${art.id}.poster`, ".jpg");
+    const dest = absPath(rel);
+    await (
+      await import("node:fs/promises")
+    ).mkdir(path.dirname(dest), { recursive: true });
     try {
-      await extractPoster(dest, absPath(posterRel));
-      posterPath = posterRel;
+      await rename(input.sourcePath, dest); // same volume: cheap move
     } catch {
-      // no extractable frame -> cards fall back to a generic tile
+      await copyFile(input.sourcePath, dest);
+      await unlink(input.sourcePath).catch(() => {});
     }
-  }
 
-  return prisma.art.update({
-    where: { id: art.id },
-    data: { filePath: rel, durationSec, hasAudio, posterPath },
-  });
+    let durationSec: number | null = null;
+    let hasAudio = false;
+    let posterPath: string | null = null;
+    const light = kanameEnabled() && !(await freshUser(userId)).grant?.permissions.heavy;
+    if (kind === "video" || kind === "audio") {
+      const info = light ? await originalMetadata(dest, kind) : await probeMediaInfo(dest);
+      durationSec = info.durationSec;
+      hasAudio = info.hasAudio;
+    }
+    if (!light && kind === "video") {
+      const posterRel = artPath(userId, `${art.id}.poster`, ".jpg");
+      try {
+        await extractPoster(dest, absPath(posterRel));
+        posterPath = posterRel;
+      } catch {
+        // no extractable frame -> cards fall back to a generic tile
+      }
+    }
+
+    return await prisma.art.update({
+      where: { id: art.id },
+      data: { filePath: rel, durationSec, hasAudio, posterPath },
+    });
+  } catch (error) {
+    await prisma.art.deleteMany({ where: { id: art.id, filePath: "" } });
+    await removePath(rel);
+    await removePath(artPath(userId, `${art.id}.poster`, ".jpg"));
+    throw error;
+  }
 }
 
 async function ownedArt(userId: string, artId: string) {

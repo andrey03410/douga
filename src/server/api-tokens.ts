@@ -1,3 +1,4 @@
+import { freshUser } from "./kaname";
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -42,7 +43,7 @@ const view = (row: {
 /** The secret is returned once and never again. Guests have no account and no tokens. */
 export async function issueApiToken(userId: string, raw: z.input<typeof issueApiTokenSchema>) {
   const { name } = issueApiTokenSchema.parse(raw);
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const user = await freshUser(userId).catch(() => null);
   if (!user || !can(user.role, "media:upload")) throw new ApiTokenError("FORBIDDEN");
   const token = `${API_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   // Count and create in one transaction: parallel requests cannot pass the limit together.
@@ -68,15 +69,20 @@ export async function revokeApiToken(userId: string, id: string): Promise<ApiTok
 }
 
 /** The account of a live token, or null. Every MCP request resolves it again. */
-export async function resolveApiToken(token: string | null | undefined) {
+export async function resolveApiToken(token: string | null | undefined, reportAccessDenial = false) {
   if (!token || !TOKEN.test(token)) return null;
   const row = await prisma.apiToken.findUnique({
     where: { tokenHash: digest(token) },
-    include: { user: { select: { id: true, email: true, role: true } } },
+
   });
-  if (!row || row.revokedAt || !can(row.user.role, "media:upload")) return null;
+  if (!row || row.revokedAt) return null;
+  const user = await freshUser(row.userId).catch(error => {
+    if (error.message === "KANAME_UNAVAILABLE" || (reportAccessDenial && error.message === "FORBIDDEN")) throw error;
+    return null;
+  });
+  if (!user || !can(user.role, "media:upload")) return null;
   // A coarse stamp is enough and keeps writes rare.
   if (!row.lastUsedAt || Date.now() - row.lastUsedAt.getTime() > 60_000)
     await prisma.apiToken.update({ where: { id: row.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
-  return { userId: row.user.id, email: row.user.email, role: row.user.role };
+  return { userId: user.id, email: user.email, role: user.role };
 }

@@ -160,3 +160,5 @@ accept с этим фильтром требует всю новую когор�
 `Dockerfile` собирает Linux-образ douga. Workflow `Production` проверяет запуск, публикует тег полного SHA в GHCR и выкатывает его по команде [deploy](../../.claude/skills/deploy/SKILL.md). Данные SQLite и медиа находятся в отдельном каталоге данных на сервере. HTTPS обслуживает Caddy на порту `8444`.
 
 Образ включает режим `PROVISIONED_ACCOUNTS_ONLY=1`. Новые аккаунты создаёт администратор через `scripts/provision-account.ts`. Пароль передаётся через stdin.
+
+Для подключения Kaname зарегистрируйте в Keycloak confidential client с public subject, authorization code flow и точным redirect URI `${KANAME_SITE_URL}/api/auth/callback/keycloak`. Настройте `AUTH_URL` равным публичному адресу Douga. Вход начинается на `/login` или `/api/auth/kaname/login`. Перед запуском примените аддитивную схему Prisma к рабочей базе и задайте переменные из [.env.example](../../.env.example) для web, worker и stdio. Оффлайн-плеер для лёгкого экспорта создают prebuild и predev.

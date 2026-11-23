@@ -36,6 +36,7 @@ model User {
   studioInteractivePublications StudioInteractivePublication[]
   studioExportCaches StudioExportCache[]
   apiTokens ApiToken[]
+  kaname KanameIdentity?
 }
 
 // ---- Phase 1: tournament ----
@@ -410,4 +411,32 @@ model ApiToken {
   lastUsedAt DateTime?
   revokedAt DateTime?
   @@index([userId])
+}
+
+model KanameIdentity {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuer String
+  subject String
+  login String
+  suspended Boolean @default(false)
+  sessions KanameSession[]
+  days KanameActiveDay[]
+  @@unique([issuer, subject])
+}
+
+model KanameSession {
+  id String @id @default(cuid())
+  userId String
+  identity KanameIdentity @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  expires DateTime
+  @@index([expires])
+}
+
+model KanameActiveDay {
+  userId String
+  identity KanameIdentity @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  day String
+  lastActiveAt DateTime
+  @@id([userId, day])
 }

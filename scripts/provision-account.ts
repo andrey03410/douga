@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { provisionedAccountEmail } from "@/lib/domain/account-login";
 
+if (process.env.KANAME_ENABLED === "1") throw new Error("Credentials are managed by Kaname");
 const login = process.argv[2]?.trim().toLowerCase();
 const role = process.argv[3];
 const password = readFileSync(0, "utf8").replace(/\r?\n$/, "");

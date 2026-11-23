@@ -1,4 +1,9 @@
 export function StudioSetup({ email }: { email: string }) {
+  if (process.env.KANAME_ENABLED === "1") return (
+    <details className="panel"><summary>Подключить MCP</summary>
+      <p>Создайте персональный токен в <a href="/account">личном кабинете</a> и подключите клиент к <code>{process.env.KANAME_SITE_URL}/api/mcp</code>.</p>
+    </details>
+  );
   return (
     <details className="panel">
       <summary>Внешний MCP и запуск worker</summary>

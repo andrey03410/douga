@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: job.id });
   } catch (e) {
+    if ((e as Error).message === "FORBIDDEN") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     const refusal = describeStartRefusal((e as Error).message);
     if (refusal) return badRequest(refusal);
     throw e;

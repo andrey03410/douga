@@ -28,7 +28,7 @@ export default async function StudioPage({
   }
   return (
     <main className="container studio-workspace">
-      <StudioWorkspace initial={metadata} isAdmin={can(user.role, "render:run")} />
+      <StudioWorkspace initial={metadata} htmlOnly={user.role === "kaname-user" || user.role === "kaname-admin"} isAdmin={can(user.role, "render:run")} />
       <StudioSetup email={user.email} />
     </main>
   );

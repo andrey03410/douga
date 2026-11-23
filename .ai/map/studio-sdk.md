@@ -320,3 +320,5 @@ resource/used/limit и path; серверный size error сохраняет `D
 - Проверка: `packages/video/src/typography.test.ts`, `src/server/studio/typography*.test.ts`,
   `src/integration/typography-*.integration.test.ts`, `src/mcp/typography-tools.test.ts`,
   `packages/render/src/typography*.test.ts`; реальная приёмка — verify.md задачи 31.
+
+Режим Kaname ограничивает число проектов и активных ссылок внутри записывающей транзакции. Веб и MCP используют общие сервисы. Воркер проверяет владельца задания до исполнения, во время heartbeat и перед сохранением результата. В лёгком режиме метаданные читаются из заголовков оригинала, интерактивная ссылка обходится без раскадровки. HTML скачивается с готовым бандлом плеера; операция, требующая ffmpeg-нарезки, отклоняется. MP4, клипы, диагностические кадры и анализ звука остаются у владельца.

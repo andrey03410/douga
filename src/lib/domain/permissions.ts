@@ -6,7 +6,8 @@ export type Permission =
   | "tournament:create"
   | "render:run"
   | "media:upload"
-  | "admin:users";
+  | "admin:users"
+  | "site:moderate";
 
 export interface Quotas {
   /** Max simultaneously existing tournaments; null = unlimited. */
@@ -42,6 +43,17 @@ export const ROLES: Record<string, RoleDef> = {
     quotas: { maxTournaments: 0, maxArchiveBytes: 0, maxPoolBytes: 0 },
   },
   // Legacy database rows and already-open sessions have the same rights now.
+  "kaname-user": {
+    label: "Участник", permissions: ["media:upload"],
+    quotas: { maxTournaments: 0, maxArchiveBytes: 0, maxPoolBytes: null },
+  },
+  "kaname-admin": {
+    label: "Администратор Douga", permissions: ["media:upload", "site:moderate"],
+    quotas: { maxTournaments: 0, maxArchiveBytes: 0, maxPoolBytes: null },
+  },
+  "kaname-overlord": {
+    ...ADMIN, label: "Владелец", permissions: ["tournament:create", "media:upload", "render:run", "site:moderate"],
+  },
   user: ADMIN,
   admin: ADMIN,
   member: {

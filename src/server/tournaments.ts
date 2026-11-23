@@ -1,3 +1,4 @@
+import { freshUser } from "@/server/kaname";
 import "server-only";
 import path from "node:path";
 import { prisma } from "@/lib/db";
@@ -152,7 +153,7 @@ export async function createTournament(
     return await prisma.$transaction(
       async (tx) => {
         await tx.user.update({ where: { id: userId }, data: { id: userId } });
-        const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+        const user = await freshUser(userId, tx);
         if (!can(user.role, "tournament:create")) throw new Error("FORBIDDEN");
         const quota = quotasFor(user.role);
         const max = limits?.maxTournaments ?? quota.maxTournaments;

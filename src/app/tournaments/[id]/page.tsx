@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import { auth } from "@/auth";
+import { currentUser } from "@/auth";
 import { getTournament, nextComparison } from "@/server/tournaments";
 import { ResultsPanel, type RankRow, type UnplacedRow } from "./ResultsPanel";
 import { pluralRu } from "@/lib/domain/art-usage";
@@ -25,9 +25,9 @@ export default async function TournamentOverview({
   params: { id: string };
   searchParams: { segmentId?: string; skipped?: string };
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/");
-  const t = await getTournament(session.user.id, params.id, searchParams.segmentId);
+  const user = await currentUser();
+  if (!user) redirect("/");
+  const t = await getTournament(user.id, params.id, searchParams.segmentId);
   if (!t) notFound();
   const step = nextComparison(t);
   const { screens, coverage, isComplete, groupSize, scheme, settings, result, tiers } = step;

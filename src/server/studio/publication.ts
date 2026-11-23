@@ -1,3 +1,5 @@
+import { assertRoom } from "@/server/kaname-usage";
+import { freshUser, kanameEnabled } from "@/server/kaname";
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
@@ -72,7 +74,7 @@ async function lockProject(db: Db, userId: string, projectId: string) {
 }
 
 export function publicWatchUrl(token: string): string {
-  const base = (process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(
+  const base = ((kanameEnabled() ? process.env.KANAME_SITE_URL : undefined) ?? process.env.DOUGA_PUBLIC_URL ?? "http://localhost:3000").replace(
     /\/+$/,
     "",
   );
@@ -83,7 +85,7 @@ export async function findPublicationByToken(
   token: string,
 ): Promise<StudioPublicationView | null> {
   const row = await prisma.studioPublication.findUnique({ where: { token } });
-  if (!row) return null;
+  if (!row || (kanameEnabled() && !(await freshUser(row.userId).catch(() => null)))) return null;
   return present(prisma, row, false);
 }
 
@@ -113,7 +115,7 @@ export async function getStudioPublication(
 ): Promise<StudioPublicationView | null> {
   await owned(userId, projectId);
   const row = await prisma.studioPublication.findUnique({ where: { projectId } });
-  if (!row) return null;
+  if (!row || (kanameEnabled() && !(await freshUser(row.userId).catch(() => null)))) return null;
   return present(prisma, row, false);
 }
 
@@ -189,6 +191,7 @@ export async function publishStudioProject(
         });
         updated = true;
       } else {
+        await assertRoom(userId, "publications", db);
         row = await db.studioPublication.create({
           data: {
             projectId,
@@ -260,13 +263,13 @@ export async function unpublishStudioProject(
     const row = await db.studioPublication.findUnique({ where: { projectId } });
     if (!row) {
       const result = { removed: false, projectId };
-      await receipt(db, userId, input.idempotencyKey, request, result);
+      await receipt(db, userId, input.idempotencyKey, request, result, true);
       return result;
     }
     await db.studioPublication.delete({ where: { id: row.id } });
     await releaseSnapshotIfFree(row.snapshotId, db);
     const result = { removed: true, projectId };
-    await receipt(db, userId, input.idempotencyKey, request, result);
+    await receipt(db, userId, input.idempotencyKey, request, result, true);
     return result;
   });
 }

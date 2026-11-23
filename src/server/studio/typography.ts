@@ -1,3 +1,4 @@
+import { requireHeavy } from "@/server/kaname";
 import "server-only";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -203,6 +204,7 @@ export async function inspectStudioText(
   raw: InspectStudioTextInput = {},
 ) {
   const input = inspectStudioTextSchema.parse(raw);
+  if (input.preview) await requireHeavy(userId);
   await actor(userId);
   const project = await view(await owned(userId, projectId));
   if (

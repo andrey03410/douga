@@ -1,3 +1,4 @@
+import { kanameEnabled, recordActivity } from "@/server/kaname";
 import { isAuthoringMotion } from "@douga/video/authoring-motion";
 import { documentSizeDiagnostic, studioDocumentMaxBytes } from "@/server/studio/document-size";
 import { getVideoDesignGuide, videoKinds, getCompositionRecipes } from "@douga/video/authoring";
@@ -459,6 +460,7 @@ export function registerStudioTools(server: McpServer, actor: Actor): void {
       { description, inputSchema: z.object(rawShape(schema)).strict() },
       async (args) => {
         try {
+          if (kanameEnabled()) { await freshActor(uid); await recordActivity(uid); }
           return text(await fn(schema.parse(args)), content);
         } catch (e) {
           return failure(e);
