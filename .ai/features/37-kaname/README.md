@@ -1,6 +1,6 @@
 ---
 track: product
-stage: plan
+stage: build
 branch: feat/37-kaname
 pr: null
 ---
@@ -11,5 +11,5 @@ pr: null
 - [x] Бриф
 - [x] Продукт
 - [x] Техника
-- [ ] План
+- [x] План
 - [ ] Реализация и проверка
